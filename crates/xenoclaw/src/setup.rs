@@ -117,6 +117,13 @@ impl Default for WizardState {
 
 // ─── Rendering Helpers ───────────────────────────────────────────────────────
 
+const BANNER: &str = r#"██╗  ██╗███████╗███╗   ██╗ ██████╗  ██████╗██╗      █████╗ ██╗    ██╗
+╚██╗██╔╝██╔════╝████╗  ██║██╔═══██╗██╔════╝██║     ██╔══██╗██║    ██║
+ ╚███╔╝ █████╗  ██╔██╗ ██║██║   ██║██║     ██║     ███████║██║ █╗ ██║
+ ██╔██╗ ██╔══╝  ██║╚████║║██║   ██║██║     ██║     ██╔══██║██║███╗██║
+██╔╝ ██╗███████╗██║ ╚███║ ╚██████╔╝╚██████╗███████╗██║  ██║╚███╔███╔╝
+╚═╝  ╚═╝╚══════╝╚═╝  ╚══╝ ╚═════╝  ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝"#;
+
 fn print_header(stdout: &mut io::Stdout, step: u8) -> io::Result<()> {
     stdout
         .queue(SetForegroundColor(BRAND))?
@@ -131,6 +138,27 @@ fn print_header(stdout: &mut io::Stdout, step: u8) -> io::Result<()> {
         .queue(Print(RULE))?
         .queue(ResetColor)?
         .queue(Print("\n\n"))?;
+    stdout.flush()
+}
+
+fn print_banner(stdout: &mut io::Stdout) -> io::Result<()> {
+    stdout.queue(SetForegroundColor(BRAND))?;
+    stdout.queue(SetAttribute(Attribute::Bold))?;
+    for line in BANNER.lines() {
+        stdout.queue(Print(format!("  {line}\n")))?;
+    }
+    stdout.queue(SetAttribute(Attribute::Reset))?;
+    stdout.queue(ResetColor)?;
+    stdout.queue(Print("\n"))?;
+    stdout
+        .queue(SetForegroundColor(SUCCESS))?
+        .queue(Print("                    Agent Runtime\n"))?
+        .queue(ResetColor)?;
+    stdout.queue(Print("\n"))?;
+    stdout
+        .queue(SetForegroundColor(DIM))?
+        .queue(Print(format!("  {RULE}\n")))?
+        .queue(ResetColor)?;
     stdout.flush()
 }
 
@@ -262,25 +290,66 @@ async fn step_welcome(_state: &WizardState) -> Result<StepOutcome> {
     clear_screen(&mut stdout)?;
     print_header(&mut stdout, 1)?;
 
+    stdout.queue(Print("\n"))?;
+    print_banner(&mut stdout)?;
+
+    stdout.queue(Print("\n"))?;
+    // XenoClaw-specific feature highlights
     stdout
-        .queue(SetForegroundColor(SUCCESS))?
-        .queue(Print(
-            "   Welcome. This wizard will create config.toml and\n\
-             \x20  initialize your workspace.\n\n"
-        ))?
         .queue(SetForegroundColor(BRAND))?
         .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print("   Press Enter to begin.\n"))?
+        .queue(Print("  ⚡"))?
         .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetForegroundColor(SUCCESS))?
+        .queue(Print(" Dual-mode: General 24/7 agent + Coding agent (hot-swap)\n"))?
+        .queue(SetForegroundColor(BRAND))?
+        .queue(SetAttribute(Attribute::Bold))?
+        .queue(Print("  🔀"))?
+        .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetForegroundColor(SUCCESS))?
+        .queue(Print(" Multi-provider LLM failover (27 providers supported)\n"))?
+        .queue(SetForegroundColor(BRAND))?
+        .queue(SetAttribute(Attribute::Bold))?
+        .queue(Print("  💬"))?
+        .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetForegroundColor(SUCCESS))?
+        .queue(Print(" Telegram, Discord & WhatsApp bridge — chat from anywhere\n"))?
+        .queue(SetForegroundColor(BRAND))?
+        .queue(SetAttribute(Attribute::Bold))?
+        .queue(Print("  🧩"))?
+        .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetForegroundColor(SUCCESS))?
+        .queue(Print(" WASM plugin system with hot-reload\n"))?
+        .queue(SetForegroundColor(BRAND))?
+        .queue(SetAttribute(Attribute::Bold))?
+        .queue(Print("  🛡"))?
+        .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetForegroundColor(SUCCESS))?
+        .queue(Print(" Sandboxed execution, RBAC, filesystem & network allowlists\n"))?
+        .queue(SetForegroundColor(BRAND))?
+        .queue(SetAttribute(Attribute::Bold))?
+        .queue(Print("  📡"))?
+        .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetForegroundColor(SUCCESS))?
+        .queue(Print(" Always-on: auto-restart, health checks, SIGHUP hot-reload\n"))?
         .queue(ResetColor)?;
+
+    stdout.queue(Print("\n"))?;
+    stdout
+        .queue(SetForegroundColor(DIM))?
+        .queue(Print("  Self-hosted. Your infrastructure. Your data. Your rules.\n"))?
+        .queue(ResetColor)?;
+
+    stdout.queue(Print("\n"))?;
     stdout.flush()?;
 
-    print_footer(&mut stdout, "[Enter] Begin  [Ctrl-C] Quit")?;
+    print_footer(&mut stdout, "[Enter] Begin setup  [Esc] Cancel")?;
 
     loop {
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Enter => return Ok(StepOutcome::Next),
+                KeyCode::Esc => return Ok(StepOutcome::Quit),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
                 }
