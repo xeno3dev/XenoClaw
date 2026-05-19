@@ -431,6 +431,7 @@ mod tests {
             messaging: MessagingConfig::default(),
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),
+            mcp: McpConfig::default(),
         }
     }
 

@@ -6,11 +6,16 @@
 //! - WhatsApp bot integration (whatsapp-web-rs)
 //! - Identity mapping and authorization enforcement
 
+pub mod agent_handler;
 pub mod discord;
 pub mod identity;
+pub mod session_router;
 pub mod telegram;
 // NOTE: whatsapp module is not yet compilable (task 23.3 pending)
 // pub mod whatsapp;
+
+pub use agent_handler::AgentMessageHandler;
+pub use session_router::SessionRouter;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

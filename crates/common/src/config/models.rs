@@ -49,6 +49,10 @@ pub struct PlatformConfig {
     /// Plugin system settings.
     #[serde(default)]
     pub plugins: PluginConfig,
+
+    /// MCP (Model Context Protocol) settings.
+    #[serde(default)]
+    pub mcp: McpConfig,
 }
 
 impl Default for PlatformConfig {
@@ -64,6 +68,7 @@ impl Default for PlatformConfig {
             messaging: MessagingConfig::default(),
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),
+            mcp: McpConfig::default(),
         }
     }
 }
@@ -167,14 +172,28 @@ pub enum ProviderType {
     Anthropic,
     /// Local Ollama inference
     Ollama,
+    /// Claude Code CLI (uses `claude` command — requires Claude Pro/Max subscription)
+    ///
+    /// **Deprecated**: CLI providers cannot participate in the tool execution loop.
+    /// Use an API provider (Anthropic, OpenAI) for the LLM backend instead, and
+    /// connect Claude Code to XenoClaw via MCP for tool access.
+    ClaudeCode,
+    /// GitHub Copilot CLI (uses `github-copilot` command — requires Copilot subscription)
+    ///
+    /// **Deprecated**: CLI providers cannot participate in the tool execution loop.
+    /// Use an API provider (Anthropic, OpenAI) for the LLM backend instead, and
+    /// connect Copilot to XenoClaw via MCP for tool access.
+    CopilotCli,
 }
 
 impl fmt::Display for ProviderType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ProviderType::OpenAiCompatible => write!(f, "openai_compatible"),
+            ProviderType::OpenAiCompatible => write!(f, "open_ai_compatible"),
             ProviderType::Anthropic => write!(f, "anthropic"),
             ProviderType::Ollama => write!(f, "ollama"),
+            ProviderType::ClaudeCode => write!(f, "claude_code"),
+            ProviderType::CopilotCli => write!(f, "copilot_cli"),
         }
     }
 }
@@ -184,11 +203,15 @@ impl FromStr for ProviderType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "openai_compatible" | "openaicompatible" | "openai" => {
+            "openai_compatible" | "open_ai_compatible" | "openaicompatible" | "openai" => {
                 Ok(ProviderType::OpenAiCompatible)
             }
             "anthropic" | "claude" => Ok(ProviderType::Anthropic),
             "ollama" | "local" => Ok(ProviderType::Ollama),
+            "claude_code" | "claudecode" => Ok(ProviderType::ClaudeCode),
+            "copilot_cli" | "copilotcli" | "copilot" | "github_copilot" => {
+                Ok(ProviderType::CopilotCli)
+            }
             _ => Err(format!("unknown provider type: {s}")),
         }
     }
@@ -715,4 +738,99 @@ fn default_plugins_dir() -> PathBuf {
 
 fn default_reload_interval() -> u32 {
     10
+}
+
+/// MCP (Model Context Protocol) configuration.
+///
+/// XenoClaw can act as both an MCP server (exposing tools to external clients
+/// like Claude Code and Copilot) and an MCP client (connecting to external
+/// MCP servers to gain additional tools).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpConfig {
+    /// Whether the MCP server is enabled (exposes XenoClaw tools to external clients).
+    #[serde(default = "default_mcp_server_enabled")]
+    pub server_enabled: bool,
+
+    /// Transport for the MCP server: "stdio" or "http".
+    #[serde(default = "default_mcp_transport")]
+    pub server_transport: String,
+
+    /// Port for HTTP+SSE MCP server transport (only used if transport = "http").
+    #[serde(default = "default_mcp_port")]
+    pub server_port: u16,
+
+    /// External MCP servers to connect to as a client.
+    #[serde(default)]
+    pub servers: Vec<McpServerConfig>,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            server_enabled: true,
+            server_transport: default_mcp_transport(),
+            server_port: default_mcp_port(),
+            servers: Vec::new(),
+        }
+    }
+}
+
+fn default_mcp_server_enabled() -> bool {
+    true
+}
+
+fn default_mcp_transport() -> String {
+    "stdio".to_string()
+}
+
+fn default_mcp_port() -> u16 {
+    3100
+}
+
+/// Configuration for an external MCP server that XenoClaw connects to as a client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerConfig {
+    /// Human-readable name for this MCP server.
+    pub name: String,
+
+    /// Command to start the MCP server (e.g., "uvx", "npx", "node").
+    pub command: String,
+
+    /// Arguments for the command.
+    #[serde(default)]
+    pub args: Vec<String>,
+
+    /// Environment variables to set for the server process.
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
+
+    /// Whether this server is disabled.
+    #[serde(default)]
+    pub disabled: bool,
+
+    /// Tool names to auto-approve (skip confirmation).
+    #[serde(default)]
+    pub auto_approve: Vec<String>,
+}
+
+/// Session source identifier — tracks where a session originated from.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionSource {
+    /// Web UI session
+    Web,
+    /// API client session
+    Api,
+    /// TUI (terminal) session
+    Tui,
+    /// Claude Code CLI session
+    ClaudeCode,
+    /// GitHub Copilot CLI session
+    CopilotCli,
+    /// Telegram messaging session
+    Telegram { chat_id: String },
+    /// Discord messaging session
+    Discord { channel_id: String },
+    /// WhatsApp messaging session
+    WhatsApp { phone: String },
 }

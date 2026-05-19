@@ -5,7 +5,10 @@
 //! - `setup`: Run the first-run configuration wizard
 //! - `reset-key`: Generate a new admin API key
 
+mod mcp_client;
+mod mcp_server;
 mod setup;
+mod tools;
 mod workspace;
 
 use std::path::PathBuf;
@@ -56,6 +59,8 @@ enum Command {
     Setup,
     /// Generate and display a new admin API key
     ResetKey,
+    /// Run as an MCP server over stdio (for Claude Code / Copilot integration)
+    Mcp,
 }
 
 #[tokio::main]
@@ -79,6 +84,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Command::ResetKey => reset_key(),
+        Command::Mcp => run_mcp_server(config_path).await,
     }
 }
 
@@ -144,7 +150,47 @@ async fn serve(config_path: PathBuf) -> Result<()> {
 
     // Construct the component graph
     let llm_router = LlmRouter::from_config(&config.llm);
-    let tool_registry = ToolRegistry::new();
+
+    // Task scheduler
+    let scheduler_config = SchedulerConfig::default();
+    let scheduler = Arc::new(Scheduler::new(scheduler_config));
+
+    // Initialize the database for memory tools
+    let data_dir = xenoclaw_home().join("data");
+    let db_pool = match std::fs::create_dir_all(&data_dir) {
+        Ok(()) => {
+            let db_path = data_dir.join("xenoclaw.db");
+            match memory_store::init_database(&db_path).await {
+                Ok(pool) => {
+                    info!(path = %db_path.display(), "Database initialized");
+                    Some(pool)
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Database initialization failed — memory tools will be disabled");
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, path = %data_dir.display(), "Failed to create data directory — memory tools will be disabled");
+            None
+        }
+    };
+
+    // Register built-in tools
+    let mut tool_registry = tools::register_builtin_tools(tools::BuiltinToolsConfig {
+        coding: config.coding.clone(),
+        filesystem_rules: config.security.filesystem_rules.clone(),
+        db_pool,
+        scheduler: Arc::clone(&scheduler),
+    });
+
+    // Connect to external MCP servers and register their proxy tools
+    let mut mcp_manager = mcp_client::connect_mcp_servers(
+        &config.mcp.servers,
+        &mut tool_registry,
+    )
+    .await;
 
     let mut agent_config = AgentCoreConfig::default();
     agent_config.system_prompt = Some(system_prompt);
@@ -157,7 +203,12 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         default_limit: config.api.rate_limit_per_minute,
         ..RateLimitConfig::default()
     };
-    let state = AppState::new(api_keys, rate_limit_config);
+    let state = AppState::with_admin_credentials(
+        api_keys,
+        rate_limit_config,
+        config.security.admin_username.clone(),
+        config.security.admin_password_hash.clone(),
+    );
     let router = build_router(state);
 
     // Plugin system
@@ -166,10 +217,6 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     let plugin_limits = config.security.resource_limits.clone();
     let mut plugin_manager =
         PluginManager::new(config.plugins.clone(), plugin_registry, event_bus, plugin_limits);
-
-    // Task scheduler
-    let scheduler_config = SchedulerConfig::default();
-    let _scheduler = Scheduler::new(scheduler_config);
 
     // Process supervisor
     let supervisor = Arc::new(ProcessSupervisor::new(SupervisorConfig::default()));
@@ -242,6 +289,8 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     info!("Shutdown signal received, stopping...");
 
     // Graceful shutdown
+    mcp_manager.shutdown().await;
+
     if let Err(e) = agent_core.shutdown().await {
         tracing::warn!(error = %e, "Agent shutdown error");
     }
@@ -250,6 +299,86 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     }
 
     info!("XenoClaw agent runtime stopped");
+    Ok(())
+}
+
+/// Run the MCP server over stdio.
+///
+/// This mode starts a lightweight MCP protocol handler without the full runtime
+/// (no API server, no supervisor, no TUI). It's designed for integration with
+/// Claude Code, Copilot, and other MCP-compatible clients.
+async fn run_mcp_server(config_path: PathBuf) -> Result<()> {
+    // Load configuration
+    let config = match load_config(&config_path) {
+        Ok(cfg) => cfg,
+        Err(ConfigError::FileNotFound(_)) => {
+            eprintln!(
+                "Configuration file not found: {}\n\n\
+                 Run `xenoclaw setup` to create one interactively,\n\
+                 or copy config.example.toml to config.toml and fill in your values.",
+                config_path.display()
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Configuration error:\n{e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Initialize tracing to stderr (stdout is the MCP transport)
+    let log_level = config.monitoring.log_level.to_string();
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&log_level));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .with_writer(std::io::stderr)
+        .init();
+
+    info!("XenoClaw MCP server starting");
+
+    // Initialize the database for memory tools
+    let data_dir = xenoclaw_home().join("data");
+    let db_pool = match std::fs::create_dir_all(&data_dir) {
+        Ok(()) => {
+            let db_path = data_dir.join("xenoclaw.db");
+            match memory_store::init_database(&db_path).await {
+                Ok(pool) => {
+                    info!(path = %db_path.display(), "Database initialized");
+                    Some(pool)
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Database initialization failed — memory tools will be disabled");
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, path = %data_dir.display(), "Failed to create data directory — memory tools will be disabled");
+            None
+        }
+    };
+
+    // Task scheduler (needed for task tools)
+    let scheduler_config = SchedulerConfig::default();
+    let scheduler = Arc::new(Scheduler::new(scheduler_config));
+
+    // Register built-in tools
+    let tool_registry = tools::register_builtin_tools(tools::BuiltinToolsConfig {
+        coding: config.coding.clone(),
+        filesystem_rules: config.security.filesystem_rules.clone(),
+        db_pool,
+        scheduler,
+    });
+
+    let registry = Arc::new(RwLock::new(tool_registry));
+
+    // Create and run the MCP server
+    let mcp_server = mcp_server::McpServer::new(registry);
+    mcp_server.run_stdio().await.context("MCP server error")?;
+
+    info!("XenoClaw MCP server stopped");
     Ok(())
 }
 

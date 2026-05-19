@@ -11,6 +11,8 @@
 //! - Plugin enabled flag
 //! - Monitoring refresh intervals (metrics port is NOT reloadable)
 //! - Alert rules
+//! - `mcp.server_enabled` — MCP server toggle (enables/disables the server)
+//! - `mcp.servers` — External MCP server list (triggers reconnection to new/removed servers)
 //!
 //! # Non-Reloadable Settings (require full restart)
 //!
@@ -19,6 +21,10 @@
 //! - Authentication keys and TLS certificates
 //! - LLM provider configurations
 //! - Security filesystem/network rules
+//! - `mcp.server_transport` — MCP server transport type (requires restart)
+//! - `mcp.server_port` — MCP server port (requires restart)
+//! - `security.admin_username` — Admin username (security — requires restart)
+//! - `security.admin_password_hash` — Admin password hash (security — requires restart)
 //!
 //! Requirements: 12.6
 
@@ -26,7 +32,7 @@ use std::path::Path;
 
 use tracing::info;
 
-use super::models::{AlertRule, LogLevel, PlatformConfig};
+use super::models::{AlertRule, LogLevel, McpServerConfig, PlatformConfig};
 use super::validation::ConfigError;
 
 /// Contains only the settings that can be hot-reloaded without a service restart.
@@ -58,6 +64,14 @@ pub struct ReloadableConfig {
 
     /// Monitoring: alert rules (can be updated at runtime).
     pub alert_rules: Vec<AlertRule>,
+
+    /// Whether the MCP server is enabled (can be toggled at runtime).
+    /// NOTE: Changing server_transport or server_port requires restart.
+    pub mcp_server_enabled: bool,
+
+    /// Updated list of external MCP servers to connect to.
+    /// Changes here will trigger reconnection to new/removed servers.
+    pub mcp_servers: Vec<McpServerConfig>,
 }
 
 /// Reload configuration from a TOML file, extracting only the reloadable settings.
@@ -109,6 +123,8 @@ fn extract_reloadable(config: &PlatformConfig) -> ReloadableConfig {
         max_log_file_size_mb: config.monitoring.max_log_file_size_mb,
         metrics_enabled: config.monitoring.metrics_enabled,
         alert_rules: config.monitoring.alert_rules.clone(),
+        mcp_server_enabled: config.mcp.server_enabled,
+        mcp_servers: config.mcp.servers.clone(),
     }
 }
 
@@ -239,6 +255,31 @@ pub fn apply_reload(current: &mut PlatformConfig, reloadable: ReloadableConfig) 
     }
     current.monitoring.alert_rules = reloadable.alert_rules;
 
+    // MCP server enabled
+    if current.mcp.server_enabled != reloadable.mcp_server_enabled {
+        changes.push(format!(
+            "mcp.server_enabled: {} -> {}",
+            current.mcp.server_enabled, reloadable.mcp_server_enabled
+        ));
+        current.mcp.server_enabled = reloadable.mcp_server_enabled;
+    }
+
+    // MCP external servers (compare by count and names)
+    let old_server_names: Vec<&str> = current.mcp.servers.iter().map(|s| s.name.as_str()).collect();
+    let new_server_names: Vec<&str> = reloadable.mcp_servers.iter().map(|s| s.name.as_str()).collect();
+    if old_server_names != new_server_names {
+        changes.push(format!(
+            "mcp.servers: {:?} -> {:?}",
+            old_server_names, new_server_names
+        ));
+        current.mcp.servers = reloadable.mcp_servers;
+    } else {
+        // Even if names match, replace in case other fields changed (command, args, env, etc.)
+        current.mcp.servers = reloadable.mcp_servers;
+    }
+    // NOTE: Actual MCP server restart/client reconnection must be handled by the caller
+    // (main.rs) after `apply_reload` returns. This function only updates the config state.
+
     if changes.is_empty() {
         info!("Configuration reload: no changes detected");
     } else {
@@ -311,6 +352,7 @@ enabled = false
             messaging: MessagingConfig::default(),
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),
+            mcp: McpConfig::default(),
         }
     }
 
@@ -401,6 +443,8 @@ log_retention_days = 400
             max_log_file_size_mb: config.monitoring.max_log_file_size_mb,
             metrics_enabled: config.monitoring.metrics_enabled,
             alert_rules: vec![],
+            mcp_server_enabled: config.mcp.server_enabled,
+            mcp_servers: config.mcp.servers.clone(),
         };
 
         apply_reload(&mut config, reloadable);
@@ -421,6 +465,8 @@ log_retention_days = 400
             max_log_file_size_mb: config.monitoring.max_log_file_size_mb,
             metrics_enabled: config.monitoring.metrics_enabled,
             alert_rules: vec![],
+            mcp_server_enabled: config.mcp.server_enabled,
+            mcp_servers: config.mcp.servers.clone(),
         };
 
         apply_reload(&mut config, reloadable);
@@ -441,6 +487,8 @@ log_retention_days = 400
             max_log_file_size_mb: config.monitoring.max_log_file_size_mb,
             metrics_enabled: config.monitoring.metrics_enabled,
             alert_rules: vec![],
+            mcp_server_enabled: config.mcp.server_enabled,
+            mcp_servers: config.mcp.servers.clone(),
         };
 
         apply_reload(&mut config, reloadable);
@@ -461,6 +509,8 @@ log_retention_days = 400
             max_log_file_size_mb: config.monitoring.max_log_file_size_mb,
             metrics_enabled: config.monitoring.metrics_enabled,
             alert_rules: config.monitoring.alert_rules.clone(),
+            mcp_server_enabled: config.mcp.server_enabled,
+            mcp_servers: config.mcp.servers.clone(),
         };
 
         apply_reload(&mut config, reloadable);
@@ -469,6 +519,7 @@ log_retention_days = 400
         assert_eq!(config.api.rate_limit_per_minute, original.api.rate_limit_per_minute);
         assert_eq!(config.monitoring.log_level, original.monitoring.log_level);
         assert_eq!(config.plugins.enabled, original.plugins.enabled);
+        assert_eq!(config.mcp.server_enabled, original.mcp.server_enabled);
     }
 
     #[test]
@@ -489,6 +540,15 @@ log_retention_days = 400
                 threshold: 90.0,
                 operator: AlertOperator::GreaterThan,
             }],
+            mcp_server_enabled: false,
+            mcp_servers: vec![McpServerConfig {
+                name: "test-server".to_string(),
+                command: "npx".to_string(),
+                args: vec!["-y".to_string(), "test-mcp".to_string()],
+                env: std::collections::HashMap::new(),
+                disabled: false,
+                auto_approve: vec![],
+            }],
         };
 
         apply_reload(&mut config, reloadable);
@@ -501,5 +561,128 @@ log_retention_days = 400
         assert!(!config.monitoring.metrics_enabled);
         assert_eq!(config.monitoring.alert_rules.len(), 1);
         assert_eq!(config.monitoring.alert_rules[0].name, "high_cpu");
+        assert!(!config.mcp.server_enabled);
+        assert_eq!(config.mcp.servers.len(), 1);
+        assert_eq!(config.mcp.servers[0].name, "test-server");
+    }
+
+    #[test]
+    fn test_apply_reload_mcp_fields_extracted_and_applied() {
+        let mut config = minimal_valid_config();
+        assert!(config.mcp.server_enabled); // default is true
+        assert!(config.mcp.servers.is_empty()); // default is empty
+
+        // Test disabling MCP server
+        let reloadable = ReloadableConfig {
+            rate_limit_requests_per_minute: config.api.rate_limit_per_minute,
+            rate_limit_burst: config.api.rate_limit_per_minute,
+            log_level: config.monitoring.log_level,
+            plugin_enabled: config.plugins.enabled,
+            log_retention_days: config.monitoring.log_retention_days,
+            max_log_file_size_mb: config.monitoring.max_log_file_size_mb,
+            metrics_enabled: config.monitoring.metrics_enabled,
+            alert_rules: vec![],
+            mcp_server_enabled: false,
+            mcp_servers: vec![
+                McpServerConfig {
+                    name: "filesystem".to_string(),
+                    command: "npx".to_string(),
+                    args: vec!["-y".to_string(), "@modelcontextprotocol/server-filesystem".to_string()],
+                    env: std::collections::HashMap::new(),
+                    disabled: false,
+                    auto_approve: vec!["read_file".to_string()],
+                },
+                McpServerConfig {
+                    name: "github".to_string(),
+                    command: "npx".to_string(),
+                    args: vec!["-y".to_string(), "@modelcontextprotocol/server-github".to_string()],
+                    env: std::collections::HashMap::new(),
+                    disabled: false,
+                    auto_approve: vec![],
+                },
+            ],
+        };
+
+        apply_reload(&mut config, reloadable);
+
+        assert!(!config.mcp.server_enabled);
+        assert_eq!(config.mcp.servers.len(), 2);
+        assert_eq!(config.mcp.servers[0].name, "filesystem");
+        assert_eq!(config.mcp.servers[1].name, "github");
+        assert_eq!(config.mcp.servers[0].auto_approve, vec!["read_file".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_reloadable_includes_mcp_fields() {
+        let mut config = minimal_valid_config();
+        config.mcp.server_enabled = false;
+        config.mcp.servers = vec![McpServerConfig {
+            name: "test-mcp".to_string(),
+            command: "node".to_string(),
+            args: vec!["server.js".to_string()],
+            env: std::collections::HashMap::new(),
+            disabled: false,
+            auto_approve: vec![],
+        }];
+
+        let reloadable = extract_reloadable(&config);
+
+        assert!(!reloadable.mcp_server_enabled);
+        assert_eq!(reloadable.mcp_servers.len(), 1);
+        assert_eq!(reloadable.mcp_servers[0].name, "test-mcp");
+        assert_eq!(reloadable.mcp_servers[0].command, "node");
+    }
+
+    #[test]
+    fn test_reload_config_from_str_with_mcp_section() {
+        let toml = r#"
+[general]
+agent_name = "xenoclaw"
+
+[llm]
+[[llm.providers]]
+name = "ollama-local"
+provider_type = "ollama"
+base_url = "http://localhost:11434"
+model = "llama3"
+priority = 1
+timeout_seconds = 30
+
+[security]
+
+[scheduler]
+
+[web]
+
+[api]
+rate_limit_per_minute = 200
+
+[monitoring]
+log_level = "debug"
+log_retention_days = 60
+max_log_file_size_mb = 50
+metrics_enabled = true
+metrics_port = 9100
+
+[plugins]
+enabled = false
+
+[mcp]
+server_enabled = false
+server_transport = "http"
+server_port = 3200
+
+[[mcp.servers]]
+name = "filesystem"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem"]
+"#;
+        let result = reload_config_from_str(toml);
+        assert!(result.is_ok(), "Expected Ok, got: {:?}", result.err());
+
+        let reloadable = result.unwrap();
+        assert!(!reloadable.mcp_server_enabled);
+        assert_eq!(reloadable.mcp_servers.len(), 1);
+        assert_eq!(reloadable.mcp_servers[0].name, "filesystem");
     }
 }

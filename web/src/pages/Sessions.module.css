@@ -1,0 +1,161 @@
+/* Sessions page */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 1rem;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text, #e0e0e0);
+  margin: 0;
+}
+
+.createButton {
+  padding: 0.5rem 1rem;
+  background: var(--color-primary, #6c63ff);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.createButton:hover {
+  opacity: 0.85;
+}
+
+.loading {
+  color: var(--color-text-secondary, #a0a0b0);
+  font-size: 0.875rem;
+}
+
+.emptyState {
+  color: var(--color-text-secondary, #a0a0b0);
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 0.875rem;
+}
+
+.errorIcon {
+  font-size: 1rem;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sessionCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  background: var(--color-surface, #1a1a2e);
+  border: 1px solid var(--color-border, #2a2a4a);
+  border-radius: 10px;
+  gap: 1rem;
+}
+
+.sessionInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.sessionId {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text, #e0e0e0);
+  font-family: monospace;
+}
+
+.sessionMeta {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.badge {
+  display: inline-flex;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--color-primary, #6c63ff);
+}
+
+.sessionTimes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.timeLabel {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #a0a0b0);
+}
+
+.sessionActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.actionButton {
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--color-border, #2a2a4a);
+  border-radius: 6px;
+  color: var(--color-text-secondary, #a0a0b0);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.actionButton:hover {
+  background: var(--color-hover, #2a2a4a);
+  color: var(--color-text, #e0e0e0);
+  border-color: var(--color-text-secondary, #a0a0b0);
+}
+
+.deleteButton:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+
+@media (max-width: 600px) {
+  .sessionCard {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sessionActions {
+    align-self: flex-end;
+  }
+}

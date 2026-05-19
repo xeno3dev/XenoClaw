@@ -4,15 +4,20 @@
 //! token usage monitoring, and automatic context summarization when token
 //! usage exceeds 80% of the configured LLM token limit.
 //!
+//! Supports optional SQLite persistence via memory-store for session state
+//! recovery across restarts.
+//!
 //! Requirements: 14.2, 14.4
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::Utc;
+use sqlx::sqlite::SqlitePool;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
+use common::config::SchedulerConfig;
 use common::models::{Message, MessageRole};
 use common::types::{MessageId, SessionId};
 
@@ -112,12 +117,15 @@ impl SessionContext {
 /// The Session Manager manages concurrent sessions with independent context,
 /// tracks token usage, and performs automatic context summarization.
 ///
+/// Optionally persists session state to SQLite via memory-store functions.
 /// Thread-safe via `RwLock` for concurrent access from multiple tasks.
 pub struct SessionManager {
     /// Map of session ID to session context, protected by RwLock.
     sessions: Arc<RwLock<HashMap<SessionId, SessionContext>>>,
     /// Configuration for token limits and session capacity.
     config: SessionManagerConfig,
+    /// Optional SQLite pool for session state persistence.
+    db_pool: Option<SqlitePool>,
 }
 
 impl SessionManager {
@@ -126,12 +134,120 @@ impl SessionManager {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             config,
+            db_pool: None,
         }
     }
 
     /// Create a new SessionManager with default configuration.
     pub fn with_defaults() -> Self {
         Self::new(SessionManagerConfig::default())
+    }
+
+    /// Create a new SessionManager with a SQLite pool for persistence.
+    pub fn with_persistence(config: SessionManagerConfig, pool: SqlitePool) -> Self {
+        Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            config,
+            db_pool: Some(pool),
+        }
+    }
+
+    /// Persist the current session state to SQLite (if a pool is configured).
+    ///
+    /// Builds a `SessionState` from the in-memory context and writes it
+    /// to the database. Errors are logged but do not propagate — the session
+    /// continues operating in-memory if persistence fails.
+    pub async fn persist_session(&self, session_id: SessionId) {
+        let pool = match &self.db_pool {
+            Some(p) => p,
+            None => return,
+        };
+
+        let sessions = self.sessions.read().await;
+        let ctx = match sessions.get(&session_id) {
+            Some(c) => c,
+            None => return,
+        };
+
+        // Build a conversation context summary from messages
+        let conversation_context = ctx
+            .messages
+            .iter()
+            .take(5)
+            .map(|m| format!("[{:?}] {}", m.role, truncate_content(&m.content, 200)))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let state = memory_store::session_state::SessionState::new(
+            session_id,
+            Vec::new(), // task queue managed externally
+            conversation_context,
+            SchedulerConfig::default(),
+        );
+
+        if let Err(e) = memory_store::session_state::save_session_state(pool, &state).await {
+            warn!(
+                session_id = %session_id,
+                error = %e,
+                "Failed to persist session state to SQLite"
+            );
+        } else {
+            debug!(session_id = %session_id, "Session state persisted to SQLite");
+        }
+    }
+
+    /// Restore a session's context from SQLite persistence (if available).
+    ///
+    /// If a persisted state exists, creates the session and populates it
+    /// with a system message containing the restored conversation context.
+    /// Returns `true` if a session was restored, `false` otherwise.
+    pub async fn restore_session(&self, session_id: SessionId) -> bool {
+        let pool = match &self.db_pool {
+            Some(p) => p,
+            None => return false,
+        };
+
+        let restored = match memory_store::session_state::restore_session_state(pool, session_id).await {
+            Ok(Some(state)) => state,
+            Ok(None) => return false,
+            Err(e) => {
+                warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "Failed to restore session state from SQLite"
+                );
+                return false;
+            }
+        };
+
+        // Create the session and populate with restored context
+        if self.create_session(session_id).await.is_err() {
+            return false;
+        }
+
+        if !restored.conversation_context.is_empty() {
+            let mut sessions = self.sessions.write().await;
+            if let Some(ctx) = sessions.get_mut(&session_id) {
+                let summary_msg = Message {
+                    id: MessageId::new(),
+                    session_id,
+                    role: MessageRole::System,
+                    content: format!(
+                        "[Restored Context] {}",
+                        restored.conversation_context
+                    ),
+                    tool_calls: None,
+                    tool_results: None,
+                    timestamp: Utc::now(),
+                    token_count: Self::estimate_tokens(&restored.conversation_context),
+                };
+                ctx.total_tokens += summary_msg.token_count;
+                ctx.messages.push(summary_msg);
+            }
+        }
+
+        info!(session_id = %session_id, "Session restored from SQLite persistence");
+        true
     }
 
     /// Get the context for a session.
@@ -435,6 +551,15 @@ impl SessionManager {
     fn estimate_tokens(text: &str) -> u32 {
         // Approximate: 1 token ≈ 4 characters for English text
         (text.len() as f64 / 4.0).ceil() as u32
+    }
+}
+
+/// Truncate a string to a maximum length, appending "..." if truncated.
+fn truncate_content(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len])
     }
 }
 

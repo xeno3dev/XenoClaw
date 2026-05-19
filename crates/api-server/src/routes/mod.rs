@@ -4,6 +4,7 @@
 //! - `/api/v1/messages` — Conversation messages
 //! - `/api/v1/status` — Agent status
 //! - `/api/v1/tasks` — Task management
+//! - `/api/v1/sessions` — Session management
 //! - `/api/v1/health` — Health check (unauthenticated)
 //! - `/api/v1/config` — Configuration management
 //! - `/api/v1/memory` — Memory store operations
@@ -11,11 +12,13 @@
 //! - `/api/v1/ws/chat` — Real-time chat streaming (WebSocket)
 //! - `/api/v1/ws/events` — System event stream (WebSocket)
 
+pub mod auth;
 pub mod config;
 pub mod health;
 pub mod memory;
 pub mod messages;
 pub mod plugins;
+pub mod sessions;
 pub mod status;
 pub mod tasks;
 pub mod ws;
@@ -28,8 +31,10 @@ use crate::state::AppState;
 
 /// Build the complete API router with all routes and middleware.
 pub fn build_routes(state: AppState) -> Router {
-    // Health check is unauthenticated — it must respond quickly
-    let health_routes = Router::new().merge(health::routes());
+    // Health check and auth login are unauthenticated
+    let health_routes = Router::new()
+        .merge(health::routes())
+        .merge(auth::routes());
 
     // WebSocket routes handle their own authentication via query parameters
     // (browsers cannot set custom headers on WebSocket upgrade requests)
@@ -40,6 +45,7 @@ pub fn build_routes(state: AppState) -> Router {
         .merge(messages::routes())
         .merge(status::routes())
         .merge(tasks::routes())
+        .merge(sessions::routes())
         .merge(config::routes())
         .merge(memory::routes())
         .merge(plugins::routes())

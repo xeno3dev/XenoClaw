@@ -182,6 +182,52 @@ See [`config.example.toml`](config.example.toml) for the full reference.
 
 ---
 
+## MCP Integration (Claude Code / Copilot)
+
+XenoClaw exposes its tools via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). This lets external AI coding assistants like Claude Code and GitHub Copilot use XenoClaw's tool registry, memory store, task scheduler, and coding module without running as the LLM backend.
+
+**Recommended setup**: Use an API provider (Anthropic, OpenAI, Ollama) as XenoClaw's LLM backend, then connect Claude Code or Copilot to XenoClaw via MCP for tool access.
+
+> **Note**: The `claude_code` and `copilot_cli` provider types are deprecated. They operate as text-only pass-throughs and cannot participate in the tool execution loop. Use an API provider instead.
+
+### Connect Claude Code to XenoClaw
+
+```bash
+# Start XenoClaw with MCP server enabled (default in config.toml)
+xenoclaw
+
+# In another terminal, add XenoClaw as an MCP server for Claude Code
+claude mcp add xenoclaw -- xenoclaw mcp
+
+# Now Claude Code can use XenoClaw's tools (file ops, memory, tasks, etc.)
+claude
+```
+
+### Connect via HTTP (remote / network)
+
+If XenoClaw runs on a remote VPS, configure HTTP transport:
+
+```toml
+[mcp]
+server_enabled = true
+server_transport = "http"
+server_port = 3100
+```
+
+Then point your MCP client at `http://your-vps:3100`.
+
+### What tools are exposed?
+
+When connected via MCP, external clients get access to:
+- File operations (read, write, patch) with undo history
+- Shell execution (sandboxed)
+- Git operations
+- Memory store (read/write/search)
+- Task scheduler (create, list, cancel)
+- Plugin-registered tools
+
+---
+
 ## Deployment
 
 ### Local development

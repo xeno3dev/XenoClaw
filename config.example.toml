@@ -34,6 +34,30 @@ max_tokens    = 4096
 # priority      = 2
 # timeout_seconds = 60
 
+# NOTE: claude_code and copilot_cli provider types are text-only (no tool calling).
+# For full tool support, use an API provider (anthropic, open_ai_compatible, ollama)
+# and connect Claude Code / Copilot to XenoClaw via MCP:
+#   xenoclaw mcp
+# Then configure Claude Code with: claude mcp add xenoclaw -- xenoclaw mcp
+#
+# The following CLI providers are DEPRECATED and will be removed in a future release:
+
+# [[llm.providers]]
+# name          = "claude-code"
+# provider_type = "claude_code"
+# base_url      = ""
+# model         = "claude-sonnet-4-20250514"
+# priority      = 2
+# timeout_seconds = 120
+
+# [[llm.providers]]
+# name          = "copilot"
+# provider_type = "copilot_cli"
+# base_url      = ""
+# model         = "gpt-4o"
+# priority      = 3
+# timeout_seconds = 60
+
 # ---------------------------------------------------------------------------
 # Security
 # ---------------------------------------------------------------------------
@@ -135,3 +159,25 @@ metrics_port         = 9100
 
 # [messaging.whatsapp]
 # phone_number = ""
+
+# ---------------------------------------------------------------------------
+# MCP (Model Context Protocol)
+# ---------------------------------------------------------------------------
+[mcp]
+# XenoClaw as MCP server — exposes tools to Claude Code, Copilot, etc.
+server_enabled = true
+server_transport = "stdio"   # "stdio" (local) or "http" (remote/network)
+server_port = 3100           # Only used if transport = "http"
+
+# External MCP servers to connect to (XenoClaw as MCP client)
+# [[mcp.servers]]
+# name    = "filesystem"
+# command = "npx"
+# args    = ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"]
+
+# [[mcp.servers]]
+# name    = "github"
+# command = "npx"
+# args    = ["-y", "@modelcontextprotocol/server-github"]
+# [mcp.servers.env]
+# GITHUB_PERSONAL_ACCESS_TOKEN = ""

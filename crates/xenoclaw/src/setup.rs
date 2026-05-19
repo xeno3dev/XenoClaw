@@ -68,6 +68,8 @@ const PROVIDERS: &[ProviderDef] = &[
     ProviderDef { name: "Zhipu AI", provider_type: "open_ai_compatible", default_model: "glm-4-plus", default_base_url: "https://open.bigmodel.cn/api/paas/v4", needs_api_key: true },
     ProviderDef { name: "Moonshot AI", provider_type: "open_ai_compatible", default_model: "moonshot-v1-128k", default_base_url: "https://api.moonshot.cn/v1", needs_api_key: true },
     ProviderDef { name: "Baidu Qianfan", provider_type: "open_ai_compatible", default_model: "ernie-4.0-8k", default_base_url: "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop", needs_api_key: true },
+    ProviderDef { name: "Claude Code CLI", provider_type: "claude_code", default_model: "claude-sonnet-4-20250514", default_base_url: "", needs_api_key: false },
+    ProviderDef { name: "GitHub Copilot CLI", provider_type: "copilot_cli", default_model: "gpt-4o", default_base_url: "", needs_api_key: false },
 ];
 
 // ─── Wizard State ────────────────────────────────────────────────────────────
@@ -1014,7 +1016,6 @@ fn hash_password(password: &str) -> String {
         hasher.update(password.as_bytes());
         format!("sha256:{}", hex::encode(hasher.finalize()))
     })
-}
 }
 
 // ─── Step 6: Sandbox ─────────────────────────────────────────────────────────

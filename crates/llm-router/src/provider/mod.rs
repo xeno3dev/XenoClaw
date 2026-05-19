@@ -1,10 +1,12 @@
 //! LLM provider trait and implementations.
 
 mod anthropic;
+mod cli_provider;
 mod ollama;
 mod openai;
 
 pub use anthropic::AnthropicProvider;
+pub use cli_provider::{ClaudeCodeProvider, CopilotCliProvider};
 pub use ollama::OllamaProvider;
 pub use openai::OpenAiProvider;
 
@@ -36,9 +38,19 @@ pub trait LlmProvider: Send + Sync {
 ///
 /// Dispatches to the appropriate provider implementation based on `provider_type`.
 pub fn create_provider(config: &ProviderConfig) -> Box<dyn LlmProvider> {
+    if matches!(config.provider_type, ProviderType::ClaudeCode | ProviderType::CopilotCli) {
+        tracing::warn!(
+            provider = %config.name,
+            "CLI providers (claude_code, copilot_cli) cannot participate in tool calling. \
+             Consider using an API provider and connecting Claude Code/Copilot via MCP instead."
+        );
+    }
+
     match config.provider_type {
         ProviderType::OpenAiCompatible => Box::new(OpenAiProvider::from_config(config)),
         ProviderType::Anthropic => Box::new(AnthropicProvider::from_config(config)),
         ProviderType::Ollama => Box::new(OllamaProvider::from_config(config)),
+        ProviderType::ClaudeCode => Box::new(ClaudeCodeProvider::from_config(config)),
+        ProviderType::CopilotCli => Box::new(CopilotCliProvider::from_config(config)),
     }
 }

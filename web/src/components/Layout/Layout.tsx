@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 import styles from './Layout.module.css';
 
 /**
@@ -10,6 +11,8 @@ import styles from './Layout.module.css';
  */
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { username, logout } = useAuth();
+  const navigate = useNavigate();
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
@@ -18,6 +21,11 @@ export function Layout() {
   const closeSidebar = useCallback(() => {
     setSidebarOpen(false);
   }, []);
+
+  const handleLogout = useCallback(() => {
+    logout();
+    navigate('/login');
+  }, [logout, navigate]);
 
   return (
     <div className={styles.layout}>
@@ -72,7 +80,58 @@ export function Layout() {
           >
             Dashboard
           </NavLink>
+          <NavLink
+            to="/sessions"
+            className={({ isActive }) =>
+              `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`
+            }
+            onClick={closeSidebar}
+          >
+            Sessions
+          </NavLink>
+          <NavLink
+            to="/tasks"
+            className={({ isActive }) =>
+              `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`
+            }
+            onClick={closeSidebar}
+          >
+            Tasks
+          </NavLink>
+          <NavLink
+            to="/memory"
+            className={({ isActive }) =>
+              `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`
+            }
+            onClick={closeSidebar}
+          >
+            Memory
+          </NavLink>
+          <NavLink
+            to="/plugins"
+            className={({ isActive }) =>
+              `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`
+            }
+            onClick={closeSidebar}
+          >
+            Plugins
+          </NavLink>
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`
+            }
+            onClick={closeSidebar}
+          >
+            Settings
+          </NavLink>
         </nav>
+        <div className={styles.sidebarFooter}>
+          <span className={styles.username}>{username}</span>
+          <button className={styles.logoutButton} onClick={handleLogout}>
+            Sign out
+          </button>
+        </div>
       </aside>
 
       {/* Main content area */}

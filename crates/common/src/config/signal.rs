@@ -29,6 +29,8 @@
 //! - `monitoring.metrics_enabled` — Metrics collection toggle
 //! - `monitoring.alert_rules` — Alert rule definitions
 //! - `plugins.enabled` — Plugin system toggle
+//! - `mcp.server_enabled` — MCP server toggle (enables/disables the server)
+//! - `mcp.servers` — External MCP server list (triggers reconnection)
 //!
 //! ## Require full restart:
 //! - `api.host`, `api.port` — API server bind address
@@ -37,6 +39,9 @@
 //! - `general.data_dir`, `general.log_dir` — Data directories
 //! - `llm.providers` — LLM provider configurations
 //! - `security.*` — All security settings (filesystem rules, network allowlist, resource limits)
+//! - `security.admin_username`, `security.admin_password_hash` — Admin credentials (security — require restart)
+//! - `mcp.server_transport` — MCP server transport type (requires restart)
+//! - `mcp.server_port` — MCP server port (requires restart)
 //! - TLS certificates and authentication keys
 //! - Database path and connection settings
 //!

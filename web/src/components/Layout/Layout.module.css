@@ -166,3 +166,38 @@
     padding: 2rem 3rem;
   }
 }
+
+/* Sidebar footer with user info and logout */
+.sidebarFooter {
+  margin-top: auto;
+  padding: 1rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.username {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logoutButton {
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.logoutButton:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+  border-color: var(--color-text-secondary);
+}

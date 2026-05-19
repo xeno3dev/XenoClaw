@@ -65,6 +65,7 @@ pub mod api;
 pub mod loader;
 pub mod manager;
 pub mod manifest;
+pub mod wasm_runtime;
 pub mod watcher;
 
 // Re-export primary types for convenience
@@ -72,4 +73,7 @@ pub use api::{EventHandler, EventHandlerFn, EventHandlerRegistry, PluginApi, San
 pub use loader::{PluginInfo, PluginLoadResult, PluginLoader, PluginStatus};
 pub use manager::PluginManager;
 pub use manifest::{Permission, PluginManifest, CURRENT_API_VERSION};
+pub use wasm_runtime::{
+    HostFunctions, StubWasmRuntime, WasmError, WasmModuleHandle, WasmRuntime, WasmValue,
+};
 pub use watcher::{PluginWatcher, WatcherConfig};

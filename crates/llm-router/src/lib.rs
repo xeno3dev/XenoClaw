@@ -10,6 +10,6 @@ pub mod provider;
 pub mod router;
 pub mod types;
 
-pub use provider::{create_provider, AnthropicProvider, LlmProvider, OllamaProvider, OpenAiProvider};
+pub use provider::{create_provider, AnthropicProvider, ClaudeCodeProvider, CopilotCliProvider, LlmProvider, OllamaProvider, OpenAiProvider};
 pub use router::{LlmRouter, ProviderHealth, ProviderStatus};
 pub use types::*;

@@ -81,6 +81,7 @@ async fn create_tables(pool: &SqlitePool) -> Result<(), DbError> {
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES users(id),
             mode TEXT NOT NULL DEFAULT 'general',
+            session_source TEXT,
             created_at TEXT NOT NULL,
             last_activity TEXT NOT NULL
         )",

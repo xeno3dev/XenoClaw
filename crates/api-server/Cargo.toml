@@ -21,6 +21,8 @@ tower = { workspace = true }
 tower-http = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
+bcrypt = { workspace = true }
+sqlx = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
