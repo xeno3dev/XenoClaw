@@ -104,6 +104,9 @@ pub struct AgentCoreConfig {
     pub shutdown_timeout_seconds: u64,
     /// Maximum number of messages to load as context from history.
     pub context_history_limit: usize,
+    /// System prompt to prepend to every CompletionRequest (if Some).
+    #[serde(default)]
+    pub system_prompt: Option<String>,
 }
 
 impl Default for AgentCoreConfig {
@@ -113,6 +116,7 @@ impl Default for AgentCoreConfig {
             message_timeout_seconds: 300,
             shutdown_timeout_seconds: 30,
             context_history_limit: 50,
+            system_prompt: None,
         }
     }
 }

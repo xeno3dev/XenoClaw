@@ -12,6 +12,7 @@ members = [
     "crates/tui",
     "crates/process-supervisor",
     "crates/common",
+    "crates/xenoclaw",
 ]
 resolver = "2"
 

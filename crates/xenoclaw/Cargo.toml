@@ -1,0 +1,42 @@
+[package]
+name = "xenoclaw"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "XenoClaw agent runtime — binary entry point"
+
+[[bin]]
+name = "xenoclaw"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace crates
+common = { workspace = true }
+agent-core = { workspace = true }
+llm-router = { workspace = true }
+api-server = { workspace = true }
+process-supervisor = { workspace = true }
+plugin-system = { workspace = true }
+task-scheduler = { workspace = true }
+security-layer = { workspace = true }
+memory-store = { workspace = true }
+tui = { workspace = true }
+
+# Workspace deps
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+axum = { workspace = true }
+futures = { workspace = true }
+
+# Binary-only deps
+clap = { version = "4", features = ["derive"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
