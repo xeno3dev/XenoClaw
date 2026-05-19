@@ -10,7 +10,7 @@ use anyhow::Result;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyModifiers},
-    style::{Attribute, Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor, ResetColor},
+    style::{Attribute, Color, Print, SetAttribute, SetForegroundColor, ResetColor},
     terminal::{self, Clear, ClearType},
     QueueableCommand,
 };
@@ -18,15 +18,16 @@ use crossterm::{
 use security_layer::auth::ApiKeyAuthenticator;
 
 // ─── Color Palette ───────────────────────────────────────────────────────────
-/// Headers, brand, ► cursor, ✓/✗ symbols, prompts
-const BRAND: Color = Color::Green;
-/// Body text, menu labels, values, key box contents
-const SUCCESS: Color = Color::Green;
+// Using explicit RGB to prevent terminal theme remapping (Kitty, Alacritty, etc.)
+/// Headers, brand, ► cursor, ✓/✗ symbols, prompts (bright green, bold)
+const BRAND: Color = Color::Rgb { r: 0, g: 255, b: 0 };
+/// Body text, menu labels, values, key box contents (green)
+const SUCCESS: Color = Color::Rgb { r: 0, g: 220, b: 0 };
 /// Dim/secondary text, horizontal rules, footer hints, inactive menu items
-const DIM: Color = Color::Rgb { r: 0, g: 80, b: 0 };
+const DIM: Color = Color::Rgb { r: 0, g: 120, b: 0 };
 
 const TOTAL_STEPS: u8 = 8;
-const RULE: &str = "───────────────────────────────────────────────────────";
+const RULE: &str = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
 // ─── Provider Definitions ────────────────────────────────────────────────────
 
@@ -85,6 +86,9 @@ struct WizardState {
     admin_key_raw: String,
     admin_key_hash: String,
     sandbox_commands: Vec<(String, bool)>,
+    custom_commands: String,
+    allow_all_commands: bool,
+    allow_pipes: bool,
     tool_timeout: String,
 }
 
@@ -112,9 +116,16 @@ impl Default for WizardState {
                 ("cargo".to_string(), false),
                 ("python3".to_string(), false),
                 ("npm".to_string(), false),
+                ("node".to_string(), false),
                 ("curl".to_string(), false),
                 ("wget".to_string(), false),
+                ("docker".to_string(), false),
+                ("make".to_string(), false),
+                ("ssh".to_string(), false),
             ],
+            custom_commands: String::new(),
+            allow_all_commands: false,
+            allow_pipes: false,
             tool_timeout: "30".to_string(),
         }
     }
@@ -179,7 +190,7 @@ fn print_footer(stdout: &mut io::Stdout, hint: &str) -> io::Result<()> {
 
 fn clear_screen(stdout: &mut io::Stdout) -> io::Result<()> {
     stdout
-        .queue(SetBackgroundColor(Color::Black))?
+        .queue(ResetColor)?
         .queue(Clear(ClearType::All))?
         .queue(cursor::MoveTo(0, 0))?;
     stdout.flush()
@@ -213,6 +224,80 @@ fn mask_key(key: &str) -> String {
     } else {
         let prefix = &key[..4];
         format!("{prefix}●●●●●●●●●●●●")
+    }
+}
+
+// ─── Text Input Helper ───────────────────────────────────────────────────────
+
+/// A simple text input buffer with cursor position for arrow key navigation.
+#[derive(Debug, Clone)]
+struct TextInput {
+    text: String,
+    cursor: usize,
+}
+
+impl TextInput {
+    fn new(initial: &str) -> Self {
+        let len = initial.len();
+        Self { text: initial.to_string(), cursor: len }
+    }
+
+    fn insert(&mut self, c: char) {
+        self.text.insert(self.cursor, c);
+        self.cursor += c.len_utf8();
+    }
+
+    fn backspace(&mut self) {
+        if self.cursor > 0 {
+            let prev = self.text[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.text.remove(prev);
+            self.cursor = prev;
+        }
+    }
+
+    fn delete(&mut self) {
+        if self.cursor < self.text.len() {
+            self.text.remove(self.cursor);
+        }
+    }
+
+    fn move_left(&mut self) {
+        if self.cursor > 0 {
+            self.cursor = self.text[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+        }
+    }
+
+    fn move_right(&mut self) {
+        if self.cursor < self.text.len() {
+            self.cursor += self.text[self.cursor..].chars().next().map(|c| c.len_utf8()).unwrap_or(0);
+        }
+    }
+
+    fn move_home(&mut self) {
+        self.cursor = 0;
+    }
+
+    fn move_end(&mut self) {
+        self.cursor = self.text.len();
+    }
+
+    /// Render the text with a cursor character inserted at the cursor position.
+    fn display(&self) -> String {
+        let before = &self.text[..self.cursor];
+        let after = &self.text[self.cursor..];
+        format!("{before}█{after}")
+    }
+
+    fn value(&self) -> &str {
+        &self.text
     }
 }
 
@@ -468,10 +553,14 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
 
 async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
     let p = &PROVIDERS[state.provider_idx];
-    let mut api_key = state.api_key.clone();
-    let mut base_url = state.base_url.clone();
-    let mut model = state.model.clone();
-    let mut field: u8 = 0; // 0=api_key, 1=base_url, 2=model
+    let mut inputs = [
+        TextInput::new(&state.api_key),
+        TextInput::new(&state.base_url),
+        TextInput::new(&state.model),
+    ];
+    let labels = ["API Key", "Base URL", "Model"];
+    let masked = [true, false, false];
+    let mut field: usize = 0;
 
     loop {
         let mut stdout = io::stdout();
@@ -485,29 +574,25 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(SetAttribute(Attribute::Reset))?
             .queue(ResetColor)?;
 
-        let fields: Vec<(&str, &str, bool)> = vec![
-            ("API Key", &api_key, true),
-            ("Base URL", &base_url, false),
-            ("Model", &model, false),
-        ];
-
-        for (i, (label, value, masked)) in fields.iter().enumerate() {
-            let display = if *masked && !value.is_empty() {
-                mask_key(value)
+        for (i, input) in inputs.iter().enumerate() {
+            let display = if masked[i] && !input.value().is_empty() {
+                mask_key(input.value())
+            } else if i == field {
+                input.display()
             } else {
-                value.to_string()
+                input.value().to_string()
             };
-            if i as u8 == field {
+            if i == field {
                 stdout
                     .queue(SetForegroundColor(BRAND))?
                     .queue(SetAttribute(Attribute::Bold))?
-                    .queue(Print(format!("   ► {label:<10} > {display}█\n")))?
+                    .queue(Print(format!("   ► {:<10} > {display}\n", labels[i])))?
                     .queue(SetAttribute(Attribute::Reset))?
                     .queue(ResetColor)?;
             } else {
                 stdout
                     .queue(SetForegroundColor(DIM))?
-                    .queue(Print(format!("     {label:<10} > {display}\n")))?
+                    .queue(Print(format!("     {:<10} > {display}\n", labels[i])))?
                     .queue(ResetColor)?;
             }
         }
@@ -516,43 +601,30 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
         stdout.flush()?;
         print_footer(
             &mut stdout,
-            "[Tab] Next field  [Enter] Confirm  [Esc] Back  [Ctrl-C] Quit",
+            "[Tab] Next field  [←→] Move cursor  [Enter] Confirm  [Esc] Back",
         )?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
-                KeyCode::Tab => {
-                    field = (field + 1) % 3;
-                }
-                KeyCode::BackTab => {
-                    field = if field == 0 { 2 } else { field - 1 };
-                }
+                KeyCode::Tab => { field = (field + 1) % 3; }
+                KeyCode::BackTab => { field = if field == 0 { 2 } else { field - 1 }; }
                 KeyCode::Enter => {
-                    state.api_key = api_key;
-                    state.base_url = base_url;
-                    state.model = model;
+                    state.api_key = inputs[0].value().to_string();
+                    state.base_url = inputs[1].value().to_string();
+                    state.model = inputs[2].value().to_string();
                     return Ok(StepOutcome::Next);
                 }
                 KeyCode::Esc => return Ok(StepOutcome::Back),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
                 }
-                KeyCode::Backspace => {
-                    let target = match field {
-                        0 => &mut api_key,
-                        1 => &mut base_url,
-                        _ => &mut model,
-                    };
-                    target.pop();
-                }
-                KeyCode::Char(c) => {
-                    let target = match field {
-                        0 => &mut api_key,
-                        1 => &mut base_url,
-                        _ => &mut model,
-                    };
-                    target.push(c);
-                }
+                KeyCode::Left => inputs[field].move_left(),
+                KeyCode::Right => inputs[field].move_right(),
+                KeyCode::Home => inputs[field].move_home(),
+                KeyCode::End => inputs[field].move_end(),
+                KeyCode::Backspace => inputs[field].backspace(),
+                KeyCode::Delete => inputs[field].delete(),
+                KeyCode::Char(c) => inputs[field].insert(c),
                 _ => {}
             }
         }
@@ -562,7 +634,7 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
 // ─── Step 3: Workspace ───────────────────────────────────────────────────────
 
 async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
-    let mut input = state.workspace_dir.clone();
+    let mut input = TextInput::new(&state.workspace_dir);
 
     loop {
         let mut stdout = io::stdout();
@@ -577,11 +649,11 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
         stdout
             .queue(SetForegroundColor(BRAND))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print(format!("   > {input}█\n\n")))?
+            .queue(Print(format!("   > {}\n\n", input.display())))?
             .queue(SetAttribute(Attribute::Reset))?
             .queue(ResetColor)?;
 
-        let path = Path::new(&input);
+        let path = Path::new(input.value());
         if path.exists() && path.is_dir() {
             let count = std::fs::read_dir(path)
                 .map(|d| d.count())
@@ -589,7 +661,7 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
             stdout
                 .queue(SetForegroundColor(BRAND))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   ✓  Found: {input}  ({count} files)\n")))?
+                .queue(Print(format!("   ✓  Found: {}  ({count} files)\n", input.value())))?
                 .queue(SetAttribute(Attribute::Reset))?
                 .queue(ResetColor)?;
         } else {
@@ -604,32 +676,37 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
         stdout.flush()?;
         print_footer(
             &mut stdout,
-            "[Enter] Confirm  [C] Create  [S] Skip  [Esc] Back  [Ctrl-C] Quit",
+            "[←→] Move cursor  [Enter] Confirm  [C] Create  [S] Skip  [Esc] Back",
         )?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Enter => {
-                    state.workspace_dir = input.clone();
-                    state.create_workspace = !Path::new(&input).exists();
+                    state.workspace_dir = input.value().to_string();
+                    state.create_workspace = !Path::new(input.value()).exists();
                     return Ok(StepOutcome::Next);
                 }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
                 }
-                KeyCode::Char('c') | KeyCode::Char('C') if !Path::new(&input).exists() => {
-                    state.workspace_dir = input.clone();
+                KeyCode::Char('c') | KeyCode::Char('C') if !Path::new(input.value()).exists() => {
+                    state.workspace_dir = input.value().to_string();
                     state.create_workspace = true;
                     return Ok(StepOutcome::Next);
                 }
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    state.workspace_dir = input.clone();
+                    state.workspace_dir = input.value().to_string();
                     state.create_workspace = false;
                     return Ok(StepOutcome::Next);
                 }
                 KeyCode::Esc => return Ok(StepOutcome::Back),
-                KeyCode::Backspace => { input.pop(); }
-                KeyCode::Char(c) => { input.push(c); }
+                KeyCode::Left => input.move_left(),
+                KeyCode::Right => input.move_right(),
+                KeyCode::Home => input.move_home(),
+                KeyCode::End => input.move_end(),
+                KeyCode::Backspace => input.backspace(),
+                KeyCode::Delete => input.delete(),
+                KeyCode::Char(c) => input.insert(c),
                 _ => {}
             }
         }
@@ -639,8 +716,8 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
 // ─── Step 4: Server ──────────────────────────────────────────────────────────
 
 async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
-    let mut host = state.host.clone();
-    let mut port = state.port.clone();
+    let mut host_input = TextInput::new(&state.host);
+    let mut port_input = TextInput::new(&state.port);
     let mut require_auth = state.require_auth;
     let mut field: u8 = 0; // 0=host, 1=port, 2=auth
 
@@ -649,8 +726,6 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 4)?;
 
-        let host_cursor = if field == 0 { "█" } else { "" };
-        let port_cursor = if field == 1 { "█" } else { "" };
         let auth_str = if require_auth { "Yes" } else { "No" };
 
         // Host field
@@ -658,13 +733,13 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
             stdout
                 .queue(SetForegroundColor(BRAND))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   Bind host:  > {host}{host_cursor}\n")))?
+                .queue(Print(format!("   Bind host:  > {}\n", host_input.display())))?
                 .queue(SetAttribute(Attribute::Reset))?
                 .queue(ResetColor)?;
         } else {
             stdout
                 .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("   Bind host:  > {host}\n")))?
+                .queue(Print(format!("   Bind host:  > {}\n", host_input.value())))?
                 .queue(ResetColor)?;
         }
         // Port field
@@ -672,13 +747,13 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
             stdout
                 .queue(SetForegroundColor(BRAND))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   Port:       > {port}{port_cursor}\n")))?
+                .queue(Print(format!("   Port:       > {}\n", port_input.display())))?
                 .queue(SetAttribute(Attribute::Reset))?
                 .queue(ResetColor)?;
         } else {
             stdout
                 .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("   Port:       > {port}\n")))?
+                .queue(Print(format!("   Port:       > {}\n", port_input.value())))?
                 .queue(ResetColor)?;
         }
         stdout.queue(Print("\n"))?;
@@ -700,7 +775,7 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
 
         print_footer(
             &mut stdout,
-            "[Tab] Next field  [Enter] Confirm  [Esc] Back  [Ctrl-C] Quit",
+            "[Tab] Next field  [←→] Move cursor  [Enter] Confirm  [Esc] Back",
         )?;
 
         if let Event::Key(key) = event::read()? {
@@ -708,8 +783,8 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
                 KeyCode::Tab => { field = (field + 1) % 3; }
                 KeyCode::BackTab => { field = if field == 0 { 2 } else { field - 1 }; }
                 KeyCode::Enter => {
-                    state.host = host;
-                    state.port = port;
+                    state.host = host_input.value().to_string();
+                    state.port = port_input.value().to_string();
                     state.require_auth = require_auth;
                     return Ok(StepOutcome::Next);
                 }
@@ -726,19 +801,28 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
                 KeyCode::Char(' ') if field == 2 => {
                     require_auth = !require_auth;
                 }
+                KeyCode::Left => {
+                    match field { 0 => host_input.move_left(), 1 => port_input.move_left(), _ => {} }
+                }
+                KeyCode::Right => {
+                    match field { 0 => host_input.move_right(), 1 => port_input.move_right(), _ => {} }
+                }
+                KeyCode::Home => {
+                    match field { 0 => host_input.move_home(), 1 => port_input.move_home(), _ => {} }
+                }
+                KeyCode::End => {
+                    match field { 0 => host_input.move_end(), 1 => port_input.move_end(), _ => {} }
+                }
                 KeyCode::Backspace => {
-                    match field {
-                        0 => { host.pop(); }
-                        1 => { port.pop(); }
-                        _ => {}
-                    }
+                    match field { 0 => host_input.backspace(), 1 => port_input.backspace(), _ => {} }
+                }
+                KeyCode::Delete => {
+                    match field { 0 => host_input.delete(), 1 => port_input.delete(), _ => {} }
                 }
                 KeyCode::Char(c) => {
                     match field {
-                        0 => host.push(c),
-                        1 => {
-                            if c.is_ascii_digit() { port.push(c); }
-                        }
+                        0 => host_input.insert(c),
+                        1 => { if c.is_ascii_digit() { port_input.insert(c); } }
                         _ => {}
                     }
                 }
@@ -807,24 +891,59 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
 // ─── Step 6: Sandbox ─────────────────────────────────────────────────────────
 
 async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
+    // Menu items: allow_all, individual commands, allow_pipes, custom input, timeout
+    // Total selectable rows = 2 (allow_all, allow_pipes) + commands.len() + 1 (custom) + 1 (timeout)
     let mut selected: usize = 0;
-    let mut in_timeout = false;
+    let mut custom_input = TextInput::new(&state.custom_commands);
+    let mut timeout_input = TextInput::new(&state.tool_timeout);
+    let mut editing_custom = false;
+    let mut editing_timeout = false;
 
     loop {
+        let cmd_count = state.sandbox_commands.len();
+        // Layout: 0=allow_all, 1..=cmd_count=commands, cmd_count+1=allow_pipes, cmd_count+2=custom, cmd_count+3=timeout
+        let row_allow_all = 0;
+        let row_pipes = cmd_count + 1;
+        let row_custom = cmd_count + 2;
+        let row_timeout = cmd_count + 3;
+        let total_rows = cmd_count + 4;
+
         let mut stdout = io::stdout();
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 6)?;
 
         stdout
-            .queue(SetForegroundColor(SUCCESS))?
-            .queue(Print("   Allowed shell command prefixes:\n"))?
+            .queue(SetForegroundColor(BRAND))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Shell Sandbox Configuration\n"))?
+            .queue(SetAttribute(Attribute::Reset))?
             .queue(SetForegroundColor(DIM))?
-            .queue(Print("   (Space to toggle)\n\n"))?
+            .queue(Print("   (Space to toggle, supports wildcards: git*, python*)\n\n"))?
             .queue(ResetColor)?;
 
+        // Allow all commands toggle
+        let all_check = if state.allow_all_commands { "✓" } else { " " };
+        if selected == row_allow_all {
+            stdout
+                .queue(SetForegroundColor(BRAND))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(Print(format!("   ► [{all_check}] * (allow ALL commands)\n")))?
+                .queue(SetAttribute(Attribute::Reset))?
+                .queue(ResetColor)?;
+        } else {
+            stdout
+                .queue(SetForegroundColor(DIM))?
+                .queue(Print(format!("     [{all_check}] * (allow ALL commands)\n")))?
+                .queue(ResetColor)?;
+        }
+
+        stdout.queue(Print("\n"))?;
+
+        // Individual commands
         for (i, (cmd, enabled)) in state.sandbox_commands.iter().enumerate() {
-            let check = if *enabled { "✓" } else { " " };
-            if !in_timeout && i == selected {
+            let check = if *enabled || state.allow_all_commands { "✓" } else { " " };
+            let row = i + 1;
+            if selected == row && !editing_custom && !editing_timeout {
                 stdout
                     .queue(SetForegroundColor(BRAND))?
                     .queue(SetAttribute(Attribute::Bold))?
@@ -832,8 +951,9 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                     .queue(SetAttribute(Attribute::Reset))?
                     .queue(ResetColor)?;
             } else {
+                let color = if state.allow_all_commands { SUCCESS } else { DIM };
                 stdout
-                    .queue(SetForegroundColor(DIM))?
+                    .queue(SetForegroundColor(color))?
                     .queue(Print(format!("     [{check}] {cmd}\n")))?
                     .queue(ResetColor)?;
             }
@@ -841,52 +961,132 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
 
         stdout.queue(Print("\n"))?;
 
-        let timeout_cursor = if in_timeout { "█" } else { "" };
-        if in_timeout {
+        // Allow pipes toggle
+        let pipe_check = if state.allow_pipes { "✓" } else { " " };
+        if selected == row_pipes {
             stdout
                 .queue(SetForegroundColor(BRAND))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!(
-                    "   ► Tool timeout:  > {}{timeout_cursor}  seconds\n",
-                    state.tool_timeout
-                )))?
+                .queue(Print(format!("   ► [{pipe_check}] Allow pipes & operators (|, &&, ||, ;, >)\n")))?
                 .queue(SetAttribute(Attribute::Reset))?
                 .queue(ResetColor)?;
         } else {
             stdout
                 .queue(SetForegroundColor(DIM))?
-                .queue(Print(format!(
-                    "     Tool timeout:  > {}  seconds\n",
-                    state.tool_timeout
-                )))?
+                .queue(Print(format!("     [{pipe_check}] Allow pipes & operators (|, &&, ||, ;, >)\n")))?
+                .queue(ResetColor)?;
+        }
+
+        stdout.queue(Print("\n"))?;
+
+        // Custom commands input
+        if selected == row_custom || editing_custom {
+            stdout
+                .queue(SetForegroundColor(BRAND))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(Print("   ► Custom commands (comma-separated, wildcards ok):\n"))?
+                .queue(SetAttribute(Attribute::Reset))?
+                .queue(SetForegroundColor(SUCCESS))?
+                .queue(Print(format!("     > {}\n", custom_input.display())))?
+                .queue(ResetColor)?;
+        } else {
+            stdout
+                .queue(SetForegroundColor(DIM))?
+                .queue(Print("     Custom commands (comma-separated, wildcards ok):\n"))?;
+            if custom_input.value().is_empty() {
+                stdout.queue(Print("     > (none)\n"))?;
+            } else {
+                stdout.queue(Print(format!("     > {}\n", custom_input.value())))?;
+            }
+            stdout.queue(ResetColor)?;
+        }
+
+        stdout.queue(Print("\n"))?;
+
+        // Timeout
+        if selected == row_timeout || editing_timeout {
+            stdout
+                .queue(SetForegroundColor(BRAND))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(Print(format!("   ► Tool timeout:  > {}  seconds\n", timeout_input.display())))?
+                .queue(SetAttribute(Attribute::Reset))?
+                .queue(ResetColor)?;
+        } else {
+            stdout
+                .queue(SetForegroundColor(DIM))?
+                .queue(Print(format!("     Tool timeout:  > {}  seconds\n", timeout_input.value())))?
                 .queue(ResetColor)?;
         }
 
         stdout.flush()?;
         print_footer(
             &mut stdout,
-            "[↑↓] Navigate  [Space] Toggle  [Tab] To timeout  [Enter] Next  [Esc] Back",
+            "[↑↓] Navigate  [Space] Toggle  [Enter] Next  [Esc] Back",
         )?;
 
         if let Event::Key(key) = event::read()? {
+            // If editing a text field, handle text input keys
+            if editing_custom {
+                match key.code {
+                    KeyCode::Left => custom_input.move_left(),
+                    KeyCode::Right => custom_input.move_right(),
+                    KeyCode::Home => custom_input.move_home(),
+                    KeyCode::End => custom_input.move_end(),
+                    KeyCode::Backspace => custom_input.backspace(),
+                    KeyCode::Delete => custom_input.delete(),
+                    KeyCode::Enter | KeyCode::Tab => { editing_custom = false; }
+                    KeyCode::Esc => { editing_custom = false; }
+                    KeyCode::Char(c) => custom_input.insert(c),
+                    _ => {}
+                }
+                continue;
+            }
+            if editing_timeout {
+                match key.code {
+                    KeyCode::Left => timeout_input.move_left(),
+                    KeyCode::Right => timeout_input.move_right(),
+                    KeyCode::Home => timeout_input.move_home(),
+                    KeyCode::End => timeout_input.move_end(),
+                    KeyCode::Backspace => timeout_input.backspace(),
+                    KeyCode::Delete => timeout_input.delete(),
+                    KeyCode::Enter | KeyCode::Tab => { editing_timeout = false; }
+                    KeyCode::Esc => { editing_timeout = false; }
+                    KeyCode::Char(c) if c.is_ascii_digit() => timeout_input.insert(c),
+                    _ => {}
+                }
+                continue;
+            }
+
+            // Normal navigation
             match key.code {
-                KeyCode::Tab => { in_timeout = !in_timeout; }
-                KeyCode::Up | KeyCode::Char('k') if !in_timeout => {
+                KeyCode::Up | KeyCode::Char('k') => {
                     if selected > 0 { selected -= 1; }
                 }
-                KeyCode::Down | KeyCode::Char('j') if !in_timeout => {
-                    if selected < state.sandbox_commands.len() - 1 { selected += 1; }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if selected < total_rows - 1 { selected += 1; }
                 }
-                KeyCode::Char(' ') if !in_timeout => {
-                    state.sandbox_commands[selected].1 = !state.sandbox_commands[selected].1;
+                KeyCode::Char(' ') => {
+                    if selected == row_allow_all {
+                        state.allow_all_commands = !state.allow_all_commands;
+                    } else if selected >= 1 && selected <= cmd_count {
+                        let idx = selected - 1;
+                        state.sandbox_commands[idx].1 = !state.sandbox_commands[idx].1;
+                    } else if selected == row_pipes {
+                        state.allow_pipes = !state.allow_pipes;
+                    }
                 }
-                KeyCode::Backspace if in_timeout => {
-                    state.tool_timeout.pop();
+                KeyCode::Enter => {
+                    if selected == row_custom {
+                        editing_custom = true;
+                    } else if selected == row_timeout {
+                        editing_timeout = true;
+                    } else {
+                        // Save state and advance
+                        state.custom_commands = custom_input.value().to_string();
+                        state.tool_timeout = timeout_input.value().to_string();
+                        return Ok(StepOutcome::Next);
+                    }
                 }
-                KeyCode::Char(c) if in_timeout && c.is_ascii_digit() => {
-                    state.tool_timeout.push(c);
-                }
-                KeyCode::Enter => return Ok(StepOutcome::Next),
                 KeyCode::Esc => return Ok(StepOutcome::Back),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
@@ -901,16 +1101,28 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
 
 async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutcome> {
     let p = &PROVIDERS[state.provider_idx];
-    let enabled_cmds: Vec<&str> = state
-        .sandbox_commands
-        .iter()
-        .filter(|(_, e)| *e)
-        .map(|(c, _)| c.as_str())
-        .collect();
-    let sandbox_str = if enabled_cmds.is_empty() {
-        "none".to_string()
+    let sandbox_str = if state.allow_all_commands {
+        "* (all commands)".to_string()
     } else {
-        enabled_cmds.join(", ")
+        let mut cmds: Vec<&str> = state
+            .sandbox_commands
+            .iter()
+            .filter(|(_, e)| *e)
+            .map(|(c, _)| c.as_str())
+            .collect();
+        // Add custom commands
+        if !state.custom_commands.is_empty() {
+            cmds.push(&state.custom_commands);
+        }
+        if cmds.is_empty() {
+            "none".to_string()
+        } else {
+            let mut s = cmds.join(", ");
+            if state.allow_pipes {
+                s.push_str(" (+pipes)");
+            }
+            s
+        }
     };
     let workspace_note = if state.create_workspace {
         " (will be created)"
@@ -1169,17 +1381,30 @@ async fn write_config(state: &WizardState, config_path: &Path) -> Result<()> {
     let data_dir = xenoclaw_home.join("data");
     let log_dir = xenoclaw_home.join("logs");
 
-    let enabled_cmds: Vec<&str> = state
-        .sandbox_commands
-        .iter()
-        .filter(|(_, e)| *e)
-        .map(|(c, _)| c.as_str())
-        .collect();
+    let mut all_cmds: Vec<String> = Vec::new();
+    if state.allow_all_commands {
+        all_cmds.push("*".to_string());
+    } else {
+        for (cmd, enabled) in &state.sandbox_commands {
+            if *enabled {
+                all_cmds.push(cmd.clone());
+            }
+        }
+        // Add custom commands (comma-separated)
+        if !state.custom_commands.is_empty() {
+            for cmd in state.custom_commands.split(',') {
+                let trimmed = cmd.trim();
+                if !trimmed.is_empty() {
+                    all_cmds.push(trimmed.to_string());
+                }
+            }
+        }
+    }
 
-    let command_allowlist = if enabled_cmds.is_empty() {
+    let command_allowlist = if all_cmds.is_empty() {
         String::new()
     } else {
-        let items: Vec<String> = enabled_cmds.iter().map(|c| format!("\"{}\"", c)).collect();
+        let items: Vec<String> = all_cmds.iter().map(|c| format!("\"{}\"", c)).collect();
         items.join(", ")
     };
 
@@ -1243,14 +1468,19 @@ port = {port}
     );
 
     // Append coding section if sandbox commands are enabled
-    let coding_section = if !enabled_cmds.is_empty() {
+    let coding_section = if !all_cmds.is_empty() {
+        let blocklist = if state.allow_pipes {
+            "\"rm -rf\", \"dd\""
+        } else {
+            "\"rm -rf\", \"dd\", \"|\", \"&&\", \"||\", \";\", \">\", \">>\""
+        };
         format!(
             r#"
 [coding]
 workspace_dirs       = ["{workspace}"]
 repository_dirs      = ["{workspace}"]
 command_allowlist    = [{allowlist}]
-command_blocklist    = ["rm -rf", "dd"]
+command_blocklist    = [{blocklist}]
 max_file_size_mb     = 10
 max_concurrent_shells = 5
 shell_timeout_seconds = {timeout}
@@ -1258,6 +1488,7 @@ undo_history_size    = 50
 "#,
             workspace = state.workspace_dir,
             allowlist = command_allowlist,
+            blocklist = blocklist,
             timeout = timeout,
         )
     } else {
