@@ -167,6 +167,17 @@ max_memory_mb = 512
 max_cpu_percent = 80
 ```
 
+Default location: `~/.xenoclaw/config.toml`
+
+All runtime files live under `~/.xenoclaw/`:
+```
+~/.xenoclaw/
+├── config.toml        # Configuration
+├── data/              # SQLite databases
+├── logs/              # Structured logs
+└── workspace/         # Agent workspace (SOUL.md, MEMORY.md, skills/, etc.)
+```
+
 See [`config.example.toml`](config.example.toml) for the full reference.
 
 ---

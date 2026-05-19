@@ -13,11 +13,11 @@ cargo install --path crates/xenoclaw
 Now `xenoclaw` works from anywhere:
 
 ```bash
-xenoclaw -s            # Run the setup wizard (creates config.toml in cwd)
+xenoclaw -s            # Run the setup wizard (creates ~/.xenoclaw/)
 xenoclaw               # Start the agent runtime
 ```
 
-**That's it.** The `-s` flag walks you through provider selection, API key, workspace init, server bind, and sandbox config — then offers to launch the runtime immediately.
+**That's it.** The `-s` flag walks you through provider selection, API key, workspace init, server bind, and sandbox config — then offers to launch the runtime immediately. Everything lives under `~/.xenoclaw/`.
 
 ---
 

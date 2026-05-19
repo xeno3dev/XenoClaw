@@ -8,8 +8,8 @@
 # ---------------------------------------------------------------------------
 [general]
 agent_name = "xenoclaw"
-data_dir   = "./data"
-log_dir    = "./logs"
+data_dir   = "~/.xenoclaw/data"
+log_dir    = "~/.xenoclaw/logs"
 
 # ---------------------------------------------------------------------------
 # LLM Providers (1–10 entries, ordered by priority — lowest number = first tried)

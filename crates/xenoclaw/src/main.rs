@@ -32,9 +32,9 @@ use task_scheduler::{Scheduler, SchedulerConfig};
 #[derive(Parser)]
 #[command(name = "xenoclaw", about = "XenoClaw AI agent runtime")]
 struct Cli {
-    /// Path to config.toml (default: ./config.toml)
-    #[arg(short, long, default_value = "config.toml")]
-    config: PathBuf,
+    /// Path to config.toml (default: ~/.xenoclaw/config.toml)
+    #[arg(short, long)]
+    config: Option<PathBuf>,
 
     /// Run the first-run setup wizard
     #[arg(short = 's', long = "setup")]
@@ -61,10 +61,11 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    let config_path = cli.config.unwrap_or_else(default_config_path);
 
     // Flags take priority over subcommands
     if cli.setup {
-        setup::run_wizard(&cli.config).await?;
+        setup::run_wizard(&config_path).await?;
         return Ok(());
     }
     if cli.reset_key {
@@ -72,13 +73,30 @@ async fn main() -> Result<()> {
     }
 
     match cli.command.unwrap_or(Command::Serve) {
-        Command::Serve => serve(cli.config).await,
+        Command::Serve => serve(config_path).await,
         Command::Setup => {
-            setup::run_wizard(&cli.config).await?;
+            setup::run_wizard(&config_path).await?;
             Ok(())
         }
         Command::ResetKey => reset_key(),
     }
+}
+
+/// Returns ~/.xenoclaw/config.toml
+fn default_config_path() -> PathBuf {
+    xenoclaw_home().join("config.toml")
+}
+
+/// Returns ~/.xenoclaw
+fn xenoclaw_home() -> PathBuf {
+    dirs_or_home().join(".xenoclaw")
+}
+
+/// Returns the user's home directory, falling back to /tmp if unavailable.
+fn dirs_or_home() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
 }
 
 /// Start the agent runtime.
@@ -113,11 +131,8 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     info!("XenoClaw agent runtime starting");
     info!(config_path = %config_path.display(), "Configuration loaded");
 
-    // Determine workspace directory (same directory as config file, or cwd)
-    let workspace_dir = config_path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .join("workspace");
+    // Workspace directory lives under ~/.xenoclaw/workspace
+    let workspace_dir = xenoclaw_home().join("workspace");
 
     // Build the system prompt
     let system_prompt = workspace::build_system_prompt(&workspace_dir)

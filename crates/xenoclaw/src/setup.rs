@@ -90,12 +90,17 @@ struct WizardState {
 
 impl Default for WizardState {
     fn default() -> Self {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/tmp"));
+        let workspace = home.join(".xenoclaw").join("workspace");
+
         Self {
             provider_idx: 0,
             api_key: String::new(),
             base_url: String::new(),
             model: String::new(),
-            workspace_dir: "./workspace".to_string(),
+            workspace_dir: workspace.to_string_lossy().to_string(),
             create_workspace: false,
             host: "127.0.0.1".to_string(),
             port: "3000".to_string(),
@@ -1157,6 +1162,13 @@ async fn confirm_quit() -> Result<bool> {
 async fn write_config(state: &WizardState, config_path: &Path) -> Result<()> {
     let p = &PROVIDERS[state.provider_idx];
 
+    // Resolve ~/.xenoclaw paths for data and logs
+    let xenoclaw_home = config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let data_dir = xenoclaw_home.join("data");
+    let log_dir = xenoclaw_home.join("logs");
+
     let enabled_cmds: Vec<&str> = state
         .sandbox_commands
         .iter()
@@ -1184,8 +1196,8 @@ async fn write_config(state: &WizardState, config_path: &Path) -> Result<()> {
 
 [general]
 agent_name = "xenoclaw"
-data_dir   = "./data"
-log_dir    = "./logs"
+data_dir   = "{data_dir}"
+log_dir    = "{log_dir}"
 
 [[llm.providers]]
 name          = "{provider_name}"
@@ -1226,6 +1238,8 @@ port = {port}
         model = state.model,
         host = state.host,
         port = state.port,
+        data_dir = data_dir.display(),
+        log_dir = log_dir.display(),
     );
 
     // Append coding section if sandbox commands are enabled
@@ -1252,6 +1266,15 @@ undo_history_size    = 50
 
     let full_content = format!("{toml_content}{coding_section}");
 
+    // Ensure ~/.xenoclaw/ directory exists
+    if let Some(parent) = config_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    // Create data and log directories
+    tokio::fs::create_dir_all(&data_dir).await?;
+    tokio::fs::create_dir_all(&log_dir).await?;
+
     // Write the config file
     tokio::fs::write(config_path, &full_content).await?;
 
@@ -1259,29 +1282,27 @@ undo_history_size    = 50
     common::config::load_config_from_str(&full_content)
         .map_err(|e| anyhow::anyhow!("Validation failed: {e}"))?;
 
-    // Create workspace directory if requested
-    if state.create_workspace {
-        let ws_path = PathBuf::from(&state.workspace_dir);
-        tokio::fs::create_dir_all(&ws_path).await?;
-        tokio::fs::create_dir_all(ws_path.join("memory")).await?;
-        tokio::fs::create_dir_all(ws_path.join("skills")).await?;
+    // Create workspace directory (always — it's the default location)
+    let ws_path = PathBuf::from(&state.workspace_dir);
+    tokio::fs::create_dir_all(&ws_path).await?;
+    tokio::fs::create_dir_all(ws_path.join("memory")).await?;
+    tokio::fs::create_dir_all(ws_path.join("skills")).await?;
 
-        // Create stub files
-        let stubs = [
-            ("SOUL.md", "# Soul\n\nDefine your agent's core values and ethical constraints here.\n"),
-            ("IDENTITY.md", "# Identity\n\nDefine your agent's name, persona, and tone here.\n"),
-            ("TOOLS.md", "# Tools\n\nTool catalogue will be populated automatically.\n"),
-            ("USER.md", "# User Context\n\nPersistent user context (name, projects, preferences).\n"),
-            ("MEMORY.md", "# Long-Term Memory\n\nAppend-only summary memory.\n"),
-            ("AGENTS.md", "# Known Agents\n\nOther agents and delegation instructions.\n"),
-            ("BOOTSTRAP.md", "# Bootstrap\n\nFirst-run onboarding instructions.\n\nonboarding_complete = false\n"),
-        ];
+    // Create stub files
+    let stubs = [
+        ("SOUL.md", "# Soul\n\nDefine your agent's core values and ethical constraints here.\n"),
+        ("IDENTITY.md", "# Identity\n\nDefine your agent's name, persona, and tone here.\n"),
+        ("TOOLS.md", "# Tools\n\nTool catalogue will be populated automatically.\n"),
+        ("USER.md", "# User Context\n\nPersistent user context (name, projects, preferences).\n"),
+        ("MEMORY.md", "# Long-Term Memory\n\nAppend-only summary memory.\n"),
+        ("AGENTS.md", "# Known Agents\n\nOther agents and delegation instructions.\n"),
+        ("BOOTSTRAP.md", "# Bootstrap\n\nFirst-run onboarding instructions.\n\nonboarding_complete = false\n"),
+    ];
 
-        for (name, content) in stubs {
-            let path = ws_path.join(name);
-            if !path.exists() {
-                tokio::fs::write(&path, content).await?;
-            }
+    for (name, content) in stubs {
+        let path = ws_path.join(name);
+        if !path.exists() {
+            tokio::fs::write(&path, content).await?;
         }
     }
 
