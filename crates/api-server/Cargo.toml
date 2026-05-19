@@ -1,0 +1,30 @@
+[package]
+name = "api-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "HTTP/WebSocket API server for the VPS AI Agent Platform"
+
+[dependencies]
+common = { workspace = true }
+security-layer = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+proptest = "1.4"
+http-body-util = "0.1"
+serde_json = { workspace = true }
+uuid = { workspace = true }

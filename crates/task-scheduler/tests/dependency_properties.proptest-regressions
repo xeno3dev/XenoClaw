@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a6b37f31c03e1848332353298824952cce49d3e5b849fdba0174937bb59f844d # shrinks to (ids, edges, (back_from, back_to)) = ([TaskId(c3dbebc2-fc9d-45d2-8e91-3bfe138e30f1), TaskId(23db4c79-02e4-4339-83ba-533ff425587b)], [[], [0]], (0, 1))
+cc f396db0fa38767b6ecd52d5166a4d25ab8591ba9573235e88996b124d3c90da5 # shrinks to (ids, edges) = ([TaskId(d1c3dd47-3ce5-4a8c-8386-1729a0a2326a), TaskId(850e8b88-8187-4d9a-9faa-fcf2b3a92214), TaskId(3bcd33d1-188e-40fd-87a7-dfcf9538646e), TaskId(d16938df-3930-4c18-9b64-56840a73d234), TaskId(9bea1ebe-62c4-4280-8c9f-a27f3870358d), TaskId(6d724dba-46dd-452a-a7a9-522d0037ef3a), TaskId(d654088f-a77a-45b9-af08-bb90bd17138a), TaskId(46ff24bd-a91e-4964-bcef-2d59c2860f48), TaskId(7b069a7c-153a-405c-9117-115fe6e93713), TaskId(aff679ec-1624-4c40-b955-7edd890a1d1d), TaskId(5b027a9a-bb9d-4f73-bb3f-3ff27fb8985d), TaskId(8581c246-b520-43a3-9022-e1fd10bbf975), TaskId(8b9ca366-a538-491c-ba70-b909458d21e4), TaskId(932f739e-7493-4b4a-acf9-44f7fe30cd7c)], [[], [0], [1], [2], [3], [], [4], [6], [], [7], [], [9], [11], [12]])

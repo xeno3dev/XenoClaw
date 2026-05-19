@@ -1,0 +1,389 @@
+/* Dashboard: responsive grid layout, dark theme */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 1rem;
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text, #e0e0e0);
+  margin: 0;
+}
+
+/* Error banner */
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 0.875rem;
+}
+
+.errorIcon {
+  font-size: 1rem;
+}
+
+/* Grid layout */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1200px) {
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Card base */
+.card {
+  background: var(--color-surface, #1a1a2e);
+  border: 1px solid var(--color-border, #2a2a4a);
+  border-radius: 10px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cardTitle {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-secondary, #a0a0b0);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.loading {
+  color: var(--color-text-secondary, #a0a0b0);
+  font-size: 0.875rem;
+}
+
+.emptyState {
+  color: var(--color-text-secondary, #a0a0b0);
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+/* Agent Status */
+.statusContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.statusRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.label {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary, #a0a0b0);
+}
+
+.value {
+  font-size: 0.875rem;
+  color: var(--color-text, #e0e0e0);
+  font-weight: 500;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.status_idle {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.status_working {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.status_error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+/* Resource Usage */
+.resourceContent {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.resourceItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.resourceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.resourceValue {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text, #e0e0e0);
+}
+
+.progressBar {
+  width: 100%;
+  height: 8px;
+  background: var(--color-border, #2a2a4a);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  background: var(--color-primary, #6c63ff);
+}
+
+.progressFill[data-level="medium"] {
+  background: #f59e0b;
+}
+
+.progressFill[data-level="high"] {
+  background: #ef4444;
+}
+
+/* System Health */
+.healthContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.serviceRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotHealthy {
+  background: #4ade80;
+  box-shadow: 0 0 4px rgba(74, 222, 128, 0.4);
+}
+
+.dotDegraded {
+  background: #f59e0b;
+  box-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+}
+
+.dotUnavailable {
+  background: #ef4444;
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+}
+
+.serviceName {
+  font-size: 0.875rem;
+  color: var(--color-text, #e0e0e0);
+  flex: 1;
+}
+
+.serviceStatus {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #a0a0b0);
+  text-transform: capitalize;
+}
+
+.serviceLatency {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #a0a0b0);
+  min-width: 3rem;
+  text-align: right;
+}
+
+/* Scheduled Tasks */
+.tasksList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.taskRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.625rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  gap: 0.75rem;
+}
+
+.taskInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.taskName {
+  font-size: 0.875rem;
+  color: var(--color-text, #e0e0e0);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.taskMeta {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #a0a0b0);
+}
+
+.taskStatus {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.taskStatus_active {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.taskStatus_paused {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.taskStatus_failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+/* Recent Activity */
+.activityCard {
+  grid-column: 1 / -1;
+}
+
+.activityList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.activityRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 4px;
+}
+
+.activityRow:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.activityDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.activity_task_completed {
+  background: #4ade80;
+}
+
+.activity_task_failed {
+  background: #ef4444;
+}
+
+.activity_status_change {
+  background: #60a5fa;
+}
+
+.activity_error {
+  background: #f87171;
+}
+
+.activity_info {
+  background: var(--color-text-secondary, #a0a0b0);
+}
+
+.activityMessage {
+  font-size: 0.8125rem;
+  color: var(--color-text, #e0e0e0);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activityTime {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #a0a0b0);
+  flex-shrink: 0;
+  min-width: 4rem;
+  text-align: right;
+}
+
+/* Scrollbar styling for dark theme */
+.tasksList::-webkit-scrollbar,
+.activityList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tasksList::-webkit-scrollbar-track,
+.activityList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tasksList::-webkit-scrollbar-thumb,
+.activityList::-webkit-scrollbar-thumb {
+  background: var(--color-border, #2a2a4a);
+  border-radius: 3px;
+}
+
+.tasksList::-webkit-scrollbar-thumb:hover,
+.activityList::-webkit-scrollbar-thumb:hover {
+  background: var(--color-active, #3a3a5a);
+}

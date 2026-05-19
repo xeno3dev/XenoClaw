@@ -1,0 +1,94 @@
+[workspace]
+members = [
+    "crates/agent-core",
+    "crates/llm-router",
+    "crates/task-scheduler",
+    "crates/security-layer",
+    "crates/coding-module",
+    "crates/plugin-system",
+    "crates/memory-store",
+    "crates/messaging-integration",
+    "crates/api-server",
+    "crates/tui",
+    "crates/process-supervisor",
+    "crates/common",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.75"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Unique identifiers
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging/tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Web framework
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
+# Configuration
+toml = "0.8"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Async streams
+futures = "0.3"
+async-trait = "0.1"
+pin-project-lite = "0.2"
+
+# Diff computation
+similar = "2.6"
+
+# Scheduling
+cron = "0.12"
+notify = { version = "6.1", default-features = false, features = ["macos_kqueue"] }
+
+# Cryptography
+bcrypt = "0.15"
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+
+# Metrics
+prometheus = { version = "0.13", features = ["process"] }
+lazy_static = "1.5"
+
+# Internal crates
+common = { path = "crates/common" }
+agent-core = { path = "crates/agent-core" }
+llm-router = { path = "crates/llm-router" }
+task-scheduler = { path = "crates/task-scheduler" }
+security-layer = { path = "crates/security-layer" }
+coding-module = { path = "crates/coding-module" }
+plugin-system = { path = "crates/plugin-system" }
+memory-store = { path = "crates/memory-store" }
+messaging-integration = { path = "crates/messaging-integration" }
+api-server = { path = "crates/api-server" }
+tui = { path = "crates/tui" }
+process-supervisor = { path = "crates/process-supervisor" }

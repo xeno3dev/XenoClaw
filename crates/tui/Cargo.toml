@@ -1,0 +1,24 @@
+[package]
+name = "tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Terminal user interface (Ratatui) for the VPS AI Agent Platform"
+
+[dependencies]
+common = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+# TUI framework
+ratatui = "0.28"
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Async utilities
+futures = { workspace = true }

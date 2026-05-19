@@ -1,0 +1,24 @@
+[package]
+name = "common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Shared types and utilities for the VPS AI Agent Platform"
+
+[dependencies]
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.10"
+proptest = "1.4"

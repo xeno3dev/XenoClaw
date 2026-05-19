@@ -1,0 +1,14 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0c94fbdbfdf77e849189c16b3bfd5fbcf4306cdc43c744bad40fda69eb919aec # shrinks to num_invalid = 1
+cc 6a629dfbba5600a2057c785e6177c464ff4a61c2a9744ce49fbcaa46a2a3f1f4 # shrinks to env_timeout = 108
+cc d51f73e0540559591b1becc3d967ef134bf6df2b47b32a364d9a0484d2adc0fa # shrinks to env_tasks = 1
+cc 51f1d2490fdffeb5063d3debb1d3ef7df1d669a05a3a4715d4f9b23f6aa3f6be # shrinks to env_days = 1
+cc a3949148fa56836f79d4b21dbe1c85396f8830d34ad1073fc983611a901bdfff # shrinks to env_rate = 13
+cc 62734fccd117df0e6293d967d2c628fe30d328694b705603052bdad5a49cba8a # shrinks to env_port = 1107
+cc 8acd1fcdfdaf4faa7ae9cbc669c3e909c17bd72c60cbca2778b672f895b1cfcf # shrinks to env_port = 6728
+cc 9ac8a1cedd792eda7866ed13fec451c6505f825c6a09a4884719c2756969ef14 # shrinks to env_name = "ACe0f"

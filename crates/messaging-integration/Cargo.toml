@@ -1,0 +1,29 @@
+[package]
+name = "messaging-integration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Third-party messaging platform integration (Telegram, Discord, WhatsApp) for the VPS AI Agent Platform"
+
+[dependencies]
+common = { workspace = true }
+security-layer = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+reqwest = { workspace = true, features = ["multipart"] }
+
+# Discord
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "rustls_backend", "cache"] }
+
+# Telegram
+teloxide = { version = "0.13", features = ["macros"] }
+
+[dev-dependencies]
+proptest = "1.4"

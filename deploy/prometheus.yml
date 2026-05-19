@@ -1,0 +1,18 @@
+# Prometheus configuration for XenoClaw monitoring
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape the XenoClaw agent's /metrics endpoint
+  - job_name: "xenoclaw-agent"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["agent:3000"]
+        labels:
+          service: "xenoclaw-agent"
+
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

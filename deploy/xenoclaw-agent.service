@@ -1,0 +1,45 @@
+[Unit]
+Description=XenoClaw AI Agent Platform
+Documentation=https://github.com/xeno3ra/XenoClaw
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xenoclaw
+Group=xenoclaw
+WorkingDirectory=/opt/xenoclaw
+
+# Main process
+ExecStart=/opt/xenoclaw/bin/xenoclaw-agent --config /etc/xenoclaw/config.toml
+
+# Reload configuration without restart (sends SIGHUP to the agent process)
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Auto-restart on failure (within 10 seconds as per requirement 2.7)
+Restart=on-failure
+RestartSec=5
+
+# Environment configuration
+Environment=XENOCLAW_CONFIG_PATH=/etc/xenoclaw/config.toml
+Environment=XENOCLAW_DATA_DIR=/var/lib/xenoclaw
+Environment=XENOCLAW_LOG_DIR=/var/log/xenoclaw
+Environment=RUST_LOG=info
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xenoclaw-agent
+
+# Resource limits
+LimitNOFILE=65536
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/xenoclaw /var/log/xenoclaw /tmp/xenoclaw
+
+[Install]
+WantedBy=multi-user.target

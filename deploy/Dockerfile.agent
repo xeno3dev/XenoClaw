@@ -1,0 +1,49 @@
+# XenoClaw Agent Container
+# Multi-stage Rust build for the agent core + modules
+
+# --- Builder Stage ---
+FROM rust:1.77-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy workspace manifests first for dependency caching
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
+
+# Build the release binary
+RUN cargo build --release --workspace
+
+# --- Runtime Stage ---
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    libssl3 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for running the agent
+RUN useradd -m -s /bin/bash xenoclaw
+
+# Create directories for data, config, and workspace
+RUN mkdir -p /data /config /workspace && \
+    chown -R xenoclaw:xenoclaw /data /config /workspace
+
+# Copy the built binary from the builder stage
+COPY --from=builder /app/target/release/xenoclaw-agent /usr/local/bin/xenoclaw-agent
+
+USER xenoclaw
+
+# Expose API server port
+EXPOSE 3000
+
+# Default environment variables
+ENV XENOCLAW_DATA_DIR=/data
+ENV XENOCLAW_CONFIG_DIR=/config
+ENV XENOCLAW_WORKSPACE_DIR=/workspace
+
+CMD ["xenoclaw-agent"]

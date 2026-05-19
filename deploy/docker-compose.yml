@@ -1,0 +1,85 @@
+version: "3.8"
+
+services:
+  # Nginx reverse proxy with TLS termination
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - agent
+      - web
+    networks:
+      - xenoclaw-net
+    restart: unless-stopped
+
+  # Agent core + modules
+  agent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.agent
+    ports:
+      - "3000:3000"
+    volumes:
+      - xenoclaw-data:/data
+      - xenoclaw-config:/config:ro
+      - xenoclaw-workspace:/workspace
+    environment:
+      - XENOCLAW_DATA_DIR=/data
+      - XENOCLAW_CONFIG_DIR=/config
+      - XENOCLAW_WORKSPACE_DIR=/workspace
+    networks:
+      - xenoclaw-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Web UI (static files served by Nginx)
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    networks:
+      - xenoclaw-net
+    restart: unless-stopped
+
+  # Prometheus metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - xenoclaw-net
+    restart: unless-stopped
+    depends_on:
+      - agent
+
+volumes:
+  xenoclaw-data:
+    driver: local
+    labels:
+      com.xenoclaw.description: "SQLite databases and log files"
+  xenoclaw-config:
+    driver: local
+    labels:
+      com.xenoclaw.description: "TOML configuration and API keys"
+  xenoclaw-workspace:
+    driver: local
+    labels:
+      com.xenoclaw.description: "Project files and repositories"
+  prometheus-data:
+    driver: local
+
+networks:
+  xenoclaw-net:
+    driver: bridge
+    internal: false
