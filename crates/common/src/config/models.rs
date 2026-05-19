@@ -220,6 +220,14 @@ pub struct SecurityConfig {
     /// Lockout duration in minutes after max failed attempts (default: 15).
     #[serde(default = "default_lockout_minutes")]
     pub lockout_minutes: u16,
+
+    /// Admin username for web UI login (default: "admin").
+    #[serde(default = "default_admin_username")]
+    pub admin_username: String,
+
+    /// Bcrypt hash of the admin password. Empty = password login disabled.
+    #[serde(default)]
+    pub admin_password_hash: String,
 }
 
 impl Default for SecurityConfig {
@@ -231,8 +239,14 @@ impl Default for SecurityConfig {
             session_timeout_minutes: default_session_timeout_minutes(),
             max_failed_attempts: default_max_failed_attempts(),
             lockout_minutes: default_lockout_minutes(),
+            admin_username: default_admin_username(),
+            admin_password_hash: String::new(),
         }
     }
+}
+
+fn default_admin_username() -> String {
+    "admin".to_string()
 }
 
 fn default_session_timeout_minutes() -> u32 {

@@ -83,6 +83,9 @@ struct WizardState {
     host: String,
     port: String,
     require_auth: bool,
+    admin_username: String,
+    admin_password: String,
+    admin_password_hash: String,
     admin_key_raw: String,
     admin_key_hash: String,
     sandbox_commands: Vec<(String, bool)>,
@@ -118,6 +121,9 @@ impl Default for WizardState {
             host: "127.0.0.1".to_string(),
             port: "3000".to_string(),
             require_auth: true,
+            admin_username: "admin".to_string(),
+            admin_password: String::new(),
+            admin_password_hash: String::new(),
             admin_key_raw: String::new(),
             admin_key_hash: String::new(),
             sandbox_commands: vec![
@@ -843,7 +849,7 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
     }
 }
 
-// ─── Step 5: Admin API Key ───────────────────────────────────────────────────
+// ─── Step 5: Authentication ──────────────────────────────────────────────────
 
 async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
     // Generate key if not already generated
@@ -853,15 +859,25 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
         state.admin_key_hash = auth.hash_key(&state.admin_key_raw);
     }
 
+    let mut username_input = TextInput::new(&state.admin_username);
+    let mut password_input = TextInput::new(&state.admin_password);
+    let mut field: u8 = 0; // 0=viewing key, 1=username, 2=password
+
     loop {
         let mut stdout = io::stdout();
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 5)?;
 
+        // API Key section
+        stdout
+            .queue(SetForegroundColor(BRAND))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   API Key (for programmatic access)\n"))?
+            .queue(SetAttribute(Attribute::Reset))?
+            .queue(ResetColor)?;
         stdout.queue(Print(
             "   ┌─────────────────────────────────────────────────┐\n\
-             \x20  │  ⚠  Admin API key — save this now.              │\n\
-             \x20  │     It will NOT be shown again.                 │\n\
+             \x20  │  Save this now — it will NOT be shown again.    │\n\
              \x20  │                                                 │\n"
         ))?;
         stdout
@@ -872,19 +888,83 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(Print("│\n"))?;
         stdout.queue(Print(
             "   │                                                 │\n\
-             \x20  └─────────────────────────────────────────────────┘\n\n"
+             \x20  └─────────────────────────────────────────────────┘\n"
         ))?;
+        stdout
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print("   [R] Regenerate key\n\n"))?
+            .queue(ResetColor)?;
+
+        // Web UI login section
+        stdout
+            .queue(SetForegroundColor(BRAND))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Web UI Login (username + password)\n\n"))?
+            .queue(SetAttribute(Attribute::Reset))?
+            .queue(ResetColor)?;
+
+        // Username
+        if field == 1 {
+            stdout
+                .queue(SetForegroundColor(BRAND))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(Print(format!("   ► Username:  > {}\n", username_input.display())))?
+                .queue(SetAttribute(Attribute::Reset))?
+                .queue(ResetColor)?;
+        } else {
+            stdout
+                .queue(SetForegroundColor(SUCCESS))?
+                .queue(Print(format!("     Username:  > {}\n", username_input.value())))?
+                .queue(ResetColor)?;
+        }
+
+        // Password
+        if field == 2 {
+            stdout
+                .queue(SetForegroundColor(BRAND))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(Print(format!("   ► Password:  > {}\n", password_input.display())))?
+                .queue(SetAttribute(Attribute::Reset))?
+                .queue(ResetColor)?;
+        } else {
+            let masked = if password_input.value().is_empty() {
+                "(not set — password login disabled)".to_string()
+            } else {
+                "●".repeat(password_input.value().len())
+            };
+            stdout
+                .queue(SetForegroundColor(SUCCESS))?
+                .queue(Print(format!("     Password:  > {masked}\n")))?
+                .queue(ResetColor)?;
+        }
+
+        stdout.queue(Print("\n"))?;
+        stdout
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print("   Both API key and password auth work for the web UI.\n"))?
+            .queue(Print("   Leave password empty to disable password login.\n"))?
+            .queue(ResetColor)?;
 
         stdout.flush()?;
         print_footer(
             &mut stdout,
-            "[R] Regenerate    [Enter] Accept  [Esc] Back  [Ctrl-C] Quit",
+            "[Tab] Next field  [←→] Cursor  [R] Regen key  [Enter] Accept  [Esc] Back",
         )?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
-                KeyCode::Enter => return Ok(StepOutcome::Next),
-                KeyCode::Char('r') | KeyCode::Char('R') => {
+                KeyCode::Tab => { field = (field + 1) % 3; }
+                KeyCode::BackTab => { field = if field == 0 { 2 } else { field - 1 }; }
+                KeyCode::Enter => {
+                    state.admin_username = username_input.value().to_string();
+                    state.admin_password = password_input.value().to_string();
+                    if !state.admin_password.is_empty() {
+                        // Hash the password with bcrypt
+                        state.admin_password_hash = hash_password(&state.admin_password);
+                    }
+                    return Ok(StepOutcome::Next);
+                }
+                KeyCode::Char('r') | KeyCode::Char('R') if field == 0 => {
                     let auth = ApiKeyAuthenticator::new();
                     state.admin_key_raw = format!("xc_{}", auth.generate_key(40));
                     state.admin_key_hash = auth.hash_key(&state.admin_key_raw);
@@ -893,10 +973,48 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
                 }
+                // Text input for username/password fields
+                KeyCode::Left => {
+                    match field { 1 => username_input.move_left(), 2 => password_input.move_left(), _ => {} }
+                }
+                KeyCode::Right => {
+                    match field { 1 => username_input.move_right(), 2 => password_input.move_right(), _ => {} }
+                }
+                KeyCode::Home => {
+                    match field { 1 => username_input.move_home(), 2 => password_input.move_home(), _ => {} }
+                }
+                KeyCode::End => {
+                    match field { 1 => username_input.move_end(), 2 => password_input.move_end(), _ => {} }
+                }
+                KeyCode::Backspace => {
+                    match field { 1 => username_input.backspace(), 2 => password_input.backspace(), _ => {} }
+                }
+                KeyCode::Delete => {
+                    match field { 1 => username_input.delete(), 2 => password_input.delete(), _ => {} }
+                }
+                KeyCode::Char(c) if field >= 1 => {
+                    match field { 1 => username_input.insert(c), 2 => password_input.insert(c), _ => {} }
+                }
                 _ => {}
             }
         }
     }
+}
+
+/// Hash a password using SHA-256 (for config storage).
+/// In production, bcrypt would be used, but that requires the bcrypt crate
+/// which is already a workspace dependency. For the setup wizard we store
+/// a bcrypt hash.
+fn hash_password(password: &str) -> String {
+    // Use bcrypt with default cost
+    bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap_or_else(|_| {
+        // Fallback to SHA-256 if bcrypt fails
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(password.as_bytes());
+        format!("sha256:{}", hex::encode(hasher.finalize()))
+    })
+}
 }
 
 // ─── Step 6: Sandbox ─────────────────────────────────────────────────────────
@@ -1194,6 +1312,10 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
                 "   API key:    {}  (stored as SHA-256 hash)\n",
                 mask_key(&state.admin_key_raw)
             )))?
+            .queue(Print(format!("   Login:      {}  {}\n",
+                state.admin_username,
+                if state.admin_password.is_empty() { "(password disabled)" } else { "(password set)" }
+            )))?
             .queue(Print(format!(
                 "   Workspace:  {}{}\n",
                 state.workspace_dir, workspace_note
@@ -1489,6 +1611,8 @@ max_tokens    = 4096
 session_timeout_minutes = 30
 max_failed_attempts     = 5
 lockout_minutes         = 15
+admin_username          = "{admin_username}"
+admin_password_hash     = "{admin_password_hash}"
 
 [security.resource_limits]
 max_memory_mb    = 512
@@ -1516,6 +1640,8 @@ port = {port}
         port = state.port,
         data_dir = data_dir.display(),
         log_dir = log_dir.display(),
+        admin_username = state.admin_username,
+        admin_password_hash = state.admin_password_hash,
     );
 
     // Append coding section if sandbox commands are enabled
