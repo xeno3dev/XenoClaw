@@ -42,32 +42,32 @@ struct ProviderDef {
 
 const PROVIDERS: &[ProviderDef] = &[
     ProviderDef { name: "Anthropic", provider_type: "anthropic", default_model: "claude-sonnet-4-20250514", default_base_url: "https://api.anthropic.com", needs_api_key: true },
-    ProviderDef { name: "Google Gemini", provider_type: "openai_compatible", default_model: "gemini-2.5-pro", default_base_url: "https://generativelanguage.googleapis.com/v1beta/openai", needs_api_key: true },
-    ProviderDef { name: "OpenAI", provider_type: "openai_compatible", default_model: "gpt-4o", default_base_url: "https://api.openai.com/v1", needs_api_key: true },
-    ProviderDef { name: "AWS Bedrock", provider_type: "openai_compatible", default_model: "anthropic.claude-sonnet-4-20250514-v1:0", default_base_url: "https://bedrock-runtime.us-east-1.amazonaws.com", needs_api_key: true },
-    ProviderDef { name: "OpenRouter", provider_type: "openai_compatible", default_model: "anthropic/claude-sonnet-4-20250514", default_base_url: "https://openrouter.ai/api/v1", needs_api_key: true },
-    ProviderDef { name: "Together AI", provider_type: "openai_compatible", default_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", default_base_url: "https://api.together.xyz/v1", needs_api_key: true },
-    ProviderDef { name: "Mistral AI", provider_type: "openai_compatible", default_model: "mistral-large-latest", default_base_url: "https://api.mistral.ai/v1", needs_api_key: true },
-    ProviderDef { name: "Fireworks AI", provider_type: "openai_compatible", default_model: "accounts/fireworks/models/llama-v3p3-70b-instruct", default_base_url: "https://api.fireworks.ai/inference/v1", needs_api_key: true },
-    ProviderDef { name: "DeepSeek", provider_type: "openai_compatible", default_model: "deepseek-chat", default_base_url: "https://api.deepseek.com/v1", needs_api_key: true },
-    ProviderDef { name: "Groq", provider_type: "openai_compatible", default_model: "llama-3.3-70b-versatile", default_base_url: "https://api.groq.com/openai/v1", needs_api_key: true },
-    ProviderDef { name: "xAI", provider_type: "openai_compatible", default_model: "grok-3", default_base_url: "https://api.x.ai/v1", needs_api_key: true },
-    ProviderDef { name: "Perplexity", provider_type: "openai_compatible", default_model: "sonar-pro", default_base_url: "https://api.perplexity.ai", needs_api_key: true },
-    ProviderDef { name: "Cohere", provider_type: "openai_compatible", default_model: "command-r-plus", default_base_url: "https://api.cohere.com/v2", needs_api_key: true },
-    ProviderDef { name: "AI21 Labs", provider_type: "openai_compatible", default_model: "jamba-1.5-large", default_base_url: "https://api.ai21.com/studio/v1", needs_api_key: true },
-    ProviderDef { name: "Hugging Face", provider_type: "openai_compatible", default_model: "meta-llama/Llama-3.3-70B-Instruct", default_base_url: "https://api-inference.huggingface.co/v1", needs_api_key: true },
-    ProviderDef { name: "Replicate", provider_type: "openai_compatible", default_model: "meta/llama-3.3-70b-instruct", default_base_url: "https://api.replicate.com/v1", needs_api_key: true },
-    ProviderDef { name: "Requesty", provider_type: "openai_compatible", default_model: "anthropic/claude-sonnet-4-20250514", default_base_url: "https://router.requesty.ai/v1", needs_api_key: true },
-    ProviderDef { name: "Cerebras", provider_type: "openai_compatible", default_model: "llama-3.3-70b", default_base_url: "https://api.cerebras.ai/v1", needs_api_key: true },
-    ProviderDef { name: "SambaNova", provider_type: "openai_compatible", default_model: "Meta-Llama-3.3-70B-Instruct", default_base_url: "https://api.sambanova.ai/v1", needs_api_key: true },
+    ProviderDef { name: "Google Gemini", provider_type: "open_ai_compatible", default_model: "gemini-2.5-pro", default_base_url: "https://generativelanguage.googleapis.com/v1beta/openai", needs_api_key: true },
+    ProviderDef { name: "OpenAI", provider_type: "open_ai_compatible", default_model: "gpt-4o", default_base_url: "https://api.openai.com/v1", needs_api_key: true },
+    ProviderDef { name: "AWS Bedrock", provider_type: "open_ai_compatible", default_model: "anthropic.claude-sonnet-4-20250514-v1:0", default_base_url: "https://bedrock-runtime.us-east-1.amazonaws.com", needs_api_key: true },
+    ProviderDef { name: "OpenRouter", provider_type: "open_ai_compatible", default_model: "anthropic/claude-sonnet-4-20250514", default_base_url: "https://openrouter.ai/api/v1", needs_api_key: true },
+    ProviderDef { name: "Together AI", provider_type: "open_ai_compatible", default_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", default_base_url: "https://api.together.xyz/v1", needs_api_key: true },
+    ProviderDef { name: "Mistral AI", provider_type: "open_ai_compatible", default_model: "mistral-large-latest", default_base_url: "https://api.mistral.ai/v1", needs_api_key: true },
+    ProviderDef { name: "Fireworks AI", provider_type: "open_ai_compatible", default_model: "accounts/fireworks/models/llama-v3p3-70b-instruct", default_base_url: "https://api.fireworks.ai/inference/v1", needs_api_key: true },
+    ProviderDef { name: "DeepSeek", provider_type: "open_ai_compatible", default_model: "deepseek-chat", default_base_url: "https://api.deepseek.com/v1", needs_api_key: true },
+    ProviderDef { name: "Groq", provider_type: "open_ai_compatible", default_model: "llama-3.3-70b-versatile", default_base_url: "https://api.groq.com/openai/v1", needs_api_key: true },
+    ProviderDef { name: "xAI", provider_type: "open_ai_compatible", default_model: "grok-3", default_base_url: "https://api.x.ai/v1", needs_api_key: true },
+    ProviderDef { name: "Perplexity", provider_type: "open_ai_compatible", default_model: "sonar-pro", default_base_url: "https://api.perplexity.ai", needs_api_key: true },
+    ProviderDef { name: "Cohere", provider_type: "open_ai_compatible", default_model: "command-r-plus", default_base_url: "https://api.cohere.com/v2", needs_api_key: true },
+    ProviderDef { name: "AI21 Labs", provider_type: "open_ai_compatible", default_model: "jamba-1.5-large", default_base_url: "https://api.ai21.com/studio/v1", needs_api_key: true },
+    ProviderDef { name: "Hugging Face", provider_type: "open_ai_compatible", default_model: "meta-llama/Llama-3.3-70B-Instruct", default_base_url: "https://api-inference.huggingface.co/v1", needs_api_key: true },
+    ProviderDef { name: "Replicate", provider_type: "open_ai_compatible", default_model: "meta/llama-3.3-70b-instruct", default_base_url: "https://api.replicate.com/v1", needs_api_key: true },
+    ProviderDef { name: "Requesty", provider_type: "open_ai_compatible", default_model: "anthropic/claude-sonnet-4-20250514", default_base_url: "https://router.requesty.ai/v1", needs_api_key: true },
+    ProviderDef { name: "Cerebras", provider_type: "open_ai_compatible", default_model: "llama-3.3-70b", default_base_url: "https://api.cerebras.ai/v1", needs_api_key: true },
+    ProviderDef { name: "SambaNova", provider_type: "open_ai_compatible", default_model: "Meta-Llama-3.3-70B-Instruct", default_base_url: "https://api.sambanova.ai/v1", needs_api_key: true },
     ProviderDef { name: "Ollama", provider_type: "ollama", default_model: "llama3.2", default_base_url: "http://localhost:11434", needs_api_key: false },
-    ProviderDef { name: "vLLM", provider_type: "openai_compatible", default_model: "meta-llama/Llama-3.3-70B-Instruct", default_base_url: "http://localhost:8000/v1", needs_api_key: false },
-    ProviderDef { name: "LM Studio", provider_type: "openai_compatible", default_model: "local-model", default_base_url: "http://localhost:1234/v1", needs_api_key: false },
-    ProviderDef { name: "Qwen", provider_type: "openai_compatible", default_model: "qwen-max", default_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", needs_api_key: true },
-    ProviderDef { name: "MiniMax", provider_type: "openai_compatible", default_model: "MiniMax-Text-01", default_base_url: "https://api.minimax.chat/v1", needs_api_key: true },
-    ProviderDef { name: "Zhipu AI", provider_type: "openai_compatible", default_model: "glm-4-plus", default_base_url: "https://open.bigmodel.cn/api/paas/v4", needs_api_key: true },
-    ProviderDef { name: "Moonshot AI", provider_type: "openai_compatible", default_model: "moonshot-v1-128k", default_base_url: "https://api.moonshot.cn/v1", needs_api_key: true },
-    ProviderDef { name: "Baidu Qianfan", provider_type: "openai_compatible", default_model: "ernie-4.0-8k", default_base_url: "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop", needs_api_key: true },
+    ProviderDef { name: "vLLM", provider_type: "open_ai_compatible", default_model: "meta-llama/Llama-3.3-70B-Instruct", default_base_url: "http://localhost:8000/v1", needs_api_key: false },
+    ProviderDef { name: "LM Studio", provider_type: "open_ai_compatible", default_model: "local-model", default_base_url: "http://localhost:1234/v1", needs_api_key: false },
+    ProviderDef { name: "Qwen", provider_type: "open_ai_compatible", default_model: "qwen-max", default_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", needs_api_key: true },
+    ProviderDef { name: "MiniMax", provider_type: "open_ai_compatible", default_model: "MiniMax-Text-01", default_base_url: "https://api.minimax.chat/v1", needs_api_key: true },
+    ProviderDef { name: "Zhipu AI", provider_type: "open_ai_compatible", default_model: "glm-4-plus", default_base_url: "https://open.bigmodel.cn/api/paas/v4", needs_api_key: true },
+    ProviderDef { name: "Moonshot AI", provider_type: "open_ai_compatible", default_model: "moonshot-v1-128k", default_base_url: "https://api.moonshot.cn/v1", needs_api_key: true },
+    ProviderDef { name: "Baidu Qianfan", provider_type: "open_ai_compatible", default_model: "ernie-4.0-8k", default_base_url: "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop", needs_api_key: true },
 ];
 
 // ─── Wizard State ────────────────────────────────────────────────────────────
@@ -87,9 +87,18 @@ struct WizardState {
     admin_key_hash: String,
     sandbox_commands: Vec<(String, bool)>,
     custom_commands: String,
+    excluded_commands: String,
     allow_all_commands: bool,
     allow_pipes: bool,
     tool_timeout: String,
+    timeout_unit: TimeoutUnit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TimeoutUnit {
+    Seconds,
+    Minutes,
+    Hours,
 }
 
 impl Default for WizardState {
@@ -124,9 +133,11 @@ impl Default for WizardState {
                 ("ssh".to_string(), false),
             ],
             custom_commands: String::new(),
+            excluded_commands: String::new(),
             allow_all_commands: false,
             allow_pipes: false,
             tool_timeout: "30".to_string(),
+            timeout_unit: TimeoutUnit::Seconds,
         }
     }
 }
@@ -891,22 +902,33 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
 // ─── Step 6: Sandbox ─────────────────────────────────────────────────────────
 
 async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
-    // Menu items: allow_all, individual commands, allow_pipes, custom input, timeout
-    // Total selectable rows = 2 (allow_all, allow_pipes) + commands.len() + 1 (custom) + 1 (timeout)
     let mut selected: usize = 0;
     let mut custom_input = TextInput::new(&state.custom_commands);
+    let mut exclude_input = TextInput::new(&state.excluded_commands);
     let mut timeout_input = TextInput::new(&state.tool_timeout);
-    let mut editing_custom = false;
-    let mut editing_timeout = false;
+    let mut editing: Option<usize> = None; // Which row is being text-edited
 
     loop {
         let cmd_count = state.sandbox_commands.len();
-        // Layout: 0=allow_all, 1..=cmd_count=commands, cmd_count+1=allow_pipes, cmd_count+2=custom, cmd_count+3=timeout
+        // Layout rows:
+        // 0 = allow_all
+        // 1..=cmd_count = individual commands
+        // cmd_count+1 = allow_pipes
+        // cmd_count+2 = custom commands (text)
+        // cmd_count+3 = excluded commands (text)
+        // cmd_count+4 = timeout (text + unit)
         let row_allow_all = 0;
         let row_pipes = cmd_count + 1;
         let row_custom = cmd_count + 2;
-        let row_timeout = cmd_count + 3;
-        let total_rows = cmd_count + 4;
+        let row_exclude = cmd_count + 3;
+        let row_timeout = cmd_count + 4;
+        let total_rows = cmd_count + 5;
+
+        let unit_label = match state.timeout_unit {
+            TimeoutUnit::Seconds => "seconds",
+            TimeoutUnit::Minutes => "minutes",
+            TimeoutUnit::Hours => "hours",
+        };
 
         let mut stdout = io::stdout();
         clear_screen(&mut stdout)?;
@@ -918,24 +940,12 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(Print("   Shell Sandbox Configuration\n"))?
             .queue(SetAttribute(Attribute::Reset))?
             .queue(SetForegroundColor(DIM))?
-            .queue(Print("   (Space to toggle, supports wildcards: git*, python*)\n\n"))?
+            .queue(Print("   (Space to toggle, Enter to edit text fields, Tab to cycle unit)\n\n"))?
             .queue(ResetColor)?;
 
-        // Allow all commands toggle
+        // Allow all
         let all_check = if state.allow_all_commands { "✓" } else { " " };
-        if selected == row_allow_all {
-            stdout
-                .queue(SetForegroundColor(BRAND))?
-                .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   ► [{all_check}] * (allow ALL commands)\n")))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(ResetColor)?;
-        } else {
-            stdout
-                .queue(SetForegroundColor(DIM))?
-                .queue(Print(format!("     [{all_check}] * (allow ALL commands)\n")))?
-                .queue(ResetColor)?;
-        }
+        render_toggle_row(&mut stdout, selected == row_allow_all, &format!("[{all_check}] * (allow ALL commands)"))?;
 
         stdout.queue(Print("\n"))?;
 
@@ -943,7 +953,9 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
         for (i, (cmd, enabled)) in state.sandbox_commands.iter().enumerate() {
             let check = if *enabled || state.allow_all_commands { "✓" } else { " " };
             let row = i + 1;
-            if selected == row && !editing_custom && !editing_timeout {
+            let is_active = selected == row && editing.is_none();
+            let color = if state.allow_all_commands && !is_active { SUCCESS } else { DIM };
+            if is_active {
                 stdout
                     .queue(SetForegroundColor(BRAND))?
                     .queue(SetAttribute(Attribute::Bold))?
@@ -951,7 +963,6 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                     .queue(SetAttribute(Attribute::Reset))?
                     .queue(ResetColor)?;
             } else {
-                let color = if state.allow_all_commands { SUCCESS } else { DIM };
                 stdout
                     .queue(SetForegroundColor(color))?
                     .queue(Print(format!("     [{check}] {cmd}\n")))?
@@ -961,97 +972,84 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
 
         stdout.queue(Print("\n"))?;
 
-        // Allow pipes toggle
+        // Allow pipes
         let pipe_check = if state.allow_pipes { "✓" } else { " " };
-        if selected == row_pipes {
-            stdout
-                .queue(SetForegroundColor(BRAND))?
-                .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   ► [{pipe_check}] Allow pipes & operators (|, &&, ||, ;, >)\n")))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(ResetColor)?;
-        } else {
-            stdout
-                .queue(SetForegroundColor(DIM))?
-                .queue(Print(format!("     [{pipe_check}] Allow pipes & operators (|, &&, ||, ;, >)\n")))?
-                .queue(ResetColor)?;
-        }
+        render_toggle_row(&mut stdout, selected == row_pipes, &format!("[{pipe_check}] Allow pipes & operators (|, &&, ||, ;, >)"))?;
 
         stdout.queue(Print("\n"))?;
 
-        // Custom commands input
-        if selected == row_custom || editing_custom {
-            stdout
-                .queue(SetForegroundColor(BRAND))?
-                .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print("   ► Custom commands (comma-separated, wildcards ok):\n"))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("     > {}\n", custom_input.display())))?
-                .queue(ResetColor)?;
-        } else {
-            stdout
-                .queue(SetForegroundColor(DIM))?
-                .queue(Print("     Custom commands (comma-separated, wildcards ok):\n"))?;
-            if custom_input.value().is_empty() {
-                stdout.queue(Print("     > (none)\n"))?;
-            } else {
-                stdout.queue(Print(format!("     > {}\n", custom_input.value())))?;
-            }
-            stdout.queue(ResetColor)?;
-        }
+        // Custom commands
+        let is_editing_custom = editing == Some(row_custom);
+        render_text_row(&mut stdout, selected == row_custom || is_editing_custom, "Add commands (comma-separated, wildcards: python*):", &custom_input, is_editing_custom)?;
+
+        // Excluded commands
+        let is_editing_exclude = editing == Some(row_exclude);
+        render_text_row(&mut stdout, selected == row_exclude || is_editing_exclude, "Exclude commands (comma-separated):", &exclude_input, is_editing_exclude)?;
 
         stdout.queue(Print("\n"))?;
 
-        // Timeout
-        if selected == row_timeout || editing_timeout {
+        // Timeout with unit
+        let is_editing_timeout = editing == Some(row_timeout);
+        if selected == row_timeout || is_editing_timeout {
+            let display = if is_editing_timeout { timeout_input.display() } else { timeout_input.value().to_string() };
             stdout
                 .queue(SetForegroundColor(BRAND))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   ► Tool timeout:  > {}  seconds\n", timeout_input.display())))?
+                .queue(Print(format!("   ► Timeout: > {display}  {unit_label}  [Tab to change unit]\n")))?
                 .queue(SetAttribute(Attribute::Reset))?
                 .queue(ResetColor)?;
         } else {
             stdout
                 .queue(SetForegroundColor(DIM))?
-                .queue(Print(format!("     Tool timeout:  > {}  seconds\n", timeout_input.value())))?
+                .queue(Print(format!("     Timeout: > {}  {unit_label}\n", timeout_input.value())))?
                 .queue(ResetColor)?;
         }
 
         stdout.flush()?;
-        print_footer(
-            &mut stdout,
-            "[↑↓] Navigate  [Space] Toggle  [Enter] Next  [Esc] Back",
-        )?;
+        let footer = if editing.is_some() {
+            "[←→] Cursor  [Enter/Tab] Done editing  [Esc] Cancel edit"
+        } else {
+            "[↑↓] Navigate  [Space] Toggle  [Enter] Edit/Next  [Esc] Back"
+        };
+        print_footer(&mut stdout, footer)?;
 
         if let Event::Key(key) = event::read()? {
-            // If editing a text field, handle text input keys
-            if editing_custom {
+            // Text editing mode
+            if let Some(edit_row) = editing {
+                let input = if edit_row == row_custom {
+                    &mut custom_input
+                } else if edit_row == row_exclude {
+                    &mut exclude_input
+                } else {
+                    &mut timeout_input
+                };
+                let is_timeout = edit_row == row_timeout;
+
                 match key.code {
-                    KeyCode::Left => custom_input.move_left(),
-                    KeyCode::Right => custom_input.move_right(),
-                    KeyCode::Home => custom_input.move_home(),
-                    KeyCode::End => custom_input.move_end(),
-                    KeyCode::Backspace => custom_input.backspace(),
-                    KeyCode::Delete => custom_input.delete(),
-                    KeyCode::Enter | KeyCode::Tab => { editing_custom = false; }
-                    KeyCode::Esc => { editing_custom = false; }
-                    KeyCode::Char(c) => custom_input.insert(c),
-                    _ => {}
-                }
-                continue;
-            }
-            if editing_timeout {
-                match key.code {
-                    KeyCode::Left => timeout_input.move_left(),
-                    KeyCode::Right => timeout_input.move_right(),
-                    KeyCode::Home => timeout_input.move_home(),
-                    KeyCode::End => timeout_input.move_end(),
-                    KeyCode::Backspace => timeout_input.backspace(),
-                    KeyCode::Delete => timeout_input.delete(),
-                    KeyCode::Enter | KeyCode::Tab => { editing_timeout = false; }
-                    KeyCode::Esc => { editing_timeout = false; }
-                    KeyCode::Char(c) if c.is_ascii_digit() => timeout_input.insert(c),
+                    KeyCode::Left => input.move_left(),
+                    KeyCode::Right => input.move_right(),
+                    KeyCode::Home => input.move_home(),
+                    KeyCode::End => input.move_end(),
+                    KeyCode::Backspace => input.backspace(),
+                    KeyCode::Delete => input.delete(),
+                    KeyCode::Enter => { editing = None; }
+                    KeyCode::Esc => { editing = None; }
+                    KeyCode::Tab if is_timeout => {
+                        // Cycle timeout unit
+                        state.timeout_unit = match state.timeout_unit {
+                            TimeoutUnit::Seconds => TimeoutUnit::Minutes,
+                            TimeoutUnit::Minutes => TimeoutUnit::Hours,
+                            TimeoutUnit::Hours => TimeoutUnit::Seconds,
+                        };
+                    }
+                    KeyCode::Tab => { editing = None; }
+                    KeyCode::Char(c) => {
+                        if is_timeout {
+                            if c.is_ascii_digit() { input.insert(c); }
+                        } else {
+                            input.insert(c);
+                        }
+                    }
                     _ => {}
                 }
                 continue;
@@ -1069,23 +1067,28 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                     if selected == row_allow_all {
                         state.allow_all_commands = !state.allow_all_commands;
                     } else if selected >= 1 && selected <= cmd_count {
-                        let idx = selected - 1;
-                        state.sandbox_commands[idx].1 = !state.sandbox_commands[idx].1;
+                        state.sandbox_commands[selected - 1].1 = !state.sandbox_commands[selected - 1].1;
                     } else if selected == row_pipes {
                         state.allow_pipes = !state.allow_pipes;
                     }
                 }
                 KeyCode::Enter => {
-                    if selected == row_custom {
-                        editing_custom = true;
-                    } else if selected == row_timeout {
-                        editing_timeout = true;
+                    if selected == row_custom || selected == row_exclude || selected == row_timeout {
+                        editing = Some(selected);
                     } else {
-                        // Save state and advance
+                        // Save and advance
                         state.custom_commands = custom_input.value().to_string();
+                        state.excluded_commands = exclude_input.value().to_string();
                         state.tool_timeout = timeout_input.value().to_string();
                         return Ok(StepOutcome::Next);
                     }
+                }
+                KeyCode::Tab if selected == row_timeout => {
+                    state.timeout_unit = match state.timeout_unit {
+                        TimeoutUnit::Seconds => TimeoutUnit::Minutes,
+                        TimeoutUnit::Minutes => TimeoutUnit::Hours,
+                        TimeoutUnit::Hours => TimeoutUnit::Seconds,
+                    };
                 }
                 KeyCode::Esc => return Ok(StepOutcome::Back),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1095,6 +1098,49 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             }
         }
     }
+}
+
+fn render_toggle_row(stdout: &mut io::Stdout, active: bool, label: &str) -> io::Result<()> {
+    if active {
+        stdout
+            .queue(SetForegroundColor(BRAND))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!("   ► {label}\n")))?
+            .queue(SetAttribute(Attribute::Reset))?
+            .queue(ResetColor)?;
+    } else {
+        stdout
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print(format!("     {label}\n")))?
+            .queue(ResetColor)?;
+    }
+    Ok(())
+}
+
+fn render_text_row(stdout: &mut io::Stdout, active: bool, label: &str, input: &TextInput, editing: bool) -> io::Result<()> {
+    if active {
+        stdout
+            .queue(SetForegroundColor(BRAND))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!("   ► {label}\n")))?
+            .queue(SetAttribute(Attribute::Reset))?
+            .queue(SetForegroundColor(SUCCESS))?;
+        if editing {
+            stdout.queue(Print(format!("     > {}\n", input.display())))?;
+        } else {
+            let val = if input.value().is_empty() { "(press Enter to type)" } else { input.value() };
+            stdout.queue(Print(format!("     > {val}\n")))?;
+        }
+        stdout.queue(ResetColor)?;
+    } else {
+        stdout
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print(format!("     {label}\n")))?;
+        let val = if input.value().is_empty() { "(none)" } else { input.value() };
+        stdout.queue(Print(format!("     > {val}\n")))?;
+        stdout.queue(ResetColor)?;
+    }
+    Ok(())
 }
 
 // ─── Step 7: Review ──────────────────────────────────────────────────────────
@@ -1414,7 +1460,12 @@ async fn write_config(state: &WizardState, config_path: &Path) -> Result<()> {
         "api_key       = \"\"".to_string()
     };
 
-    let timeout: u32 = state.tool_timeout.parse().unwrap_or(30);
+    let timeout_value: u32 = state.tool_timeout.parse().unwrap_or(30);
+    let timeout: u32 = match state.timeout_unit {
+        TimeoutUnit::Seconds => timeout_value,
+        TimeoutUnit::Minutes => timeout_value * 60,
+        TimeoutUnit::Hours => timeout_value * 3600,
+    };
 
     let toml_content = format!(
         r#"# XenoClaw configuration — generated by `xenoclaw setup`
@@ -1469,11 +1520,30 @@ port = {port}
 
     // Append coding section if sandbox commands are enabled
     let coding_section = if !all_cmds.is_empty() {
-        let blocklist = if state.allow_pipes {
-            "\"rm -rf\", \"dd\""
-        } else {
-            "\"rm -rf\", \"dd\", \"|\", \"&&\", \"||\", \";\", \">\", \">>\""
-        };
+        let mut blocklist_items: Vec<String> = vec![
+            "\"rm -rf\"".to_string(),
+            "\"dd\"".to_string(),
+        ];
+        if !state.allow_pipes {
+            blocklist_items.extend([
+                "\"|\"".to_string(),
+                "\"&&\"".to_string(),
+                "\"||\"".to_string(),
+                "\";\"".to_string(),
+                "\">\"".to_string(),
+                "\">>\"".to_string(),
+            ]);
+        }
+        // Add user-specified exclusions
+        if !state.excluded_commands.is_empty() {
+            for cmd in state.excluded_commands.split(',') {
+                let trimmed = cmd.trim();
+                if !trimmed.is_empty() {
+                    blocklist_items.push(format!("\"{}\"", trimmed));
+                }
+            }
+        }
+        let blocklist = blocklist_items.join(", ");
         format!(
             r#"
 [coding]
