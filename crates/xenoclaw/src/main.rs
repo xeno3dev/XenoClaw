@@ -217,7 +217,7 @@ async fn serve(config_path: PathBuf) -> Result<()> {
 
     // Spawn SIGHUP reload handler
     let shared_config = Arc::new(RwLock::new(config));
-    spawn_reload_handler(Arc::clone(&shared_config), config_path.clone());
+    spawn_reload_handler(Arc::clone(&shared_config), config_path);
 
     info!("XenoClaw agent runtime ready");
 

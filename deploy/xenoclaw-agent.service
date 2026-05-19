@@ -11,7 +11,7 @@ Group=xenoclaw
 WorkingDirectory=/opt/xenoclaw
 
 # Main process
-ExecStart=/opt/xenoclaw/bin/xenoclaw-agent --config /etc/xenoclaw/config.toml
+ExecStart=/opt/xenoclaw/bin/xenoclaw --config /etc/xenoclaw/config.toml
 
 # Reload configuration without restart (sends SIGHUP to the agent process)
 ExecReload=/bin/kill -HUP $MAINPID

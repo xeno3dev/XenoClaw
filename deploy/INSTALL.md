@@ -1,20 +1,55 @@
-# XenoClaw Bare-Metal Installation Guide
+# XenoClaw Installation Guide
 
-This guide covers installing XenoClaw as a systemd service on a bare-metal or VPS server.
+## Quick Start (Local)
 
-## Prerequisites
+```bash
+# One-liner: builds and installs to ~/.cargo/bin/
+./install.sh
+
+# Or manually:
+cargo install --path crates/xenoclaw
+```
+
+Now `xenoclaw` works from anywhere:
+
+```bash
+xenoclaw -s            # Run the setup wizard (creates config.toml in cwd)
+xenoclaw               # Start the agent runtime
+```
+
+**That's it.** The `-s` flag walks you through provider selection, API key, workspace init, server bind, and sandbox config — then offers to launch the runtime immediately.
+
+---
+
+## CLI Reference
+
+| Usage | Description |
+|-------|-------------|
+| `xenoclaw` | Start the agent runtime (default) |
+| `xenoclaw -s` / `xenoclaw --setup` | Run the interactive setup wizard |
+| `xenoclaw --reset-key` | Generate a new admin API key |
+| `xenoclaw -c /path/to/config.toml` | Use a custom config path |
+| `xenoclaw serve` | Explicit serve subcommand |
+| `xenoclaw setup` | Subcommand form of setup |
+| `xenoclaw reset-key` | Subcommand form of reset-key |
+
+---
+
+## Bare-Metal / VPS Deployment
+
+### Prerequisites
 
 - Linux system with systemd
-- Rust toolchain (for building from source) or a pre-built binary
+- Rust toolchain (≥ 1.75) or a pre-built binary
 - Network connectivity for LLM provider access
 
-## 1. Create the service user
+### 1. Create the service user
 
 ```bash
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin xenoclaw
 ```
 
-## 2. Create directories
+### 2. Create directories
 
 ```bash
 sudo mkdir -p /opt/xenoclaw/bin
@@ -26,52 +61,61 @@ sudo mkdir -p /tmp/xenoclaw
 sudo chown xenoclaw:xenoclaw /var/lib/xenoclaw /var/log/xenoclaw /tmp/xenoclaw
 ```
 
-## 3. Build and install the binary
+### 3. Build and install the binary
 
 ```bash
 # From the project root
 cargo build --release
-sudo cp target/release/xenoclaw-agent /opt/xenoclaw/bin/
-sudo chmod 755 /opt/xenoclaw/bin/xenoclaw-agent
+sudo cp target/release/xenoclaw /opt/xenoclaw/bin/
+sudo chmod 755 /opt/xenoclaw/bin/xenoclaw
 ```
 
-## 4. Install configuration
+Or install directly:
 
 ```bash
-# Copy and edit the example config
-sudo cp deploy/config.example.toml /etc/xenoclaw/config.toml
-sudo chmod 640 /etc/xenoclaw/config.toml
-sudo chown root:xenoclaw /etc/xenoclaw/config.toml
+cargo install --path crates/xenoclaw --root /opt/xenoclaw
 ```
 
-Edit `/etc/xenoclaw/config.toml` with your LLM provider keys, security settings, and other options.
+### 4. Configure
 
-## 5. Install the systemd service
+**Option A — Interactive wizard (recommended for first install):**
+
+```bash
+sudo -u xenoclaw /opt/xenoclaw/bin/xenoclaw -s -c /etc/xenoclaw/config.toml
+```
+
+**Option B — Manual config:**
+
+```bash
+sudo cp config.example.toml /etc/xenoclaw/config.toml
+sudo chmod 640 /etc/xenoclaw/config.toml
+sudo chown root:xenoclaw /etc/xenoclaw/config.toml
+# Edit with your LLM provider keys, host/port, security settings
+sudo nano /etc/xenoclaw/config.toml
+```
+
+### 5. Install the systemd service
 
 ```bash
 sudo cp deploy/xenoclaw-agent.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
-## 6. Enable and start the service
+### 6. Enable and start
 
 ```bash
-# Enable auto-start on boot
 sudo systemctl enable xenoclaw-agent
-
-# Start the service
 sudo systemctl start xenoclaw-agent
 ```
 
-## 7. Verify
+### 7. Verify
 
 ```bash
-# Check service status
 sudo systemctl status xenoclaw-agent
-
-# View logs
 sudo journalctl -u xenoclaw-agent -f
 ```
+
+---
 
 ## Service Management
 
@@ -80,51 +124,56 @@ sudo journalctl -u xenoclaw-agent -f
 | `systemctl start xenoclaw-agent` | Start the agent |
 | `systemctl stop xenoclaw-agent` | Stop the agent |
 | `systemctl restart xenoclaw-agent` | Restart the agent |
-| `systemctl reload xenoclaw-agent` | Reload configuration (SIGHUP) |
-| `journalctl -u xenoclaw-agent` | View logs |
-| `journalctl -u xenoclaw-agent --since "1 hour ago"` | Recent logs |
+| `systemctl reload xenoclaw-agent` | Hot-reload config (SIGHUP) |
+| `journalctl -u xenoclaw-agent -f` | Tail logs |
 
-## Auto-Restart Behavior
+---
 
-The service is configured with `Restart=on-failure` and `RestartSec=5`, meaning:
+## Configuration
 
-- If the agent crashes or exits with a non-zero code, systemd will restart it after 5 seconds
-- The service starts after the network is online (`After=network-online.target`)
-- Security hardening is applied via `ProtectSystem=strict` and `ProtectHome=true`
+Default location: `./config.toml` (or specify with `-c /path/to/config.toml`).
 
-## Zero-Downtime Configuration Reload
+### Key settings
 
-The agent supports hot-reloading a subset of configuration settings via SIGHUP:
+```toml
+[api]
+host = "0.0.0.0"          # Bind address (0.0.0.0 = all interfaces)
+port = 9090                # API server port
+rate_limit_per_minute = 100
+
+[web]
+host = "0.0.0.0"
+port = 8080                # Web dashboard port
+
+[monitoring]
+log_level = "info"         # debug | info | warn | error | fatal
+metrics_port = 9100        # Prometheus metrics
+```
+
+All settings can be overridden via environment variables with the `XENOCLAW_` prefix:
 
 ```bash
-# Reload configuration without restarting
-sudo systemctl reload xenoclaw-agent
+XENOCLAW_API__HOST=127.0.0.1 XENOCLAW_API__PORT=3000 xenoclaw
 ```
 
 ### Hot-Reloadable Settings (no restart needed)
 
-| Setting | Description |
-|---------|-------------|
-| `api.rate_limit_per_minute` | API rate limiting |
-| `monitoring.log_level` | Log verbosity |
-| `monitoring.log_retention_days` | Log retention period |
-| `monitoring.max_log_file_size_mb` | Log rotation threshold |
-| `monitoring.metrics_enabled` | Metrics collection toggle |
-| `monitoring.alert_rules` | Alert rule definitions |
-| `plugins.enabled` | Plugin system toggle |
+Send SIGHUP or `systemctl reload xenoclaw-agent`:
+
+- `api.rate_limit_per_minute`
+- `monitoring.log_level`, `log_retention_days`, `max_log_file_size_mb`
+- `monitoring.metrics_enabled`, `alert_rules`
+- `plugins.enabled`
 
 ### Settings Requiring Full Restart
 
-| Setting | Reason |
-|---------|--------|
-| `api.host`, `api.port` | Bound socket cannot change at runtime |
-| `web.host`, `web.port` | Bound socket cannot change at runtime |
-| `monitoring.metrics_port` | Bound socket cannot change at runtime |
-| `general.data_dir`, `general.log_dir` | Data directories are opened at startup |
-| `llm.providers` | Provider connections are established at startup |
-| `security.*` | Security rules affect active sandboxes |
-| TLS certificates | Loaded at server startup |
-| Database path | Connection opened at startup |
+- `api.host`, `api.port`, `web.host`, `web.port`, `monitoring.metrics_port`
+- `general.data_dir`, `general.log_dir`
+- `llm.providers`
+- `security.*`
+- TLS certificates, database path
+
+---
 
 ## Uninstall
 
