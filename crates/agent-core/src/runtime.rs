@@ -213,6 +213,7 @@ impl AgentCore {
         let in_flight = Arc::clone(&self.in_flight);
         let mode = Arc::clone(&self.mode);
         let max_iterations = self.config.max_tool_iterations;
+        let system_prompt = self.config.system_prompt.clone();
 
         let response_stream = async move {
             let result = Self::run_message_loop(
@@ -223,6 +224,7 @@ impl AgentCore {
                 &tool_registry,
                 &mode,
                 max_iterations,
+                system_prompt.as_deref(),
             )
             .await;
 
@@ -259,9 +261,20 @@ impl AgentCore {
         tool_registry: &Arc<RwLock<ToolRegistry>>,
         mode: &Arc<RwLock<AgentMode>>,
         max_iterations: u32,
+        system_prompt: Option<&str>,
     ) -> Result<ResponseChunk, PlatformError> {
         // Build the initial conversation from history + new message
-        let mut messages = Self::build_chat_messages(&history);
+        let mut messages = Vec::new();
+
+        // Prepend system prompt if configured
+        if let Some(prompt) = system_prompt {
+            messages.push(ChatMessage {
+                role: ChatRole::System,
+                content: prompt.to_string(),
+            });
+        }
+
+        messages.extend(Self::build_chat_messages(&history));
         messages.push(ChatMessage {
             role: ChatRole::User,
             content: user_message.content.clone(),
