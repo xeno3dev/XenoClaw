@@ -146,7 +146,7 @@ fn print_footer(stdout: &mut io::Stdout, hint: &str) -> io::Result<()> {
 
 fn clear_screen(stdout: &mut io::Stdout) -> io::Result<()> {
     stdout
-        .queue(crossterm::style::SetBackgroundColor(Color::Black))?
+        .queue(SetBackgroundColor(Color::Black))?
         .queue(Clear(ClearType::All))?
         .queue(cursor::MoveTo(0, 0))?;
     stdout.flush()
