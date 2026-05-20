@@ -1,23 +1,59 @@
 # XenoClaw Installation Guide
 
-## Quick Start (Local)
+## Quick Start (Local Dev)
 
 ```bash
-# One-liner: builds and installs to ~/.cargo/bin/
-./install.sh
-
-# Or manually:
-cargo install --path crates/xenoclaw
+./install.sh --local
 ```
 
-Now `xenoclaw` works from anywhere:
+This runs `cargo install` and puts `xenoclaw` in `~/.cargo/bin/`. Then:
 
 ```bash
 xenoclaw -s            # Run the setup wizard (creates ~/.xenoclaw/)
 xenoclaw               # Start the agent runtime
 ```
 
-**That's it.** The `-s` flag walks you through provider selection, API key, workspace init, server bind, and sandbox config — then offers to launch the runtime immediately. Everything lives under `~/.xenoclaw/`.
+---
+
+## Full Install (VPS / Bare-Metal)
+
+```bash
+sudo ./install.sh
+```
+
+This does everything:
+1. Builds the release binary
+2. Creates the `xenoclaw` service user
+3. Sets up directories (`/opt/xenoclaw`, `/etc/xenoclaw`, `/var/lib/xenoclaw`, `/var/log/xenoclaw`)
+4. Installs the binary to `/opt/xenoclaw/bin/`
+5. Copies `config.example.toml` to `/etc/xenoclaw/config.toml`
+6. Builds the Web UI (requires Node.js ≥ 18) and deploys to `/opt/xenoclaw/web/`
+7. Installs and enables the systemd service
+
+After install:
+
+```bash
+# Edit config with your LLM provider key
+sudo nano /etc/xenoclaw/config.toml
+
+# Start the agent
+sudo systemctl start xenoclaw-agent
+
+# Check it's running
+sudo systemctl status xenoclaw-agent
+sudo journalctl -u xenoclaw-agent -f
+```
+
+---
+
+## Docker
+
+```bash
+cd deploy
+docker compose up -d
+```
+
+This starts the agent, web UI, Nginx reverse proxy, and Prometheus.
 
 ---
 
@@ -26,94 +62,10 @@ xenoclaw               # Start the agent runtime
 | Usage | Description |
 |-------|-------------|
 | `xenoclaw` | Start the agent runtime (default) |
-| `xenoclaw -s` / `xenoclaw --setup` | Run the interactive setup wizard |
+| `xenoclaw -s` / `xenoclaw --setup` | Interactive setup wizard |
 | `xenoclaw --reset-key` | Generate a new admin API key |
-| `xenoclaw -c /path/to/config.toml` | Use a custom config path |
-| `xenoclaw serve` | Explicit serve subcommand |
-| `xenoclaw setup` | Subcommand form of setup |
-| `xenoclaw reset-key` | Subcommand form of reset-key |
-
----
-
-## Bare-Metal / VPS Deployment
-
-### Prerequisites
-
-- Linux system with systemd
-- Rust toolchain (≥ 1.75) or a pre-built binary
-- Network connectivity for LLM provider access
-
-### 1. Create the service user
-
-```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin xenoclaw
-```
-
-### 2. Create directories
-
-```bash
-sudo mkdir -p /opt/xenoclaw/bin
-sudo mkdir -p /etc/xenoclaw
-sudo mkdir -p /var/lib/xenoclaw
-sudo mkdir -p /var/log/xenoclaw
-sudo mkdir -p /tmp/xenoclaw
-
-sudo chown xenoclaw:xenoclaw /var/lib/xenoclaw /var/log/xenoclaw /tmp/xenoclaw
-```
-
-### 3. Build and install the binary
-
-```bash
-# From the project root
-cargo build --release
-sudo cp target/release/xenoclaw /opt/xenoclaw/bin/
-sudo chmod 755 /opt/xenoclaw/bin/xenoclaw
-```
-
-Or install directly:
-
-```bash
-cargo install --path crates/xenoclaw --root /opt/xenoclaw
-```
-
-### 4. Configure
-
-**Option A — Interactive wizard (recommended for first install):**
-
-```bash
-sudo -u xenoclaw /opt/xenoclaw/bin/xenoclaw -s -c /etc/xenoclaw/config.toml
-```
-
-**Option B — Manual config:**
-
-```bash
-sudo cp config.example.toml /etc/xenoclaw/config.toml
-sudo chmod 640 /etc/xenoclaw/config.toml
-sudo chown root:xenoclaw /etc/xenoclaw/config.toml
-# Edit with your LLM provider keys, host/port, security settings
-sudo nano /etc/xenoclaw/config.toml
-```
-
-### 5. Install the systemd service
-
-```bash
-sudo cp deploy/xenoclaw-agent.service /etc/systemd/system/
-sudo systemctl daemon-reload
-```
-
-### 6. Enable and start
-
-```bash
-sudo systemctl enable xenoclaw-agent
-sudo systemctl start xenoclaw-agent
-```
-
-### 7. Verify
-
-```bash
-sudo systemctl status xenoclaw-agent
-sudo journalctl -u xenoclaw-agent -f
-```
+| `xenoclaw -c /path/to/config.toml` | Custom config path |
+| `xenoclaw mcp` | Run as MCP server over stdio (Claude Code / Copilot) |
 
 ---
 
@@ -131,47 +83,49 @@ sudo journalctl -u xenoclaw-agent -f
 
 ## Configuration
 
-Default location: `./config.toml` (or specify with `-c /path/to/config.toml`).
+Default: `/etc/xenoclaw/config.toml` (or `~/.xenoclaw/config.toml` for local dev).
 
-### Key settings
-
-```toml
-[api]
-host = "0.0.0.0"          # Bind address (0.0.0.0 = all interfaces)
-port = 9090                # API server port
-rate_limit_per_minute = 100
-
-[web]
-host = "0.0.0.0"
-port = 8080                # Web dashboard port
-
-[monitoring]
-log_level = "info"         # debug | info | warn | error | fatal
-metrics_port = 9100        # Prometheus metrics
-```
-
-All settings can be overridden via environment variables with the `XENOCLAW_` prefix:
+Environment variable overrides use `XENOCLAW_` prefix with `__` for nesting:
 
 ```bash
-XENOCLAW_API__HOST=127.0.0.1 XENOCLAW_API__PORT=3000 xenoclaw
+XENOCLAW_API__PORT=3000 xenoclaw
 ```
 
-### Hot-Reloadable Settings (no restart needed)
-
-Send SIGHUP or `systemctl reload xenoclaw-agent`:
+### Hot-Reloadable (SIGHUP / `systemctl reload`)
 
 - `api.rate_limit_per_minute`
-- `monitoring.log_level`, `log_retention_days`, `max_log_file_size_mb`
-- `monitoring.metrics_enabled`, `alert_rules`
+- `monitoring.log_level`, `log_retention_days`, `max_log_file_size_mb`, `metrics_enabled`, `alert_rules`
 - `plugins.enabled`
+- `mcp.server_enabled`, `mcp.servers`
 
-### Settings Requiring Full Restart
+### Requires Restart
 
-- `api.host`, `api.port`, `web.host`, `web.port`, `monitoring.metrics_port`
-- `general.data_dir`, `general.log_dir`
+- Bind addresses/ports (`api.host`, `api.port`, `web.*`, `monitoring.metrics_port`)
 - `llm.providers`
 - `security.*`
-- TLS certificates, database path
+- `mcp.server_transport`, `mcp.server_port`
+- Database path, TLS certificates
+
+---
+
+## Deploy Folder
+
+Example configs for Nginx, Docker, Prometheus, and systemd are all in `deploy/`:
+
+```
+deploy/
+├── docker-compose.yml          # Full stack (agent + web + nginx + prometheus)
+├── Dockerfile.agent            # Agent container
+├── Dockerfile.web              # Web UI container (nginx + static files)
+├── nginx.conf                  # Nginx config for Docker Compose
+├── nginx-site.conf             # Nginx site config for bare-metal
+├── nginx-web.conf              # Nginx config inside the web container
+├── prometheus.yml              # Prometheus scrape config
+├── xenoclaw-agent.service      # systemd unit file
+└── INSTALL.md                  # This file
+```
+
+Adapt these to your setup. The install script handles the common case automatically.
 
 ---
 
