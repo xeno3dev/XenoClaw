@@ -222,19 +222,18 @@ fn print_footer(stdout: &mut io::Stdout, hint: &str) -> io::Result<()> {
 
 fn clear_screen(stdout: &mut io::Stdout) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
-    // Fill every cell with the background color — this is the only reliable
-    // way to get a uniform background on VNC, xterm, and terminals that
-    // don't propagate SetBackgroundColor through Clear(All).
+    // Clear first (honors BG on well-behaved terminals), then fill every cell
+    // manually as a fallback for terminals (VNC, xterm) that don't propagate
+    // SetBackgroundColor through Clear(All).
     stdout.queue(cursor::MoveTo(0, 0))?;
     stdout.queue(SetBackgroundColor(BG))?;
-    stdout.queue(SetForegroundColor(BG))?; // invisible filler text
+    stdout.queue(Clear(ClearType::All))?;
+    stdout.queue(SetBackgroundColor(BG))?;
     let blank_line = " ".repeat(cols as usize);
     for _ in 0..rows {
         stdout.queue(Print(&blank_line))?;
     }
     stdout
-        .queue(SetBackgroundColor(BG))?
-        .queue(Clear(ClearType::All))?
         .queue(cursor::MoveTo(0, 0))?
         .queue(SetBackgroundColor(BG))?;
     stdout.flush()
@@ -1587,10 +1586,12 @@ async fn confirm_quit() -> Result<bool> {
     let mut stdout = io::stdout();
     clear_screen(&mut stdout)?;
 
-    stdout.queue(SetBackgroundColor(BG))?;
-    stdout.queue(Print("\n   Quit setup? Config has not been written.\n\n"))?;
-    stdout.queue(SetBackgroundColor(BG))?;
-    stdout.queue(Print("   [Enter] Quit    [Esc] Cancel\n"))?;
+    stdout
+        .queue(SetForegroundColor(SUCCESS))?
+        .queue(SetBackgroundColor(BG))?
+        .queue(Print("\n   Quit setup? Config has not been written.\n\n"))?
+        .queue(SetBackgroundColor(BG))?
+        .queue(Print("   [Enter] Quit    [Esc] Cancel\n"))?;
     stdout.flush()?;
 
     loop {
