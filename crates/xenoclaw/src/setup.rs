@@ -199,10 +199,10 @@ fn print_banner(stdout: &mut io::Stdout) -> io::Result<()> {
     stdout.flush()
 }
 
-/// Background color for the wizard UI — near-black (#0a0a0a).
+/// Background color for the wizard UI — warm dark gray (#141212).
 /// We fill every cell explicitly to ensure this works on VNC, xterm, and
 /// terminals that don't honor background color on Clear(All).
-const BG: Color = Color::Rgb { r: 10, g: 10, b: 10 };
+const BG: Color = Color::Rgb { r: 20, g: 18, b: 18 };
 
 fn print_footer(stdout: &mut io::Stdout, hint: &str) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
@@ -238,6 +238,23 @@ fn clear_screen(stdout: &mut io::Stdout) -> io::Result<()> {
         .queue(cursor::MoveTo(0, 0))?
         .queue(SetBackgroundColor(BG))?;
     stdout.flush()
+}
+
+/// Fill all rows from the current cursor row up to rows-2 with BG-colored
+/// blank spaces, so the background is uniform even when content doesn't
+/// reach the bottom of the terminal.
+fn fill_remaining(stdout: &mut io::Stdout) -> io::Result<()> {
+    let (cols, rows) = terminal::size()?;
+    let (_, cur_row) = cursor::position()?;
+    stdout.queue(SetBackgroundColor(BG))?;
+    stdout.queue(SetForegroundColor(BG))?;
+    let blank = " ".repeat(cols as usize);
+    for row in cur_row..rows.saturating_sub(1) {
+        stdout.queue(cursor::MoveTo(0, row))?;
+        stdout.queue(Print(&blank))?;
+    }
+    stdout.queue(cursor::MoveTo(0, cur_row))?;
+    Ok(())
 }
 
 fn print_success(stdout: &mut io::Stdout, msg: &str) -> io::Result<()> {
@@ -490,6 +507,7 @@ async fn step_welcome(_state: &WizardState) -> Result<StepOutcome> {
         .queue(SetBackgroundColor(BG))?;
 
     stdout.queue(Print("\n"))?;
+    fill_remaining(&mut stdout)?;
     stdout.flush()?;
 
     print_footer(&mut stdout, "[Enter] Begin setup  [Esc] Cancel")?;
@@ -569,6 +587,7 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetBackgroundColor(BG))?;
         }
 
+        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -657,6 +676,7 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
         }
 
         stdout.queue(Print("\n"))?;
+        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -732,6 +752,7 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetBackgroundColor(BG))?;
         }
 
+        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -845,6 +866,7 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(Print(format!("     Require authentication?  [{auth_str}]\n")))?
                 .queue(SetBackgroundColor(BG))?;
         }
+        fill_remaining(&mut stdout)?;
         stdout.flush()?;
 
         print_footer(
@@ -1004,6 +1026,7 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(Print("   Leave password empty to disable password login.\n"))?
             .queue(SetBackgroundColor(BG))?;
 
+        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -1182,6 +1205,7 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetBackgroundColor(BG))?;
         }
 
+        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         let footer = if editing.is_some() {
             "[←→] Cursor  [Enter/Tab] Done editing  [Esc] Cancel edit"
@@ -1401,6 +1425,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
             .queue(Print("\n   Write config.toml?\n"))?
             .queue(SetAttribute(Attribute::Reset))?
             .queue(SetBackgroundColor(BG))?;
+        fill_remaining(&mut stdout)?;
         stdout.flush()?;
 
         print_footer(
@@ -1418,6 +1443,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
                             let mut stdout = io::stdout();
                             print_error(&mut stdout, &format!("Failed to write config: {e}"))?;
                             stdout.queue(Print("   Press any key to try again...\n"))?;
+                            fill_remaining(&mut stdout)?;
                             stdout.flush()?;
                             event::read()?;
                         }
@@ -1508,6 +1534,7 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
             }
         }
 
+        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -1593,6 +1620,7 @@ async fn confirm_quit() -> Result<bool> {
     stdout.queue(Print("\n   Quit setup? Config has not been written.\n\n"))?;
     stdout.queue(SetBackgroundColor(BG))?;
     stdout.queue(Print("   [Enter] Quit    [Esc] Cancel\n"))?;
+    fill_remaining(&mut stdout)?;
     stdout.flush()?;
 
     loop {
