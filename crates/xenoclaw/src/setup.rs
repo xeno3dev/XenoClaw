@@ -199,10 +199,12 @@ fn print_banner(stdout: &mut io::Stdout) -> io::Result<()> {
     stdout.flush()
 }
 
-/// Background color for the wizard UI — near-black (#0a0a0a).
+/// Background color for the wizard UI — near-black (ANSI 256 grayscale ramp).
+/// Uses ANSI 256-color (index 232) instead of true-color RGB because SSH
+/// connections commonly strip 24-bit color sequences, leaving default bg.
 /// We fill every cell explicitly to ensure this works on VNC, xterm, and
 /// terminals that don't honor background color on Clear(All).
-const BG: Color = Color::Rgb { r: 10, g: 10, b: 10 };
+const BG: Color = Color::AnsiValue(232);
 
 fn print_footer(stdout: &mut io::Stdout, hint: &str) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
