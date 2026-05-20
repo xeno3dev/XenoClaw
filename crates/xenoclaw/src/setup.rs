@@ -10,7 +10,7 @@ use anyhow::Result;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyModifiers},
-    style::{Attribute, Color, Print, SetAttribute, SetForegroundColor, ResetColor},
+    style::{Attribute, Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor, ResetColor},
     terminal::{self, Clear, ClearType},
     QueueableCommand,
 };
@@ -84,6 +84,7 @@ struct WizardState {
     create_workspace: bool,
     host: String,
     port: String,
+    web_port: String,
     require_auth: bool,
     admin_username: String,
     admin_password: String,
@@ -121,7 +122,8 @@ impl Default for WizardState {
             workspace_dir: workspace.to_string_lossy().to_string(),
             create_workspace: false,
             host: "127.0.0.1".to_string(),
-            port: "3000".to_string(),
+            port: "9090".to_string(),
+            web_port: "8080".to_string(),
             require_auth: true,
             admin_username: "admin".to_string(),
             admin_password: String::new(),
@@ -161,6 +163,7 @@ const BANNER: &str = r#"██╗  ██╗███████╗███╗
 
 fn print_header(stdout: &mut io::Stdout, step: u8) -> io::Result<()> {
     stdout
+        .queue(SetBackgroundColor(BG))?
         .queue(SetForegroundColor(BRAND))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("XenoClaw"))?
@@ -168,71 +171,93 @@ fn print_header(stdout: &mut io::Stdout, step: u8) -> io::Result<()> {
         .queue(Print("Init"))?
         .queue(Print(format!("  {} of {}", step, TOTAL_STEPS)))?
         .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetBackgroundColor(BG))?
         .queue(Print("\n"))?
         .queue(SetForegroundColor(DIM))?
         .queue(Print(RULE))?
-        .queue(ResetColor)?
         .queue(Print("\n\n"))?;
     stdout.flush()
 }
 
 fn print_banner(stdout: &mut io::Stdout) -> io::Result<()> {
+    stdout.queue(SetBackgroundColor(BG))?;
     stdout.queue(SetForegroundColor(BRAND))?;
     stdout.queue(SetAttribute(Attribute::Bold))?;
     for line in BANNER.lines() {
         stdout.queue(Print(format!("  {line}\n")))?;
     }
     stdout.queue(SetAttribute(Attribute::Reset))?;
-    stdout.queue(ResetColor)?;
+    stdout.queue(SetBackgroundColor(BG))?;
     stdout.queue(Print("\n"))?;
     stdout
         .queue(SetForegroundColor(SUCCESS))?
-        .queue(Print("                    Agent Runtime\n"))?
-        .queue(ResetColor)?;
+        .queue(Print("                    Agent Runtime\n"))?;
     stdout.queue(Print("\n"))?;
     stdout
         .queue(SetForegroundColor(DIM))?
-        .queue(Print(format!("  {RULE}\n")))?
-        .queue(ResetColor)?;
+        .queue(Print(format!("  {RULE}\n")))?;
     stdout.flush()
 }
 
+/// Background color for the wizard UI — near-black (#0a0a0a).
+/// We fill every cell explicitly to ensure this works on VNC, xterm, and
+/// terminals that don't honor background color on Clear(All).
+const BG: Color = Color::Rgb { r: 10, g: 10, b: 10 };
+
 fn print_footer(stdout: &mut io::Stdout, hint: &str) -> io::Result<()> {
-    let (_, rows) = terminal::size()?;
+    let (cols, rows) = terminal::size()?;
     stdout
         .queue(cursor::MoveTo(0, rows - 1))?
         .queue(SetForegroundColor(DIM))?
-        .queue(Print(hint))?
-        .queue(ResetColor)?;
+        .queue(SetBackgroundColor(BG))?
+        .queue(Print(hint))?;
+    // Fill the rest of the footer line with background
+    let remaining = cols as usize - hint.len().min(cols as usize);
+    if remaining > 0 {
+        stdout.queue(Print(" ".repeat(remaining)))?;
+    }
+    stdout.queue(SetBackgroundColor(BG))?;
     stdout.flush()
 }
 
 fn clear_screen(stdout: &mut io::Stdout) -> io::Result<()> {
+    let (cols, rows) = terminal::size()?;
+    // Fill every cell with the background color — this is the only reliable
+    // way to get a uniform background on VNC, xterm, and terminals that
+    // don't propagate SetBackgroundColor through Clear(All).
+    stdout.queue(cursor::MoveTo(0, 0))?;
+    stdout.queue(SetBackgroundColor(BG))?;
+    stdout.queue(SetForegroundColor(BG))?; // invisible filler text
+    let blank_line = " ".repeat(cols as usize);
+    for _ in 0..rows {
+        stdout.queue(Print(&blank_line))?;
+    }
     stdout
-        .queue(ResetColor)?
-        .queue(Clear(ClearType::All))?
-        .queue(cursor::MoveTo(0, 0))?;
+        .queue(cursor::MoveTo(0, 0))?
+        .queue(SetBackgroundColor(BG))?;
     stdout.flush()
 }
 
 fn print_success(stdout: &mut io::Stdout, msg: &str) -> io::Result<()> {
     stdout
+        .queue(SetBackgroundColor(BG))?
         .queue(SetForegroundColor(BRAND))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print(format!("✓ {msg}")))?
         .queue(SetAttribute(Attribute::Reset))?
-        .queue(ResetColor)?
+        .queue(SetBackgroundColor(BG))?
         .queue(Print("\n"))?;
     stdout.flush()
 }
 
 fn print_error(stdout: &mut io::Stdout, msg: &str) -> io::Result<()> {
     stdout
+        .queue(SetBackgroundColor(BG))?
         .queue(SetForegroundColor(BRAND))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print(format!("✗ {msg}")))?
         .queue(SetAttribute(Attribute::Reset))?
-        .queue(ResetColor)?
+        .queue(SetBackgroundColor(BG))?
         .queue(Print("\n"))?;
     stdout.flush()
 }
@@ -347,6 +372,13 @@ pub async fn run_wizard(config_path: &Path) -> Result<()> {
     let result = run_wizard_inner(config_path).await;
     terminal::disable_raw_mode()?;
 
+    // Reset terminal colors back to defaults before returning to shell
+    let mut stdout = io::stdout();
+    stdout.queue(ResetColor)?;
+    stdout.queue(Clear(ClearType::All))?;
+    stdout.queue(cursor::MoveTo(0, 0))?;
+    stdout.flush()?;
+
     // Print a newline so the shell prompt starts clean
     println!();
     result
@@ -441,13 +473,13 @@ async fn step_welcome(_state: &WizardState) -> Result<StepOutcome> {
         .queue(SetAttribute(Attribute::Reset))?
         .queue(SetForegroundColor(SUCCESS))?
         .queue(Print(" Always-on: auto-restart, health checks, SIGHUP hot-reload\n"))?
-        .queue(ResetColor)?;
+        .queue(SetBackgroundColor(BG))?;
 
     stdout.queue(Print("\n"))?;
     stdout
         .queue(SetForegroundColor(DIM))?
         .queue(Print("  Self-hosted. Your infrastructure. Your data. Your rules.\n"))?
-        .queue(ResetColor)?;
+        .queue(SetBackgroundColor(BG))?;
 
     stdout.queue(Print("\n"))?;
     stdout.flush()?;
@@ -485,7 +517,7 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Select your LLM provider:\n\n"))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         // Ensure selected item is visible
         if selected < scroll_offset {
@@ -507,7 +539,7 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
                         p.name, p.default_model
                     )))?
                     .queue(SetAttribute(Attribute::Reset))?
-                    .queue(ResetColor)?;
+                    .queue(SetBackgroundColor(BG))?;
             } else {
                 stdout
                     .queue(SetForegroundColor(DIM))?
@@ -515,7 +547,7 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
                         "     [{num:>2}]  {:<20} {}\n",
                         p.name, p.default_model
                     )))?
-                    .queue(ResetColor)?;
+                    .queue(SetBackgroundColor(BG))?;
             }
         }
 
@@ -526,7 +558,7 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
                     "\n   ... and {} more (scroll down)\n",
                     PROVIDERS.len() - end
                 )))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         }
 
         stdout.flush()?;
@@ -591,7 +623,7 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("   Provider: {}\n\n", p.name)))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         for (i, input) in inputs.iter().enumerate() {
             let display = if masked[i] && !input.value().is_empty() {
@@ -607,12 +639,12 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
                     .queue(SetAttribute(Attribute::Bold))?
                     .queue(Print(format!("   ► {:<10} > {display}\n", labels[i])))?
                     .queue(SetAttribute(Attribute::Reset))?
-                    .queue(ResetColor)?;
+                    .queue(SetBackgroundColor(BG))?;
             } else {
                 stdout
                     .queue(SetForegroundColor(DIM))?
                     .queue(Print(format!("     {:<10} > {display}\n", labels[i])))?
-                    .queue(ResetColor)?;
+                    .queue(SetBackgroundColor(BG))?;
             }
         }
 
@@ -670,7 +702,7 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("   > {}\n\n", input.display())))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         let path = Path::new(input.value());
         if path.exists() && path.is_dir() {
@@ -682,14 +714,14 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print(format!("   ✓  Found: {}  ({count} files)\n", input.value())))?
                 .queue(SetAttribute(Attribute::Reset))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         } else {
             stdout
                 .queue(SetForegroundColor(DIM))?
                 .queue(Print("   Directory does not exist.\n"))?
                 .queue(SetForegroundColor(SUCCESS))?
                 .queue(Print("   [C] Create stub workspace    [S] Skip for now\n"))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         }
 
         stdout.flush()?;
@@ -737,8 +769,9 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
 async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
     let mut host_input = TextInput::new(&state.host);
     let mut port_input = TextInput::new(&state.port);
+    let mut web_port_input = TextInput::new(&state.web_port);
     let mut require_auth = state.require_auth;
-    let mut field: u8 = 0; // 0=host, 1=port, 2=auth
+    let mut field: u8 = 0; // 0=host, 1=api port, 2=web port, 3=auth
 
     loop {
         let mut stdout = io::stdout();
@@ -752,43 +785,57 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
             stdout
                 .queue(SetForegroundColor(BRAND))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   Bind host:  > {}\n", host_input.display())))?
+                .queue(Print(format!("   Bind host:      > {}\n", host_input.display())))?
                 .queue(SetAttribute(Attribute::Reset))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         } else {
             stdout
                 .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("   Bind host:  > {}\n", host_input.value())))?
-                .queue(ResetColor)?;
+                .queue(Print(format!("   Bind host:      > {}\n", host_input.value())))?
+                .queue(SetBackgroundColor(BG))?;
         }
-        // Port field
+        // API Port field
         if field == 1 {
             stdout
                 .queue(SetForegroundColor(BRAND))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   Port:       > {}\n", port_input.display())))?
+                .queue(Print(format!("   API port:       > {}\n", port_input.display())))?
                 .queue(SetAttribute(Attribute::Reset))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         } else {
             stdout
                 .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("   Port:       > {}\n", port_input.value())))?
-                .queue(ResetColor)?;
+                .queue(Print(format!("   API port:       > {}\n", port_input.value())))?
+                .queue(SetBackgroundColor(BG))?;
+        }
+        // Web UI Port field
+        if field == 2 {
+            stdout
+                .queue(SetForegroundColor(BRAND))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(Print(format!("   Web UI port:    > {}\n", web_port_input.display())))?
+                .queue(SetAttribute(Attribute::Reset))?
+                .queue(SetBackgroundColor(BG))?;
+        } else {
+            stdout
+                .queue(SetForegroundColor(SUCCESS))?
+                .queue(Print(format!("   Web UI port:    > {}\n", web_port_input.value())))?
+                .queue(SetBackgroundColor(BG))?;
         }
         stdout.queue(Print("\n"))?;
         // Auth toggle
-        if field == 2 {
+        if field == 3 {
             stdout
                 .queue(SetForegroundColor(BRAND))?
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print(format!("   ► Require authentication?  [{auth_str}]\n")))?
                 .queue(SetAttribute(Attribute::Reset))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         } else {
             stdout
                 .queue(SetForegroundColor(DIM))?
                 .queue(Print(format!("     Require authentication?  [{auth_str}]\n")))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         }
         stdout.flush()?;
 
@@ -799,11 +846,12 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
 
         if let Event::Key(key) = event::read()? {
             match key.code {
-                KeyCode::Tab => { field = (field + 1) % 3; }
-                KeyCode::BackTab => { field = if field == 0 { 2 } else { field - 1 }; }
+                KeyCode::Tab => { field = (field + 1) % 4; }
+                KeyCode::BackTab => { field = if field == 0 { 3 } else { field - 1 }; }
                 KeyCode::Enter => {
                     state.host = host_input.value().to_string();
                     state.port = port_input.value().to_string();
+                    state.web_port = web_port_input.value().to_string();
                     state.require_auth = require_auth;
                     return Ok(StepOutcome::Next);
                 }
@@ -811,37 +859,38 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
                 }
-                KeyCode::Char('y') | KeyCode::Char('Y') if field == 2 => {
+                KeyCode::Char('y') | KeyCode::Char('Y') if field == 3 => {
                     require_auth = true;
                 }
-                KeyCode::Char('n') | KeyCode::Char('N') if field == 2 => {
+                KeyCode::Char('n') | KeyCode::Char('N') if field == 3 => {
                     require_auth = false;
                 }
-                KeyCode::Char(' ') if field == 2 => {
+                KeyCode::Char(' ') if field == 3 => {
                     require_auth = !require_auth;
                 }
                 KeyCode::Left => {
-                    match field { 0 => host_input.move_left(), 1 => port_input.move_left(), _ => {} }
+                    match field { 0 => host_input.move_left(), 1 => port_input.move_left(), 2 => web_port_input.move_left(), _ => {} }
                 }
                 KeyCode::Right => {
-                    match field { 0 => host_input.move_right(), 1 => port_input.move_right(), _ => {} }
+                    match field { 0 => host_input.move_right(), 1 => port_input.move_right(), 2 => web_port_input.move_right(), _ => {} }
                 }
                 KeyCode::Home => {
-                    match field { 0 => host_input.move_home(), 1 => port_input.move_home(), _ => {} }
+                    match field { 0 => host_input.move_home(), 1 => port_input.move_home(), 2 => web_port_input.move_home(), _ => {} }
                 }
                 KeyCode::End => {
-                    match field { 0 => host_input.move_end(), 1 => port_input.move_end(), _ => {} }
+                    match field { 0 => host_input.move_end(), 1 => port_input.move_end(), 2 => web_port_input.move_end(), _ => {} }
                 }
                 KeyCode::Backspace => {
-                    match field { 0 => host_input.backspace(), 1 => port_input.backspace(), _ => {} }
+                    match field { 0 => host_input.backspace(), 1 => port_input.backspace(), 2 => web_port_input.backspace(), _ => {} }
                 }
                 KeyCode::Delete => {
-                    match field { 0 => host_input.delete(), 1 => port_input.delete(), _ => {} }
+                    match field { 0 => host_input.delete(), 1 => port_input.delete(), 2 => web_port_input.delete(), _ => {} }
                 }
                 KeyCode::Char(c) => {
                     match field {
                         0 => host_input.insert(c),
                         1 => { if c.is_ascii_digit() { port_input.insert(c); } }
+                        2 => { if c.is_ascii_digit() { web_port_input.insert(c); } }
                         _ => {}
                     }
                 }
@@ -876,7 +925,7 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   API Key (for programmatic access)\n"))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
         stdout.queue(Print(
             "   ┌─────────────────────────────────────────────────┐\n\
              \x20  │  Save this now — it will NOT be shown again.    │\n\
@@ -886,7 +935,7 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(Print("   │  "))?
             .queue(SetForegroundColor(SUCCESS))?
             .queue(Print(format!("{:<47}", &state.admin_key_raw)))?
-            .queue(ResetColor)?
+            .queue(SetBackgroundColor(BG))?
             .queue(Print("│\n"))?;
         stdout.queue(Print(
             "   │                                                 │\n\
@@ -895,7 +944,7 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
         stdout
             .queue(SetForegroundColor(DIM))?
             .queue(Print("   [R] Regenerate key\n\n"))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         // Web UI login section
         stdout
@@ -903,7 +952,7 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Web UI Login (username + password)\n\n"))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         // Username
         if field == 1 {
@@ -912,12 +961,12 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print(format!("   ► Username:  > {}\n", username_input.display())))?
                 .queue(SetAttribute(Attribute::Reset))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         } else {
             stdout
                 .queue(SetForegroundColor(SUCCESS))?
                 .queue(Print(format!("     Username:  > {}\n", username_input.value())))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         }
 
         // Password
@@ -927,7 +976,7 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print(format!("   ► Password:  > {}\n", password_input.display())))?
                 .queue(SetAttribute(Attribute::Reset))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         } else {
             let masked = if password_input.value().is_empty() {
                 "(not set — password login disabled)".to_string()
@@ -937,7 +986,7 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
             stdout
                 .queue(SetForegroundColor(SUCCESS))?
                 .queue(Print(format!("     Password:  > {masked}\n")))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         }
 
         stdout.queue(Print("\n"))?;
@@ -945,7 +994,7 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(SetForegroundColor(DIM))?
             .queue(Print("   Both API key and password auth work for the web UI.\n"))?
             .queue(Print("   Leave password empty to disable password login.\n"))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         stdout.flush()?;
         print_footer(
@@ -1060,7 +1109,7 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(SetAttribute(Attribute::Reset))?
             .queue(SetForegroundColor(DIM))?
             .queue(Print("   (Space to toggle, Enter to edit text fields, Tab to cycle unit)\n\n"))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         // Allow all
         let all_check = if state.allow_all_commands { "✓" } else { " " };
@@ -1080,12 +1129,12 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                     .queue(SetAttribute(Attribute::Bold))?
                     .queue(Print(format!("   ► [{check}] {cmd}\n")))?
                     .queue(SetAttribute(Attribute::Reset))?
-                    .queue(ResetColor)?;
+                    .queue(SetBackgroundColor(BG))?;
             } else {
                 stdout
                     .queue(SetForegroundColor(color))?
                     .queue(Print(format!("     [{check}] {cmd}\n")))?
-                    .queue(ResetColor)?;
+                    .queue(SetBackgroundColor(BG))?;
             }
         }
 
@@ -1116,12 +1165,12 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print(format!("   ► Timeout: > {display}  {unit_label}  [Tab to change unit]\n")))?
                 .queue(SetAttribute(Attribute::Reset))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         } else {
             stdout
                 .queue(SetForegroundColor(DIM))?
                 .queue(Print(format!("     Timeout: > {}  {unit_label}\n", timeout_input.value())))?
-                .queue(ResetColor)?;
+                .queue(SetBackgroundColor(BG))?;
         }
 
         stdout.flush()?;
@@ -1226,12 +1275,12 @@ fn render_toggle_row(stdout: &mut io::Stdout, active: bool, label: &str) -> io::
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("   ► {label}\n")))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
     } else {
         stdout
             .queue(SetForegroundColor(DIM))?
             .queue(Print(format!("     {label}\n")))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
     }
     Ok(())
 }
@@ -1250,14 +1299,14 @@ fn render_text_row(stdout: &mut io::Stdout, active: bool, label: &str, input: &T
             let val = if input.value().is_empty() { "(press Enter to type)" } else { input.value() };
             stdout.queue(Print(format!("     > {val}\n")))?;
         }
-        stdout.queue(ResetColor)?;
+        stdout.queue(SetBackgroundColor(BG))?;
     } else {
         stdout
             .queue(SetForegroundColor(DIM))?
             .queue(Print(format!("     {label}\n")))?;
         let val = if input.value().is_empty() { "(none)" } else { input.value() };
         stdout.queue(Print(format!("     > {val}\n")))?;
-        stdout.queue(ResetColor)?;
+        stdout.queue(SetBackgroundColor(BG))?;
     }
     Ok(())
 }
@@ -1327,20 +1376,20 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
             )))?
             .queue(Print(format!("   Auth:       {}\n", auth_str)))?
             .queue(Print(format!("   Sandbox:    {}\n", sandbox_str)))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         stdout
             .queue(Print("\n"))?
             .queue(SetForegroundColor(DIM))?
             .queue(Print(format!("   {RULE}\n")))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         stdout
             .queue(SetForegroundColor(BRAND))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("\n   Write config.toml?\n"))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
         stdout.flush()?;
 
         print_footer(
@@ -1399,13 +1448,13 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
                 state.workspace_dir,
                 if state.create_workspace { "initialized" } else { "exists" }
             )))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         stdout
             .queue(Print("\n"))?
             .queue(SetForegroundColor(DIM))?
             .queue(Print(format!("   {RULE}\n")))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         // Key box
         stdout.queue(Print(
@@ -1417,7 +1466,7 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
             .queue(Print("   │  "))?
             .queue(SetForegroundColor(SUCCESS))?
             .queue(Print(format!("{:<47}", &state.admin_key_raw)))?
-            .queue(ResetColor)?
+            .queue(SetBackgroundColor(BG))?
             .queue(Print("│\n"))?;
         stdout.queue(Print(
             "   │                                                 │\n\
@@ -1429,7 +1478,7 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   How do you want to start?\n\n"))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(ResetColor)?;
+            .queue(SetBackgroundColor(BG))?;
 
         let options = ["xenoclaw serve    start the agent runtime", "Exit              configure more later"];
         for (i, opt) in options.iter().enumerate() {
@@ -1439,12 +1488,12 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
                     .queue(SetAttribute(Attribute::Bold))?
                     .queue(Print(format!("   ► [{}]  {opt}\n", i + 1)))?
                     .queue(SetAttribute(Attribute::Reset))?
-                    .queue(ResetColor)?;
+                    .queue(SetBackgroundColor(BG))?;
             } else {
                 stdout
                     .queue(SetForegroundColor(DIM))?
                     .queue(Print(format!("     [{}]  {opt}\n", i + 1)))?
-                    .queue(ResetColor)?;
+                    .queue(SetBackgroundColor(BG))?;
             }
         }
 
@@ -1486,6 +1535,12 @@ fn launch_or_exit(selected: u8) -> Result<StepOutcome> {
     if selected == 0 {
         // Launch xenoclaw serve via exec-replace on Unix
         terminal::disable_raw_mode()?;
+        // Reset terminal colors before launching
+        let mut stdout = io::stdout();
+        stdout.queue(ResetColor)?;
+        stdout.queue(Clear(ClearType::All))?;
+        stdout.queue(cursor::MoveTo(0, 0))?;
+        stdout.flush()?;
         println!("\nStarting xenoclaw serve...\n");
 
         #[cfg(unix)]
@@ -1623,6 +1678,8 @@ max_processes    = 10
 [scheduler]
 
 [web]
+host = "{host}"
+port = {web_port}
 
 [api]
 host = "{host}"
@@ -1639,6 +1696,7 @@ port = {port}
         model = state.model,
         host = state.host,
         port = state.port,
+        web_port = state.web_port,
         data_dir = data_dir.display(),
         log_dir = log_dir.display(),
         admin_username = state.admin_username,
