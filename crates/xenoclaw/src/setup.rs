@@ -233,6 +233,8 @@ fn clear_screen(stdout: &mut io::Stdout) -> io::Result<()> {
         stdout.queue(Print(&blank_line))?;
     }
     stdout
+        .queue(SetBackgroundColor(BG))?
+        .queue(Clear(ClearType::All))?
         .queue(cursor::MoveTo(0, 0))?
         .queue(SetBackgroundColor(BG))?;
     stdout.flush()
@@ -441,36 +443,42 @@ async fn step_welcome(_state: &WizardState) -> Result<StepOutcome> {
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("  ⚡"))?
         .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetBackgroundColor(BG))?
         .queue(SetForegroundColor(SUCCESS))?
         .queue(Print(" Dual-mode: General 24/7 agent + Coding agent (hot-swap)\n"))?
         .queue(SetForegroundColor(BRAND))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("  🔀"))?
         .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetBackgroundColor(BG))?
         .queue(SetForegroundColor(SUCCESS))?
         .queue(Print(" Multi-provider LLM failover (27 providers supported)\n"))?
         .queue(SetForegroundColor(BRAND))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("  💬"))?
         .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetBackgroundColor(BG))?
         .queue(SetForegroundColor(SUCCESS))?
         .queue(Print(" Telegram, Discord & WhatsApp bridge — chat from anywhere\n"))?
         .queue(SetForegroundColor(BRAND))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("  🧩"))?
         .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetBackgroundColor(BG))?
         .queue(SetForegroundColor(SUCCESS))?
         .queue(Print(" WASM plugin system with hot-reload\n"))?
         .queue(SetForegroundColor(BRAND))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("  🛡"))?
         .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetBackgroundColor(BG))?
         .queue(SetForegroundColor(SUCCESS))?
         .queue(Print(" Sandboxed execution, RBAC, filesystem & network allowlists\n"))?
         .queue(SetForegroundColor(BRAND))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("  📡"))?
         .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetBackgroundColor(BG))?
         .queue(SetForegroundColor(SUCCESS))?
         .queue(Print(" Always-on: auto-restart, health checks, SIGHUP hot-reload\n"))?
         .queue(SetBackgroundColor(BG))?;
@@ -1107,6 +1115,7 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Shell Sandbox Configuration\n"))?
             .queue(SetAttribute(Attribute::Reset))?
+            .queue(SetBackgroundColor(BG))?
             .queue(SetForegroundColor(DIM))?
             .queue(Print("   (Space to toggle, Enter to edit text fields, Tab to cycle unit)\n\n"))?
             .queue(SetBackgroundColor(BG))?;
@@ -1292,6 +1301,7 @@ fn render_text_row(stdout: &mut io::Stdout, active: bool, label: &str, input: &T
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("   ► {label}\n")))?
             .queue(SetAttribute(Attribute::Reset))?
+            .queue(SetBackgroundColor(BG))?
             .queue(SetForegroundColor(SUCCESS))?;
         if editing {
             stdout.queue(Print(format!("     > {}\n", input.display())))?;
@@ -1355,6 +1365,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Review your configuration:\n\n"))?
             .queue(SetAttribute(Attribute::Reset))?
+            .queue(SetBackgroundColor(BG))?
             .queue(SetForegroundColor(SUCCESS))?
             .queue(Print(format!("   Provider:   {}\n", p.name)))?
             .queue(Print(format!("   Model:      {}\n", state.model)))?
@@ -1578,7 +1589,9 @@ async fn confirm_quit() -> Result<bool> {
     let mut stdout = io::stdout();
     clear_screen(&mut stdout)?;
 
+    stdout.queue(SetBackgroundColor(BG))?;
     stdout.queue(Print("\n   Quit setup? Config has not been written.\n\n"))?;
+    stdout.queue(SetBackgroundColor(BG))?;
     stdout.queue(Print("   [Enter] Quit    [Esc] Cancel\n"))?;
     stdout.flush()?;
 
