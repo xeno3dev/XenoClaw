@@ -1,6 +1,6 @@
 //! First-run setup wizard for XenoClaw.
 //!
-//! An inline terminal wizard (no alternate screen) that guides the user
+//! An inline terminal wizard using crossterm's alternate screen.
 //! through initial configuration and produces a valid config.toml.
 
 use std::io::{self, Write};
@@ -11,7 +11,7 @@ use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyModifiers},
     style::{Attribute, Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor, ResetColor},
-    terminal::{self, Clear, ClearType},
+    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
     QueueableCommand,
 };
 
@@ -199,10 +199,10 @@ fn print_banner(stdout: &mut io::Stdout) -> io::Result<()> {
     stdout.flush()
 }
 
-/// Background color for the wizard UI — warm dark gray (#141212).
+/// Background color for the wizard UI — near-black (#0a0a0a).
 /// We fill every cell explicitly to ensure this works on VNC, xterm, and
 /// terminals that don't honor background color on Clear(All).
-const BG: Color = Color::Rgb { r: 20, g: 18, b: 18 };
+const BG: Color = Color::Rgb { r: 10, g: 10, b: 10 };
 
 fn print_footer(stdout: &mut io::Stdout, hint: &str) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
@@ -238,23 +238,6 @@ fn clear_screen(stdout: &mut io::Stdout) -> io::Result<()> {
         .queue(cursor::MoveTo(0, 0))?
         .queue(SetBackgroundColor(BG))?;
     stdout.flush()
-}
-
-/// Fill all rows from the current cursor row up to rows-2 with BG-colored
-/// blank spaces, so the background is uniform even when content doesn't
-/// reach the bottom of the terminal.
-fn fill_remaining(stdout: &mut io::Stdout) -> io::Result<()> {
-    let (cols, rows) = terminal::size()?;
-    let (_, cur_row) = cursor::position()?;
-    stdout.queue(SetBackgroundColor(BG))?;
-    stdout.queue(SetForegroundColor(BG))?;
-    let blank = " ".repeat(cols as usize);
-    for row in cur_row..rows.saturating_sub(1) {
-        stdout.queue(cursor::MoveTo(0, row))?;
-        stdout.queue(Print(&blank))?;
-    }
-    stdout.queue(cursor::MoveTo(0, cur_row))?;
-    Ok(())
 }
 
 fn print_success(stdout: &mut io::Stdout, msg: &str) -> io::Result<()> {
@@ -387,18 +370,18 @@ pub async fn run_wizard(config_path: &Path) -> Result<()> {
         std::process::exit(1);
     }
 
-    terminal::enable_raw_mode()?;
-    let result = run_wizard_inner(config_path).await;
-    terminal::disable_raw_mode()?;
-
-    // Reset terminal colors back to defaults before returning to shell
     let mut stdout = io::stdout();
-    stdout.queue(ResetColor)?;
-    stdout.queue(Clear(ClearType::All))?;
-    stdout.queue(cursor::MoveTo(0, 0))?;
+    stdout.queue(EnterAlternateScreen)?;
     stdout.flush()?;
+    terminal::enable_raw_mode()?;
 
-    // Print a newline so the shell prompt starts clean
+    let result = run_wizard_inner(config_path).await;
+
+    terminal::disable_raw_mode()?;
+    stdout.queue(LeaveAlternateScreen)?;
+    stdout.queue(ResetColor)?;
+    stdout.queue(cursor::Show)?;
+    stdout.flush()?;
     println!();
     result
 }
@@ -507,7 +490,6 @@ async fn step_welcome(_state: &WizardState) -> Result<StepOutcome> {
         .queue(SetBackgroundColor(BG))?;
 
     stdout.queue(Print("\n"))?;
-    fill_remaining(&mut stdout)?;
     stdout.flush()?;
 
     print_footer(&mut stdout, "[Enter] Begin setup  [Esc] Cancel")?;
@@ -587,7 +569,6 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetBackgroundColor(BG))?;
         }
 
-        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -676,7 +657,6 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
         }
 
         stdout.queue(Print("\n"))?;
-        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -752,7 +732,6 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetBackgroundColor(BG))?;
         }
 
-        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -866,7 +845,6 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(Print(format!("     Require authentication?  [{auth_str}]\n")))?
                 .queue(SetBackgroundColor(BG))?;
         }
-        fill_remaining(&mut stdout)?;
         stdout.flush()?;
 
         print_footer(
@@ -1026,7 +1004,6 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(Print("   Leave password empty to disable password login.\n"))?
             .queue(SetBackgroundColor(BG))?;
 
-        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -1205,7 +1182,6 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetBackgroundColor(BG))?;
         }
 
-        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         let footer = if editing.is_some() {
             "[←→] Cursor  [Enter/Tab] Done editing  [Esc] Cancel edit"
@@ -1425,7 +1401,6 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
             .queue(Print("\n   Write config.toml?\n"))?
             .queue(SetAttribute(Attribute::Reset))?
             .queue(SetBackgroundColor(BG))?;
-        fill_remaining(&mut stdout)?;
         stdout.flush()?;
 
         print_footer(
@@ -1443,7 +1418,6 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
                             let mut stdout = io::stdout();
                             print_error(&mut stdout, &format!("Failed to write config: {e}"))?;
                             stdout.queue(Print("   Press any key to try again...\n"))?;
-                            fill_remaining(&mut stdout)?;
                             stdout.flush()?;
                             event::read()?;
                         }
@@ -1534,7 +1508,6 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
             }
         }
 
-        fill_remaining(&mut stdout)?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
@@ -1573,11 +1546,9 @@ fn launch_or_exit(selected: u8) -> Result<StepOutcome> {
     if selected == 0 {
         // Launch xenoclaw serve via exec-replace on Unix
         terminal::disable_raw_mode()?;
-        // Reset terminal colors before launching
         let mut stdout = io::stdout();
+        stdout.queue(LeaveAlternateScreen)?;
         stdout.queue(ResetColor)?;
-        stdout.queue(Clear(ClearType::All))?;
-        stdout.queue(cursor::MoveTo(0, 0))?;
         stdout.flush()?;
         println!("\nStarting xenoclaw serve...\n");
 
@@ -1620,7 +1591,6 @@ async fn confirm_quit() -> Result<bool> {
     stdout.queue(Print("\n   Quit setup? Config has not been written.\n\n"))?;
     stdout.queue(SetBackgroundColor(BG))?;
     stdout.queue(Print("   [Enter] Quit    [Esc] Cancel\n"))?;
-    fill_remaining(&mut stdout)?;
     stdout.flush()?;
 
     loop {
