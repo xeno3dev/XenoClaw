@@ -88,6 +88,27 @@ install -m 755 target/release/xenoclaw "$INSTALL_DIR/bin/xenoclaw"
 # Ensure xenoclaw is accessible on PATH without manual PATH edits.
 ln -sf "$INSTALL_DIR/bin/xenoclaw" /usr/local/bin/xenoclaw
 
+# On Debian/Ubuntu, rustup prepends ~/.cargo/bin to PATH before /usr/local/bin.
+# If a previous `cargo install` (e.g. --local mode) left a xenoclaw binary
+# there it will shadow the system binary we just installed — "no matter what"
+# the user does, they run the old copy.  Overwrite any such copies in-place
+# using `install` (atomic rename, safe even if xenoclaw is currently running).
+_update_cargo_bin() {
+    local home_dir="$1"
+    local cargo_bin="${home_dir}/.cargo/bin/xenoclaw"
+    [[ -f "$cargo_bin" ]] || return 0
+    local uid gid
+    uid=$(stat -c '%u' "$cargo_bin")
+    gid=$(stat -c '%g' "$cargo_bin")
+    info "Updating shadowing cargo binary at $cargo_bin..."
+    install -o "$uid" -g "$gid" -m 755 target/release/xenoclaw "$cargo_bin"
+}
+_update_cargo_bin "/root"
+if [[ -n "${SUDO_USER:-}" ]]; then
+    _sudo_home=$(getent passwd "${SUDO_USER}" | cut -d: -f6)
+    [[ -n "$_sudo_home" ]] && _update_cargo_bin "$_sudo_home"
+fi
+
 # ─── Step 5: Install config ───────────────────────────────────────────────────
 
 if [[ ! -f "$CONFIG_DIR/config.toml" ]]; then
