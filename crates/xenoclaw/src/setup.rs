@@ -36,7 +36,7 @@ use unicode_width::UnicodeWidthStr;
 
 use security_layer::auth::ApiKeyAuthenticator;
 
-use crate::cli_health::{inject_mcp_config, CliHealth, CliType};
+use crate::cli_health::{CliHealth, CliType};
 
 // ─── Color Palette — Xeno Brand (X3NO: black, red, charcoal accents) ─────────
 //
@@ -374,6 +374,20 @@ const PROVIDERS: &[ProviderDef] = &[
         name: "GitHub Copilot CLI",
         provider_type: "copilot_cli",
         default_model: "gpt-4o",
+        default_base_url: "",
+        needs_api_key: false,
+    },
+    ProviderDef {
+        name: "Gemini CLI",
+        provider_type: "gemini_cli",
+        default_model: "gemini-2.5-pro",
+        default_base_url: "",
+        needs_api_key: false,
+    },
+    ProviderDef {
+        name: "OpenAI Codex CLI",
+        provider_type: "codex_cli",
+        default_model: "codex-mini-latest",
         default_base_url: "",
         needs_api_key: false,
     },
@@ -1063,10 +1077,12 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
 /// which greys out "Start server" on the final done screen.
 async fn step_cli_provider(state: &mut WizardState) -> Result<StepOutcome> {
     let p = &PROVIDERS[state.provider_idx];
-    let cli_type = if p.provider_type == "claude_code" {
-        CliType::ClaudeCode
-    } else {
-        CliType::CopilotCli
+    let cli_type = match p.provider_type {
+        "claude_code" => CliType::ClaudeCode,
+        "copilot_cli" => CliType::CopilotCli,
+        "gemini_cli" => CliType::GeminiCli,
+        "codex_cli" => CliType::CodexCli,
+        _ => CliType::ClaudeCode,
     };
     let cli_name = CliHealth::display_name(cli_type);
 
@@ -1128,8 +1144,12 @@ async fn step_cli_provider(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(Print("   —  Authenticated   (skipped — not installed)\r\n"))?;
         }
 
-        // MCP row (Claude Code only, shown once registered)
+        // MCP row (Claude Code / Gemini CLI — shown once registered)
         if CliHealth::supports_mcp(cli_type) && state.mcp_registered {
+            let mcp_path = match cli_type {
+                CliType::GeminiCli => "~/.gemini/settings.json",
+                _ => "~/.claude/settings.json",
+            };
             bg(&mut stdout, BG)?;
             stdout
                 .queue(SetForegroundColor(green()))?
@@ -1141,7 +1161,7 @@ async fn step_cli_provider(state: &mut WizardState) -> Result<StepOutcome> {
                 .queue(SetForegroundColor(white()))?
                 .queue(Print("MCP configured  "))?
                 .queue(SetForegroundColor(dim()))?
-                .queue(Print("~/.claude/settings.json\r\n"))?;
+                .queue(Print(format!("{mcp_path}\r\n")))?;
         }
 
         stdout.queue(Print("\r\n"))?;
@@ -1168,9 +1188,9 @@ async fn step_cli_provider(state: &mut WizardState) -> Result<StepOutcome> {
                         state.model = model_input.value().to_string();
                         state.cli_provider_ready = true;
 
-                        // Inject MCP config for Claude Code
+                        // Inject MCP config for supported CLIs (Claude Code, Gemini CLI)
                         if CliHealth::supports_mcp(cli_type) && !state.mcp_registered {
-                            match inject_mcp_config() {
+                            match CliHealth::inject_mcp(cli_type) {
                                 Ok(()) => {
                                     state.mcp_registered = true;
                                 }
