@@ -1,7 +1,22 @@
 //! First-run setup wizard for XenoClaw.
 //!
 //! An inline terminal wizard using crossterm's alternate screen.
-//! through initial configuration and produces a valid config.toml.
+//!
+//! ## Rendering strategy
+//!
+//! The wizard adapts to terminal capabilities to look correct everywhere:
+//!
+//! - **True-color terminals (kitty, alacritty, wezterm, modern xterm)**: full
+//!   24-bit RGB palette with charcoal BG, red primary, white highlights.
+//! - **SSH / dumb terminals**: BG fills are skipped because background-color
+//!   sequences are commonly stripped over SSH (PuTTY, mosh, screen, tmux
+//!   without truecolor); we paint FG colors only and let the terminal's own
+//!   background show through. Detected via `SSH_CONNECTION`, `SSH_TTY`,
+//!   `TERM=dumb`, and `NO_COLOR`.
+//! - **Narrow terminals (< 80 cols)**: the big ASCII banner is replaced with
+//!   a compact `[ XENOCLAW ]` block so nothing wraps.
+//!
+//! All text is laid out using `unicode-width` for emoji-correct padding.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -10,21 +25,83 @@ use anyhow::Result;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyModifiers},
-    style::{Attribute, Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor, ResetColor},
+    style::{
+        Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+    },
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
     QueueableCommand,
 };
+use unicode_width::UnicodeWidthStr;
 
 use security_layer::auth::ApiKeyAuthenticator;
 
-// ─── Color Palette ───────────────────────────────────────────────────────────
-// Using explicit RGB to prevent terminal theme remapping (Kitty, Alacritty, etc.)
-/// Headers, brand, ► cursor, ✓/✗ symbols, prompts (bright green, bold)
-const BRAND: Color = Color::Rgb { r: 0, g: 255, b: 0 };
-/// Body text, menu labels, values, key box contents (green)
-const SUCCESS: Color = Color::Rgb { r: 0, g: 220, b: 0 };
-/// Dim/secondary text, horizontal rules, footer hints, inactive menu items
-const DIM: Color = Color::Rgb { r: 0, g: 120, b: 0 };
+// ─── Color Palette — Xeno Brand (X3NO: black, red, charcoal accents) ─────────
+//
+// All colors use explicit RGB to prevent terminal theme remapping (Kitty,
+// Alacritty, etc. honor true-color literals; ANSI 16 colors get re-themed).
+// Background detection happens at runtime — see `bg_enabled()`.
+
+/// Primary brand red — headers, ► cursor, active selections, "XENOCLAW" banner.
+const RED: Color = Color::Rgb {
+    r: 255,
+    g: 56,
+    b: 56,
+};
+/// Bright crimson for emphasis (commit boxes, key reveals).
+const RED_BRIGHT: Color = Color::Rgb {
+    r: 255,
+    g: 96,
+    b: 96,
+};
+/// Deep blood-red for backgrounds of error/warning callouts.
+const RED_DEEP: Color = Color::Rgb {
+    r: 120,
+    g: 20,
+    b: 20,
+};
+/// Pure white — body text, values, key contents (the "pop" color).
+const WHITE: Color = Color::Rgb {
+    r: 240,
+    g: 240,
+    b: 240,
+};
+/// Soft white-grey — secondary labels, hints.
+const TEXT: Color = Color::Rgb {
+    r: 200,
+    g: 200,
+    b: 200,
+};
+/// Medium grey — inactive menu items, dim text.
+const DIM: Color = Color::Rgb {
+    r: 130,
+    g: 130,
+    b: 135,
+};
+/// Dark grey — horizontal rules, borders.
+const RULE_FG: Color = Color::Rgb {
+    r: 75,
+    g: 75,
+    b: 80,
+};
+/// Success green — ✓ checkmarks ONLY (sparingly, for visual confirmation).
+const GREEN: Color = Color::Rgb {
+    r: 80,
+    g: 220,
+    b: 100,
+};
+/// Amber — warnings, "save this now" callouts.
+const AMBER: Color = Color::Rgb {
+    r: 255,
+    g: 176,
+    b: 0,
+};
+
+/// Charcoal background. Near-black with a slight warm tint so red pops.
+const BG: Color = Color::Rgb {
+    r: 18,
+    g: 18,
+    b: 22,
+};
 
 const TOTAL_STEPS: u8 = 8;
 const RULE: &str = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
@@ -41,35 +118,209 @@ struct ProviderDef {
 }
 
 const PROVIDERS: &[ProviderDef] = &[
-    ProviderDef { name: "Anthropic", provider_type: "anthropic", default_model: "claude-sonnet-4-20250514", default_base_url: "https://api.anthropic.com", needs_api_key: true },
-    ProviderDef { name: "Google Gemini", provider_type: "open_ai_compatible", default_model: "gemini-2.5-pro", default_base_url: "https://generativelanguage.googleapis.com/v1beta/openai", needs_api_key: true },
-    ProviderDef { name: "OpenAI", provider_type: "open_ai_compatible", default_model: "gpt-4o", default_base_url: "https://api.openai.com/v1", needs_api_key: true },
-    ProviderDef { name: "AWS Bedrock", provider_type: "open_ai_compatible", default_model: "anthropic.claude-sonnet-4-20250514-v1:0", default_base_url: "https://bedrock-runtime.us-east-1.amazonaws.com", needs_api_key: true },
-    ProviderDef { name: "OpenRouter", provider_type: "open_ai_compatible", default_model: "anthropic/claude-sonnet-4-20250514", default_base_url: "https://openrouter.ai/api/v1", needs_api_key: true },
-    ProviderDef { name: "Together AI", provider_type: "open_ai_compatible", default_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", default_base_url: "https://api.together.xyz/v1", needs_api_key: true },
-    ProviderDef { name: "Mistral AI", provider_type: "open_ai_compatible", default_model: "mistral-large-latest", default_base_url: "https://api.mistral.ai/v1", needs_api_key: true },
-    ProviderDef { name: "Fireworks AI", provider_type: "open_ai_compatible", default_model: "accounts/fireworks/models/llama-v3p3-70b-instruct", default_base_url: "https://api.fireworks.ai/inference/v1", needs_api_key: true },
-    ProviderDef { name: "DeepSeek", provider_type: "open_ai_compatible", default_model: "deepseek-chat", default_base_url: "https://api.deepseek.com/v1", needs_api_key: true },
-    ProviderDef { name: "Groq", provider_type: "open_ai_compatible", default_model: "llama-3.3-70b-versatile", default_base_url: "https://api.groq.com/openai/v1", needs_api_key: true },
-    ProviderDef { name: "xAI", provider_type: "open_ai_compatible", default_model: "grok-3", default_base_url: "https://api.x.ai/v1", needs_api_key: true },
-    ProviderDef { name: "Perplexity", provider_type: "open_ai_compatible", default_model: "sonar-pro", default_base_url: "https://api.perplexity.ai", needs_api_key: true },
-    ProviderDef { name: "Cohere", provider_type: "open_ai_compatible", default_model: "command-r-plus", default_base_url: "https://api.cohere.com/v2", needs_api_key: true },
-    ProviderDef { name: "AI21 Labs", provider_type: "open_ai_compatible", default_model: "jamba-1.5-large", default_base_url: "https://api.ai21.com/studio/v1", needs_api_key: true },
-    ProviderDef { name: "Hugging Face", provider_type: "open_ai_compatible", default_model: "meta-llama/Llama-3.3-70B-Instruct", default_base_url: "https://api-inference.huggingface.co/v1", needs_api_key: true },
-    ProviderDef { name: "Replicate", provider_type: "open_ai_compatible", default_model: "meta/llama-3.3-70b-instruct", default_base_url: "https://api.replicate.com/v1", needs_api_key: true },
-    ProviderDef { name: "Requesty", provider_type: "open_ai_compatible", default_model: "anthropic/claude-sonnet-4-20250514", default_base_url: "https://router.requesty.ai/v1", needs_api_key: true },
-    ProviderDef { name: "Cerebras", provider_type: "open_ai_compatible", default_model: "llama-3.3-70b", default_base_url: "https://api.cerebras.ai/v1", needs_api_key: true },
-    ProviderDef { name: "SambaNova", provider_type: "open_ai_compatible", default_model: "Meta-Llama-3.3-70B-Instruct", default_base_url: "https://api.sambanova.ai/v1", needs_api_key: true },
-    ProviderDef { name: "Ollama", provider_type: "ollama", default_model: "llama3.2", default_base_url: "http://localhost:11434", needs_api_key: false },
-    ProviderDef { name: "vLLM", provider_type: "open_ai_compatible", default_model: "meta-llama/Llama-3.3-70B-Instruct", default_base_url: "http://localhost:8000/v1", needs_api_key: false },
-    ProviderDef { name: "LM Studio", provider_type: "open_ai_compatible", default_model: "local-model", default_base_url: "http://localhost:1234/v1", needs_api_key: false },
-    ProviderDef { name: "Qwen", provider_type: "open_ai_compatible", default_model: "qwen-max", default_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", needs_api_key: true },
-    ProviderDef { name: "MiniMax", provider_type: "open_ai_compatible", default_model: "MiniMax-Text-01", default_base_url: "https://api.minimax.chat/v1", needs_api_key: true },
-    ProviderDef { name: "Zhipu AI", provider_type: "open_ai_compatible", default_model: "glm-4-plus", default_base_url: "https://open.bigmodel.cn/api/paas/v4", needs_api_key: true },
-    ProviderDef { name: "Moonshot AI", provider_type: "open_ai_compatible", default_model: "moonshot-v1-128k", default_base_url: "https://api.moonshot.cn/v1", needs_api_key: true },
-    ProviderDef { name: "Baidu Qianfan", provider_type: "open_ai_compatible", default_model: "ernie-4.0-8k", default_base_url: "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop", needs_api_key: true },
-    ProviderDef { name: "Claude Code CLI", provider_type: "claude_code", default_model: "claude-sonnet-4-20250514", default_base_url: "", needs_api_key: false },
-    ProviderDef { name: "GitHub Copilot CLI", provider_type: "copilot_cli", default_model: "gpt-4o", default_base_url: "", needs_api_key: false },
+    ProviderDef {
+        name: "Anthropic",
+        provider_type: "anthropic",
+        default_model: "claude-sonnet-4-20250514",
+        default_base_url: "https://api.anthropic.com",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Google Gemini",
+        provider_type: "open_ai_compatible",
+        default_model: "gemini-2.5-pro",
+        default_base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "OpenAI",
+        provider_type: "open_ai_compatible",
+        default_model: "gpt-4o",
+        default_base_url: "https://api.openai.com/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "AWS Bedrock",
+        provider_type: "open_ai_compatible",
+        default_model: "anthropic.claude-sonnet-4-20250514-v1:0",
+        default_base_url: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "OpenRouter",
+        provider_type: "open_ai_compatible",
+        default_model: "anthropic/claude-sonnet-4-20250514",
+        default_base_url: "https://openrouter.ai/api/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Together AI",
+        provider_type: "open_ai_compatible",
+        default_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        default_base_url: "https://api.together.xyz/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Mistral AI",
+        provider_type: "open_ai_compatible",
+        default_model: "mistral-large-latest",
+        default_base_url: "https://api.mistral.ai/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Fireworks AI",
+        provider_type: "open_ai_compatible",
+        default_model: "accounts/fireworks/models/llama-v3p3-70b-instruct",
+        default_base_url: "https://api.fireworks.ai/inference/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "DeepSeek",
+        provider_type: "open_ai_compatible",
+        default_model: "deepseek-chat",
+        default_base_url: "https://api.deepseek.com/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Groq",
+        provider_type: "open_ai_compatible",
+        default_model: "llama-3.3-70b-versatile",
+        default_base_url: "https://api.groq.com/openai/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "xAI",
+        provider_type: "open_ai_compatible",
+        default_model: "grok-3",
+        default_base_url: "https://api.x.ai/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Perplexity",
+        provider_type: "open_ai_compatible",
+        default_model: "sonar-pro",
+        default_base_url: "https://api.perplexity.ai",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Cohere",
+        provider_type: "open_ai_compatible",
+        default_model: "command-r-plus",
+        default_base_url: "https://api.cohere.com/v2",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "AI21 Labs",
+        provider_type: "open_ai_compatible",
+        default_model: "jamba-1.5-large",
+        default_base_url: "https://api.ai21.com/studio/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Hugging Face",
+        provider_type: "open_ai_compatible",
+        default_model: "meta-llama/Llama-3.3-70B-Instruct",
+        default_base_url: "https://api-inference.huggingface.co/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Replicate",
+        provider_type: "open_ai_compatible",
+        default_model: "meta/llama-3.3-70b-instruct",
+        default_base_url: "https://api.replicate.com/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Requesty",
+        provider_type: "open_ai_compatible",
+        default_model: "anthropic/claude-sonnet-4-20250514",
+        default_base_url: "https://router.requesty.ai/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Cerebras",
+        provider_type: "open_ai_compatible",
+        default_model: "llama-3.3-70b",
+        default_base_url: "https://api.cerebras.ai/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "SambaNova",
+        provider_type: "open_ai_compatible",
+        default_model: "Meta-Llama-3.3-70B-Instruct",
+        default_base_url: "https://api.sambanova.ai/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Ollama",
+        provider_type: "ollama",
+        default_model: "llama3.2",
+        default_base_url: "http://localhost:11434",
+        needs_api_key: false,
+    },
+    ProviderDef {
+        name: "vLLM",
+        provider_type: "open_ai_compatible",
+        default_model: "meta-llama/Llama-3.3-70B-Instruct",
+        default_base_url: "http://localhost:8000/v1",
+        needs_api_key: false,
+    },
+    ProviderDef {
+        name: "LM Studio",
+        provider_type: "open_ai_compatible",
+        default_model: "local-model",
+        default_base_url: "http://localhost:1234/v1",
+        needs_api_key: false,
+    },
+    ProviderDef {
+        name: "Qwen",
+        provider_type: "open_ai_compatible",
+        default_model: "qwen-max",
+        default_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "MiniMax",
+        provider_type: "open_ai_compatible",
+        default_model: "MiniMax-Text-01",
+        default_base_url: "https://api.minimax.chat/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Zhipu AI",
+        provider_type: "open_ai_compatible",
+        default_model: "glm-4-plus",
+        default_base_url: "https://open.bigmodel.cn/api/paas/v4",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Moonshot AI",
+        provider_type: "open_ai_compatible",
+        default_model: "moonshot-v1-128k",
+        default_base_url: "https://api.moonshot.cn/v1",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Baidu Qianfan",
+        provider_type: "open_ai_compatible",
+        default_model: "ernie-4.0-8k",
+        default_base_url: "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop",
+        needs_api_key: true,
+    },
+    ProviderDef {
+        name: "Claude Code CLI",
+        provider_type: "claude_code",
+        default_model: "claude-sonnet-4-20250514",
+        default_base_url: "",
+        needs_api_key: false,
+    },
+    ProviderDef {
+        name: "GitHub Copilot CLI",
+        provider_type: "copilot_cli",
+        default_model: "gpt-4o",
+        default_base_url: "",
+        needs_api_key: false,
+    },
 ];
 
 // ─── Wizard State ────────────────────────────────────────────────────────────
@@ -152,116 +403,212 @@ impl Default for WizardState {
     }
 }
 
+// ─── Banner ──────────────────────────────────────────────────────────────────
+//
+// The big banner uses uniform-width ASCII block letters. Each glyph is exactly
+// 8 cells wide and 6 rows tall; with 8 letters that's 64 cells total, fitting
+// in any terminal ≥ 70 cols (we use 80 as the threshold to leave breathing
+// room). The pieces are assembled at render time so we can verify width.
+
+const BANNER_LINES: [&str; 8] = [
+    r" /$$   /$$                                /$$$$$$  /$$                        ",
+    r"| $$  / $$                               /$$__  $$| $$                        ",
+    r"|  $$/ $$/  /$$$$$$  /$$$$$$$   /$$$$$$ | $$  \__/| $$  /$$$$$$  /$$  /$$  /$$",
+    r" \  $$$$/  /$$__  $$| $$__  $$ /$$__  $$| $$      | $$ |____  $$| $$ | $$ | $$",
+    r"  >$$  $$ | $$$$$$$$| $$  \ $$| $$  \ $$| $$      | $$  /$$$$$$$| $$ | $$ | $$",
+    r" /$$/\  $$| $$_____/| $$  | $$| $$  | $$| $$    $$| $$ /$$__  $$| $$ | $$ | $$",
+    r"| $$  \ $$|  $$$$$$$| $$  | $$|  $$$$$$/|  $$$$$$/| $$|  $$$$$$$|  $$$$/$$$$/",
+    r"|__/  |__/ \_______/|__/  |__/ \______/  \______/ |__/ \_______/ \_____/\___/ ",
+];
+
+/// Compact banner used when terminal width < 80 cols.
+const COMPACT_BANNER: &str = "[ X E N O C L A W ]";
+
+// ─── Terminal Capability Detection ───────────────────────────────────────────
+
+/// Returns true if backgrounds should be painted.
+///
+/// Disabled when:
+/// - `NO_COLOR` env var is set (any value) — universal opt-out standard
+/// - `TERM=dumb` — terminal has no color support
+/// - Running over SSH (`SSH_CONNECTION` or `SSH_TTY` set) — bg sequences are
+///   commonly stripped by intermediate layers (mosh, screen without bce, etc.)
+///
+/// FG colors are still emitted in all cases — only the heavy BG fills are
+/// suppressed. Users can override with `XENOCLAW_FORCE_BG=1`.
+fn bg_enabled() -> bool {
+    if std::env::var_os("XENOCLAW_FORCE_BG").is_some() {
+        return true;
+    }
+    if std::env::var_os("NO_COLOR").is_some() {
+        return false;
+    }
+    if let Ok(term) = std::env::var("TERM") {
+        if term == "dumb" || term.is_empty() {
+            return false;
+        }
+    }
+    if std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some() {
+        return false;
+    }
+    true
+}
+
+/// Conditionally paint a background — no-op when `bg_enabled()` is false.
+fn bg(stdout: &mut io::Stdout, color: Color) -> io::Result<()> {
+    if bg_enabled() {
+        stdout.queue(SetBackgroundColor(color))?;
+    }
+    Ok(())
+}
+
 // ─── Rendering Helpers ───────────────────────────────────────────────────────
 
-const BANNER: &str = r#"██╗  ██╗███████╗███╗   ██╗ ██████╗  ██████╗██╗      █████╗ ██╗    ██╗
-╚██╗██╔╝██╔════╝████╗  ██║██╔═══██╗██╔════╝██║     ██╔══██╗██║    ██║
- ╚███╔╝ █████╗  ██╔██╗ ██║██║   ██║██║     ██║     ███████║██║ █╗ ██║
- ██╔██╗ ██╔══╝  ██║╚████║║██║   ██║██║     ██║     ██╔══██║██║███╗██║
-██╔╝ ██╗███████╗██║ ╚███║ ╚██████╔╝╚██████╗███████╗██║  ██║╚███╔███╔╝
-╚═╝  ╚═╝╚══════╝╚═╝  ╚══╝ ╚═════╝  ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝"#;
-
 fn print_header(stdout: &mut io::Stdout, step: u8) -> io::Result<()> {
+    bg(stdout, BG)?;
     stdout
-        .queue(SetBackgroundColor(BG))?
-        .queue(SetForegroundColor(BRAND))?
+        .queue(SetForegroundColor(RED))?
         .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print("XenoClaw"))?
-        .queue(Print("  "))?
-        .queue(Print("Init"))?
-        .queue(Print(format!("  {} of {}", step, TOTAL_STEPS)))?
-        .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(Print("\n"))?
+        .queue(Print("XENOCLAW"))?
+        .queue(SetAttribute(Attribute::Reset))?;
+    bg(stdout, BG)?;
+    stdout
         .queue(SetForegroundColor(DIM))?
+        .queue(Print(" │ "))?
+        .queue(SetForegroundColor(WHITE))?
+        .queue(SetAttribute(Attribute::Bold))?
+        .queue(Print("Init"))?
+        .queue(SetAttribute(Attribute::Reset))?;
+    bg(stdout, BG)?;
+    stdout
+        .queue(SetForegroundColor(DIM))?
+        .queue(Print(format!("  {step} of {TOTAL_STEPS}")))?
+        .queue(Print("\r\n"))?
+        .queue(SetForegroundColor(RULE_FG))?
         .queue(Print(RULE))?
-        .queue(Print("\n\n"))?;
+        .queue(Print("\r\n\r\n"))?;
     stdout.flush()
 }
 
 fn print_banner(stdout: &mut io::Stdout) -> io::Result<()> {
-    stdout.queue(SetBackgroundColor(BG))?;
-    stdout.queue(SetForegroundColor(BRAND))?;
-    stdout.queue(SetAttribute(Attribute::Bold))?;
-    for line in BANNER.lines() {
-        stdout.queue(Print(format!("  {line}\n")))?;
+    let (cols, _) = terminal::size().unwrap_or((80, 24));
+
+    bg(stdout, BG)?;
+
+    // Compute the actual widest banner line so the threshold is exact.
+    // Some lines are ~83 chars — using a hardcoded 80 would show the full
+    // banner at widths where it overflows and wraps.
+    let max_banner_width = BANNER_LINES
+        .iter()
+        .map(|l| UnicodeWidthStr::width(*l))
+        .max()
+        .unwrap_or(80) as u16;
+
+    if cols >= max_banner_width {
+        // Full banner — 6 rows of red blocks.
+        stdout
+            .queue(SetForegroundColor(RED))?
+            .queue(SetAttribute(Attribute::Bold))?;
+        for line in BANNER_LINES {
+            stdout.queue(Print(line))?;
+            stdout.queue(Print("\r\n"))?;
+        }
+        stdout.queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
+    } else {
+        // Compact banner for narrow terminals.
+        stdout
+            .queue(SetForegroundColor(RED))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!("  {COMPACT_BANNER}\r\n")))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
     }
-    stdout.queue(SetAttribute(Attribute::Reset))?;
-    stdout.queue(SetBackgroundColor(BG))?;
-    stdout.queue(Print("\n"))?;
+
     stdout
-        .queue(SetForegroundColor(SUCCESS))?
-        .queue(Print("                    Agent Runtime\n"))?;
-    stdout.queue(Print("\n"))?;
-    stdout
-        .queue(SetForegroundColor(DIM))?
-        .queue(Print(format!("  {RULE}\n")))?;
+        .queue(Print("\r\n"))?
+        .queue(SetForegroundColor(TEXT))?
+        .queue(Print("                       Agent Runtime\r\n"))?
+        .queue(SetForegroundColor(RULE_FG))?
+        .queue(Print(format!(" {RULE}\r\n")))?;
     stdout.flush()
 }
-
-/// Background color for the wizard UI — near-black (ANSI 256 grayscale ramp).
-/// Uses ANSI 256-color (index 232) instead of true-color RGB because SSH
-/// connections commonly strip 24-bit color sequences, leaving default bg.
-/// We fill every cell explicitly to ensure this works on VNC, xterm, and
-/// terminals that don't honor background color on Clear(All).
-const BG: Color = Color::AnsiValue(232);
 
 fn print_footer(stdout: &mut io::Stdout, hint: &str) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
+    let hint_width = UnicodeWidthStr::width(hint);
+    let cols = cols as usize;
+
     stdout
-        .queue(cursor::MoveTo(0, rows - 1))?
-        .queue(SetForegroundColor(DIM))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(Print(hint))?;
-    // Fill the rest of the footer line with background
-    let remaining = cols as usize - hint.len().min(cols as usize);
-    if remaining > 0 {
-        stdout.queue(Print(" ".repeat(remaining)))?;
+        .queue(cursor::MoveTo(0, rows.saturating_sub(1)))?
+        .queue(SetForegroundColor(DIM))?;
+    bg(stdout, BG)?;
+    stdout.queue(Print(hint))?;
+
+    // Pad the rest of the footer line so the BG color (if any) extends to
+    // the right edge. Computed using display width, not byte length, so
+    // emoji/wide-char hints align correctly.
+    if hint_width < cols {
+        let padding = cols - hint_width;
+        stdout.queue(Print(" ".repeat(padding)))?;
     }
-    stdout.queue(SetBackgroundColor(BG))?;
     stdout.flush()
 }
 
+/// Clear the screen and fill it with the brand background color.
+///
+/// Two-step: first issue `Clear(All)` (which honors BG on well-behaved
+/// terminals), then manually fill every cell except the very last one — that
+/// final cell is intentionally skipped because writing to the bottom-right
+/// cell causes a scroll on most terminals, which would push our header up.
 fn clear_screen(stdout: &mut io::Stdout) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
-    // Clear first (honors BG on well-behaved terminals), then fill every cell
-    // manually as a fallback for terminals (VNC, xterm) that don't propagate
-    // SetBackgroundColor through Clear(All).
+    let cols = cols as usize;
+    let rows = rows as usize;
+
     stdout.queue(cursor::MoveTo(0, 0))?;
-    stdout.queue(SetBackgroundColor(BG))?;
+    bg(stdout, BG)?;
     stdout.queue(Clear(ClearType::All))?;
-    stdout.queue(SetBackgroundColor(BG))?;
-    let blank_line = " ".repeat(cols as usize);
-    for _ in 0..rows {
-        stdout.queue(Print(&blank_line))?;
+
+    if bg_enabled() {
+        bg(stdout, BG)?;
+        let blank_line = " ".repeat(cols);
+        // Fill every full row except the last.
+        for _ in 0..rows.saturating_sub(1) {
+            stdout.queue(Print(&blank_line))?;
+        }
+        // Last row: fill all but the final cell to avoid scroll.
+        if cols > 1 {
+            stdout.queue(Print(" ".repeat(cols - 1)))?;
+        }
     }
-    stdout
-        .queue(cursor::MoveTo(0, 0))?
-        .queue(SetBackgroundColor(BG))?;
+
+    stdout.queue(cursor::MoveTo(0, 0))?;
+    bg(stdout, BG)?;
     stdout.flush()
 }
 
 fn print_success(stdout: &mut io::Stdout, msg: &str) -> io::Result<()> {
+    bg(stdout, BG)?;
     stdout
-        .queue(SetBackgroundColor(BG))?
-        .queue(SetForegroundColor(BRAND))?
+        .queue(SetForegroundColor(GREEN))?
         .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print(format!("✓ {msg}")))?
-        .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(Print("\n"))?;
+        .queue(Print(format!("  ✓ {msg}")))?
+        .queue(SetAttribute(Attribute::Reset))?;
+    bg(stdout, BG)?;
+    stdout.queue(Print("\r\n"))?;
     stdout.flush()
 }
 
 fn print_error(stdout: &mut io::Stdout, msg: &str) -> io::Result<()> {
+    bg(stdout, BG)?;
     stdout
-        .queue(SetBackgroundColor(BG))?
-        .queue(SetForegroundColor(BRAND))?
+        .queue(SetForegroundColor(RED_BRIGHT))?
         .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print(format!("✗ {msg}")))?
-        .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(Print("\n"))?;
+        .queue(Print(format!("  ✗ {msg}")))?
+        .queue(SetAttribute(Attribute::Reset))?;
+    bg(stdout, BG)?;
+    stdout.queue(Print("\r\n"))?;
     stdout.flush()
 }
 
@@ -286,7 +633,10 @@ struct TextInput {
 impl TextInput {
     fn new(initial: &str) -> Self {
         let len = initial.len();
-        Self { text: initial.to_string(), cursor: len }
+        Self {
+            text: initial.to_string(),
+            cursor: len,
+        }
     }
 
     fn insert(&mut self, c: char) {
@@ -324,7 +674,11 @@ impl TextInput {
 
     fn move_right(&mut self) {
         if self.cursor < self.text.len() {
-            self.cursor += self.text[self.cursor..].chars().next().map(|c| c.len_utf8()).unwrap_or(0);
+            self.cursor += self.text[self.cursor..]
+                .chars()
+                .next()
+                .map(|c| c.len_utf8())
+                .unwrap_or(0);
         }
     }
 
@@ -360,13 +714,12 @@ enum StepOutcome {
 
 /// Run the first-run setup wizard.
 pub async fn run_wizard(config_path: &Path) -> Result<()> {
-    // Terminal size check
+    // Terminal size check — accept down to 60×20, but the experience is better at 80×24+.
     let (cols, rows) = terminal::size()?;
-    if cols < 80 || rows < 24 {
+    if cols < 60 || rows < 20 {
         eprintln!(
-            "xenoclaw setup requires a terminal at least 80×24. \
-             Current size: {}×{}. Please resize and try again.",
-            cols, rows
+            "xenoclaw setup requires a terminal at least 60×20. \
+             Current size: {cols}×{rows}. Please resize and try again."
         );
         std::process::exit(1);
     }
@@ -429,82 +782,102 @@ async fn run_wizard_inner(config_path: &Path) -> Result<()> {
 
 // ─── Step 1: Welcome ─────────────────────────────────────────────────────────
 
-async fn step_welcome(_state: &WizardState) -> Result<StepOutcome> {
-    let mut stdout = io::stdout();
-    clear_screen(&mut stdout)?;
-    print_header(&mut stdout, 1)?;
+fn render_welcome(stdout: &mut io::Stdout) -> io::Result<()> {
+    clear_screen(stdout)?;
+    print_header(stdout, 1)?;
 
-    stdout.queue(Print("\n"))?;
-    print_banner(&mut stdout)?;
+    stdout.queue(Print("\r\n"))?;
+    print_banner(stdout)?;
+    stdout.queue(Print("\r\n"))?;
 
-    stdout.queue(Print("\n"))?;
-    // XenoClaw-specific feature highlights
+    // Feature highlights. Each row: red glyph + white feature name + dim tail.
+    let features: &[(&str, &str, &str)] = &[
+        (
+            ">",
+            "Dual-mode runtime",
+            "General 24/7 agent + Coding agent (hot-swap)",
+        ),
+        (
+            ">",
+            "Multi-provider failover",
+            "27 LLM providers, priority routing",
+        ),
+        (
+            ">",
+            "Messaging bridges",
+            "Telegram, Discord & WhatsApp — chat from anywhere",
+        ),
+        (
+            ">",
+            "WASM plugin system",
+            "sandboxed extensions with hot-reload",
+        ),
+        (
+            ">",
+            "Sandboxed execution",
+            "RBAC, filesystem & network allowlists",
+        ),
+        (
+            ">",
+            "Always-on supervision",
+            "auto-restart, health checks, SIGHUP hot-reload",
+        ),
+    ];
+
+    for (glyph, name, tail) in features {
+        bg(stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(RED))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!("  {glyph}  ")))?
+            .queue(SetForegroundColor(WHITE))?
+            .queue(Print(*name))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print(format!("  — {tail}\r\n")))?;
+    }
+
+    stdout.queue(Print("\r\n"))?;
+    bg(stdout, BG)?;
     stdout
-        .queue(SetForegroundColor(BRAND))?
-        .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print("  ⚡"))?
-        .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(SetForegroundColor(SUCCESS))?
-        .queue(Print(" Dual-mode: General 24/7 agent + Coding agent (hot-swap)\n"))?
-        .queue(SetForegroundColor(BRAND))?
-        .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print("  🔀"))?
-        .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(SetForegroundColor(SUCCESS))?
-        .queue(Print(" Multi-provider LLM failover (27 providers supported)\n"))?
-        .queue(SetForegroundColor(BRAND))?
-        .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print("  💬"))?
-        .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(SetForegroundColor(SUCCESS))?
-        .queue(Print(" Telegram, Discord & WhatsApp bridge — chat from anywhere\n"))?
-        .queue(SetForegroundColor(BRAND))?
-        .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print("  🧩"))?
-        .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(SetForegroundColor(SUCCESS))?
-        .queue(Print(" WASM plugin system with hot-reload\n"))?
-        .queue(SetForegroundColor(BRAND))?
-        .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print("  🛡"))?
-        .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(SetForegroundColor(SUCCESS))?
-        .queue(Print(" Sandboxed execution, RBAC, filesystem & network allowlists\n"))?
-        .queue(SetForegroundColor(BRAND))?
-        .queue(SetAttribute(Attribute::Bold))?
-        .queue(Print("  📡"))?
-        .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(SetForegroundColor(SUCCESS))?
-        .queue(Print(" Always-on: auto-restart, health checks, SIGHUP hot-reload\n"))?
-        .queue(SetBackgroundColor(BG))?;
+        .queue(SetForegroundColor(TEXT))?
+        .queue(SetAttribute(Attribute::Italic))?
+        .queue(Print(
+            "  Self-hosted. Your infrastructure. Your data. Your rules.\r\n",
+        ))?
+        .queue(SetAttribute(Attribute::Reset))?;
+    bg(stdout, BG)?;
 
-    stdout.queue(Print("\n"))?;
-    stdout
-        .queue(SetForegroundColor(DIM))?
-        .queue(Print("  Self-hosted. Your infrastructure. Your data. Your rules.\n"))?
-        .queue(SetBackgroundColor(BG))?;
-
-    stdout.queue(Print("\n"))?;
+    stdout.queue(Print("\r\n"))?;
     stdout.flush()?;
 
-    print_footer(&mut stdout, "[Enter] Begin setup  [Esc] Cancel")?;
+    print_footer(stdout, "  [Enter] Begin setup    [Esc] Cancel")?;
+    Ok(())
+}
+
+async fn step_welcome(_state: &WizardState) -> Result<StepOutcome> {
+    let mut stdout = io::stdout();
+    render_welcome(&mut stdout)?;
 
     loop {
-        if let Event::Key(key) = event::read()? {
-            match key.code {
+        match event::read()? {
+            Event::Key(key) => match key.code {
                 KeyCode::Enter => return Ok(StepOutcome::Next),
                 KeyCode::Esc => return Ok(StepOutcome::Quit),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
                 }
                 _ => {}
+            },
+            // Hyprland (and other compositors) send a resize event when the
+            // terminal window is tiled/untiled or fullscreen is toggled.
+            // Re-render so nothing is cut off at the new dimensions.
+            Event::Resize(_, _) => {
+                render_welcome(&mut stdout)?;
             }
+            _ => {}
         }
     }
 }
@@ -521,12 +894,13 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 2)?;
 
+        bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(WHITE))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print("   Select your LLM provider:\n\n"))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print("   Select your LLM provider\r\n\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
 
         // Ensure selected item is visible
         if selected < scroll_offset {
@@ -536,62 +910,69 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
         }
 
         let end = (scroll_offset + page_size).min(PROVIDERS.len());
-        for i in scroll_offset..end {
-            let p = &PROVIDERS[i];
+        for (i, p) in PROVIDERS.iter().enumerate().take(end).skip(scroll_offset) {
             let num = i + 1;
             if i == selected {
+                bg(&mut stdout, BG)?;
                 stdout
-                    .queue(SetForegroundColor(BRAND))?
+                    .queue(SetForegroundColor(RED))?
                     .queue(SetAttribute(Attribute::Bold))?
-                    .queue(Print(format!(
-                        "   ► [{num:>2}]  {:<20} {}\n",
-                        p.name, p.default_model
-                    )))?
-                    .queue(SetAttribute(Attribute::Reset))?
-                    .queue(SetBackgroundColor(BG))?;
+                    .queue(Print(format!("   > [{num:>2}]  ")))?
+                    .queue(SetForegroundColor(WHITE))?
+                    .queue(Print(format!("{:<20} ", p.name)))?
+                    .queue(SetForegroundColor(TEXT))?
+                    .queue(Print(format!("{}\r\n", p.default_model)))?
+                    .queue(SetAttribute(Attribute::Reset))?;
+                bg(&mut stdout, BG)?;
             } else {
-                stdout
-                    .queue(SetForegroundColor(DIM))?
-                    .queue(Print(format!(
-                        "     [{num:>2}]  {:<20} {}\n",
-                        p.name, p.default_model
-                    )))?
-                    .queue(SetBackgroundColor(BG))?;
+                bg(&mut stdout, BG)?;
+                stdout.queue(SetForegroundColor(DIM))?.queue(Print(format!(
+                    "     [{num:>2}]  {:<20} {}\r\n",
+                    p.name, p.default_model
+                )))?;
             }
         }
 
         if end < PROVIDERS.len() {
-            stdout
-                .queue(SetForegroundColor(DIM))?
-                .queue(Print(format!(
-                    "\n   ... and {} more (scroll down)\n",
-                    PROVIDERS.len() - end
-                )))?
-                .queue(SetBackgroundColor(BG))?;
+            bg(&mut stdout, BG)?;
+            stdout.queue(SetForegroundColor(DIM))?.queue(Print(format!(
+                "\r\n     … and {} more (scroll down)\r\n",
+                PROVIDERS.len() - end
+            )))?;
         }
 
         stdout.flush()?;
         print_footer(
             &mut stdout,
-            "[↑↓/jk] Navigate  [Enter] Choose  [Esc] Back  [Ctrl-C] Quit",
+            "  [↑↓/jk] Navigate  [Enter] Choose  [Esc] Back  [Ctrl-C] Quit",
         )?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
-                    if selected > 0 { selected -= 1; }
+                    selected = selected.saturating_sub(1);
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if selected < PROVIDERS.len() - 1 { selected += 1; }
+                    if selected < PROVIDERS.len() - 1 {
+                        selected += 1;
+                    }
                 }
                 KeyCode::Enter => {
                     state.provider_idx = selected;
                     let p = &PROVIDERS[selected];
                     state.base_url = p.default_base_url.to_string();
                     state.model = p.default_model.to_string();
-                    // Sub-screen for API key
                     if p.needs_api_key {
                         let outcome = step_provider_details(state).await?;
+                        match outcome {
+                            StepOutcome::Next => return Ok(StepOutcome::Next),
+                            StepOutcome::Back => continue,
+                            StepOutcome::Quit => return Ok(StepOutcome::Quit),
+                        }
+                    } else if p.default_base_url.is_empty() {
+                        // CLI-backed provider (Claude Code CLI, Copilot CLI) — no API key
+                        // or base URL needed; show an info/model screen instead.
+                        let outcome = step_cli_provider(state).await?;
                         match outcome {
                             StepOutcome::Next => return Ok(StepOutcome::Next),
                             StepOutcome::Back => continue,
@@ -600,6 +981,112 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
                     } else {
                         return Ok(StepOutcome::Next);
                     }
+                }
+                KeyCode::Esc => return Ok(StepOutcome::Back),
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return Ok(StepOutcome::Quit);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Step 2b — CLI-backed providers (Claude Code CLI, GitHub Copilot CLI).
+///
+/// These providers don't need an API key or base URL — they shell out to a
+/// locally installed CLI. Show which CLI is required, let the user confirm or
+/// change the model, then proceed.
+async fn step_cli_provider(state: &mut WizardState) -> Result<StepOutcome> {
+    let p = &PROVIDERS[state.provider_idx];
+    let mut model_input = TextInput::new(&state.model);
+    let mut editing = false;
+
+    let (cli_name, cli_check_cmd, cli_hint) = if p.provider_type == "claude_code" {
+        (
+            "Claude Code CLI",
+            "claude --version",
+            "Run `claude auth` to authenticate if not already done.",
+        )
+    } else {
+        (
+            "GitHub Copilot CLI",
+            "gh copilot --version",
+            "Run `gh extension install github/gh-copilot` if not installed.",
+        )
+    };
+
+    loop {
+        let mut stdout = io::stdout();
+        clear_screen(&mut stdout)?;
+        print_header(&mut stdout, 2)?;
+
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(WHITE))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!("   {}\r\n", p.name)))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(DIM))?.queue(Print(
+            "   No API key or base URL required — uses a local CLI.\r\n\r\n",
+        ))?;
+        bg(&mut stdout, BG)?;
+
+        // Requirement callout
+        stdout
+            .queue(SetForegroundColor(AMBER))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Requires: "))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(WHITE))?
+            .queue(Print(format!("{cli_name}  ")))?
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print(format!("({cli_check_cmd})\r\n")))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print(format!("   {cli_hint}\r\n\r\n")))?;
+        bg(&mut stdout, BG)?;
+
+        // Model field
+        render_text_row(&mut stdout, true, "Model", &model_input, editing)?;
+        stdout.queue(Print("\r\n"))?;
+
+        stdout.flush()?;
+        print_footer(
+            &mut stdout,
+            "  [Enter] Confirm  [E] Edit model  [Esc] Back  [Ctrl-C] Quit",
+        )?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Enter if editing => {
+                    editing = false;
+                }
+                KeyCode::Enter => {
+                    state.model = model_input.value().to_string();
+                    return Ok(StepOutcome::Next);
+                }
+                KeyCode::Char('e') | KeyCode::Char('E') if !editing => {
+                    editing = true;
+                }
+                KeyCode::Left if editing => {
+                    model_input.move_left();
+                }
+                KeyCode::Right if editing => {
+                    model_input.move_right();
+                }
+                KeyCode::Backspace if editing => {
+                    model_input.backspace();
+                }
+                KeyCode::Delete if editing => {
+                    model_input.delete();
+                }
+                KeyCode::Char(c) if editing => {
+                    model_input.insert(c);
                 }
                 KeyCode::Esc => return Ok(StepOutcome::Back),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -627,12 +1114,15 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 2)?;
 
+        bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(RED))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print(format!("   Provider: {}\n\n", p.name)))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print("   Provider: ".to_string()))?
+            .queue(SetForegroundColor(WHITE))?
+            .queue(Print(format!("{}\r\n\r\n", p.name)))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
 
         for (i, input) in inputs.iter().enumerate() {
             let display = if masked[i] && !input.value().is_empty() {
@@ -643,31 +1133,40 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
                 input.value().to_string()
             };
             if i == field {
+                bg(&mut stdout, BG)?;
                 stdout
-                    .queue(SetForegroundColor(BRAND))?
+                    .queue(SetForegroundColor(RED))?
                     .queue(SetAttribute(Attribute::Bold))?
-                    .queue(Print(format!("   ► {:<10} > {display}\n", labels[i])))?
-                    .queue(SetAttribute(Attribute::Reset))?
-                    .queue(SetBackgroundColor(BG))?;
+                    .queue(Print(format!("   > {:<10} ", labels[i])))?
+                    .queue(SetForegroundColor(DIM))?
+                    .queue(Print("│ "))?
+                    .queue(SetForegroundColor(WHITE))?
+                    .queue(Print(format!("{display}\r\n")))?
+                    .queue(SetAttribute(Attribute::Reset))?;
+                bg(&mut stdout, BG)?;
             } else {
+                bg(&mut stdout, BG)?;
                 stdout
                     .queue(SetForegroundColor(DIM))?
-                    .queue(Print(format!("     {:<10} > {display}\n", labels[i])))?
-                    .queue(SetBackgroundColor(BG))?;
+                    .queue(Print(format!("     {:<10} │ {display}\r\n", labels[i])))?;
             }
         }
 
-        stdout.queue(Print("\n"))?;
+        stdout.queue(Print("\r\n"))?;
         stdout.flush()?;
         print_footer(
             &mut stdout,
-            "[Tab] Next field  [←→] Move cursor  [Enter] Confirm  [Esc] Back",
+            "  [Tab] Next field  [←→] Move cursor  [Enter] Confirm  [Esc] Back",
         )?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
-                KeyCode::Tab => { field = (field + 1) % 3; }
-                KeyCode::BackTab => { field = if field == 0 { 2 } else { field - 1 }; }
+                KeyCode::Tab => {
+                    field = (field + 1) % 3;
+                }
+                KeyCode::BackTab => {
+                    field = if field == 0 { 2 } else { field - 1 };
+                }
                 KeyCode::Enter => {
                     state.api_key = inputs[0].value().to_string();
                     state.base_url = inputs[1].value().to_string();
@@ -701,42 +1200,65 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 3)?;
 
+        bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(SUCCESS))?
-            .queue(Print(
-                "   Workspace directory (contains SOUL.md, IDENTITY.md, etc.):\n\n"
-            ))?;
-        stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(WHITE))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print(format!("   > {}\n\n", input.display())))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print("   Workspace directory\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(DIM))?.queue(Print(
+            "   Contains SOUL.md, IDENTITY.md, memory/, skills/, etc.\r\n\r\n",
+        ))?;
+        bg(&mut stdout, BG)?;
+
+        stdout
+            .queue(SetForegroundColor(RED))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   > "))?
+            .queue(SetForegroundColor(WHITE))?
+            .queue(Print(format!("{}\r\n\r\n", input.display())))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
 
         let path = Path::new(input.value());
         if path.exists() && path.is_dir() {
-            let count = std::fs::read_dir(path)
-                .map(|d| d.count())
-                .unwrap_or(0);
+            let count = std::fs::read_dir(path).map(|d| d.count()).unwrap_or(0);
             stdout
-                .queue(SetForegroundColor(BRAND))?
+                .queue(SetForegroundColor(GREEN))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   ✓  Found: {}  ({count} files)\n", input.value())))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetBackgroundColor(BG))?;
+                .queue(Print("   \u{2713} ".to_string()))?
+                .queue(SetForegroundColor(TEXT))?
+                .queue(Print(format!("Found  ({count} entries)\r\n")))?
+                .queue(SetAttribute(Attribute::Reset))?;
+            bg(&mut stdout, BG)?;
         } else {
             stdout
-                .queue(SetForegroundColor(DIM))?
-                .queue(Print("   Directory does not exist.\n"))?
-                .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print("   [C] Create stub workspace    [S] Skip for now\n"))?
-                .queue(SetBackgroundColor(BG))?;
+                .queue(SetForegroundColor(AMBER))?
+                .queue(Print("   ◆ Does not exist yet.\r\n"))?
+                .queue(SetForegroundColor(WHITE))?
+                .queue(Print("     ["))?
+                .queue(SetForegroundColor(RED))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(Print("C"))?
+                .queue(SetAttribute(Attribute::Reset))?
+                .queue(SetForegroundColor(WHITE))?;
+            bg(&mut stdout, BG)?;
+            stdout
+                .queue(Print("] Create stub workspace    ["))?
+                .queue(SetForegroundColor(RED))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(Print("S"))?
+                .queue(SetAttribute(Attribute::Reset))?
+                .queue(SetForegroundColor(WHITE))?;
+            bg(&mut stdout, BG)?;
+            stdout.queue(Print("] Skip for now\r\n"))?;
         }
 
         stdout.flush()?;
         print_footer(
             &mut stdout,
-            "[←→] Move cursor  [Enter] Confirm  [C] Create  [S] Skip  [Esc] Back",
+            "  [←→] Cursor  [Enter] Confirm  [C] Create  [S] Skip  [Esc] Back",
         )?;
 
         if let Event::Key(key) = event::read()? {
@@ -787,76 +1309,56 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 4)?;
 
-        let auth_str = if require_auth { "Yes" } else { "No" };
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(WHITE))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Server Bindings\r\n\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
 
-        // Host field
-        if field == 0 {
-            stdout
-                .queue(SetForegroundColor(BRAND))?
-                .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   Bind host:      > {}\n", host_input.display())))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetBackgroundColor(BG))?;
-        } else {
-            stdout
-                .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("   Bind host:      > {}\n", host_input.value())))?
-                .queue(SetBackgroundColor(BG))?;
-        }
-        // API Port field
-        if field == 1 {
-            stdout
-                .queue(SetForegroundColor(BRAND))?
-                .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   API port:       > {}\n", port_input.display())))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetBackgroundColor(BG))?;
-        } else {
-            stdout
-                .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("   API port:       > {}\n", port_input.value())))?
-                .queue(SetBackgroundColor(BG))?;
-        }
-        // Web UI Port field
-        if field == 2 {
-            stdout
-                .queue(SetForegroundColor(BRAND))?
-                .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   Web UI port:    > {}\n", web_port_input.display())))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetBackgroundColor(BG))?;
-        } else {
-            stdout
-                .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("   Web UI port:    > {}\n", web_port_input.value())))?
-                .queue(SetBackgroundColor(BG))?;
-        }
-        stdout.queue(Print("\n"))?;
+        render_field(&mut stdout, field == 0, "Bind host", &host_input)?;
+        render_field(&mut stdout, field == 1, "API port", &port_input)?;
+        render_field(&mut stdout, field == 2, "Web UI port", &web_port_input)?;
+
+        stdout.queue(Print("\r\n"))?;
+
         // Auth toggle
+        let auth_str = if require_auth { "Yes" } else { "No" };
+        let auth_color = if require_auth { GREEN } else { AMBER };
         if field == 3 {
+            bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(BRAND))?
+                .queue(SetForegroundColor(RED))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   ► Require authentication?  [{auth_str}]\n")))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetBackgroundColor(BG))?;
+                .queue(Print("   > Require authentication?  "))?
+                .queue(SetForegroundColor(auth_color))?
+                .queue(Print(format!("[{auth_str}]\r\n")))?
+                .queue(SetAttribute(Attribute::Reset))?;
+            bg(&mut stdout, BG)?;
         } else {
+            bg(&mut stdout, BG)?;
             stdout
                 .queue(SetForegroundColor(DIM))?
-                .queue(Print(format!("     Require authentication?  [{auth_str}]\n")))?
-                .queue(SetBackgroundColor(BG))?;
+                .queue(Print("     Require authentication?  "))?
+                .queue(SetForegroundColor(auth_color))?
+                .queue(Print(format!("[{auth_str}]\r\n")))?;
         }
         stdout.flush()?;
 
         print_footer(
             &mut stdout,
-            "[Tab] Next field  [←→] Move cursor  [Enter] Confirm  [Esc] Back",
+            "  [Tab] Next  [←→] Cursor  [Space] Toggle  [Enter] Confirm  [Esc] Back",
         )?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
-                KeyCode::Tab => { field = (field + 1) % 4; }
-                KeyCode::BackTab => { field = if field == 0 { 3 } else { field - 1 }; }
+                KeyCode::Tab => {
+                    field = (field + 1) % 4;
+                }
+                KeyCode::BackTab => {
+                    field = if field == 0 { 3 } else { field - 1 };
+                }
                 KeyCode::Enter => {
                     state.host = host_input.value().to_string();
                     state.port = port_input.value().to_string();
@@ -877,42 +1379,93 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
                 KeyCode::Char(' ') if field == 3 => {
                     require_auth = !require_auth;
                 }
-                KeyCode::Left => {
-                    match field { 0 => host_input.move_left(), 1 => port_input.move_left(), 2 => web_port_input.move_left(), _ => {} }
-                }
-                KeyCode::Right => {
-                    match field { 0 => host_input.move_right(), 1 => port_input.move_right(), 2 => web_port_input.move_right(), _ => {} }
-                }
-                KeyCode::Home => {
-                    match field { 0 => host_input.move_home(), 1 => port_input.move_home(), 2 => web_port_input.move_home(), _ => {} }
-                }
-                KeyCode::End => {
-                    match field { 0 => host_input.move_end(), 1 => port_input.move_end(), 2 => web_port_input.move_end(), _ => {} }
-                }
-                KeyCode::Backspace => {
-                    match field { 0 => host_input.backspace(), 1 => port_input.backspace(), 2 => web_port_input.backspace(), _ => {} }
-                }
-                KeyCode::Delete => {
-                    match field { 0 => host_input.delete(), 1 => port_input.delete(), 2 => web_port_input.delete(), _ => {} }
-                }
-                KeyCode::Char(c) => {
-                    match field {
-                        0 => host_input.insert(c),
-                        1 => { if c.is_ascii_digit() { port_input.insert(c); } }
-                        2 => { if c.is_ascii_digit() { web_port_input.insert(c); } }
-                        _ => {}
+                KeyCode::Left => match field {
+                    0 => host_input.move_left(),
+                    1 => port_input.move_left(),
+                    2 => web_port_input.move_left(),
+                    _ => {}
+                },
+                KeyCode::Right => match field {
+                    0 => host_input.move_right(),
+                    1 => port_input.move_right(),
+                    2 => web_port_input.move_right(),
+                    _ => {}
+                },
+                KeyCode::Home => match field {
+                    0 => host_input.move_home(),
+                    1 => port_input.move_home(),
+                    2 => web_port_input.move_home(),
+                    _ => {}
+                },
+                KeyCode::End => match field {
+                    0 => host_input.move_end(),
+                    1 => port_input.move_end(),
+                    2 => web_port_input.move_end(),
+                    _ => {}
+                },
+                KeyCode::Backspace => match field {
+                    0 => host_input.backspace(),
+                    1 => port_input.backspace(),
+                    2 => web_port_input.backspace(),
+                    _ => {}
+                },
+                KeyCode::Delete => match field {
+                    0 => host_input.delete(),
+                    1 => port_input.delete(),
+                    2 => web_port_input.delete(),
+                    _ => {}
+                },
+                KeyCode::Char(c) => match field {
+                    0 => host_input.insert(c),
+                    1 => {
+                        if c.is_ascii_digit() {
+                            port_input.insert(c);
+                        }
                     }
-                }
+                    2 => {
+                        if c.is_ascii_digit() {
+                            web_port_input.insert(c);
+                        }
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
     }
 }
 
+/// Render a labeled text input field (active = red arrow + white value).
+fn render_field(
+    stdout: &mut io::Stdout,
+    active: bool,
+    label: &str,
+    input: &TextInput,
+) -> io::Result<()> {
+    if active {
+        bg(stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(RED))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!("   > {label:<14} ")))?
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print("│ "))?
+            .queue(SetForegroundColor(WHITE))?
+            .queue(Print(format!("{}\r\n", input.display())))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
+    } else {
+        bg(stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print(format!("     {label:<14} │ {}\r\n", input.value())))?;
+    }
+    Ok(())
+}
+
 // ─── Step 5: Authentication ──────────────────────────────────────────────────
 
 async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
-    // Generate key if not already generated
     if state.admin_key_raw.is_empty() {
         let auth = ApiKeyAuthenticator::new();
         state.admin_key_raw = format!("xc_{}", auth.generate_key(40));
@@ -929,97 +1482,131 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
         print_header(&mut stdout, 5)?;
 
         // API Key section
+        bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(WHITE))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print("   API Key (for programmatic access)\n"))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?;
-        stdout.queue(Print(
-            "   ┌─────────────────────────────────────────────────┐\n\
-             \x20  │  Save this now — it will NOT be shown again.    │\n\
-             \x20  │                                                 │\n"
-        ))?;
-        stdout
-            .queue(Print("   │  "))?
-            .queue(SetForegroundColor(SUCCESS))?
-            .queue(Print(format!("{:<47}", &state.admin_key_raw)))?
-            .queue(SetBackgroundColor(BG))?
-            .queue(Print("│\n"))?;
-        stdout.queue(Print(
-            "   │                                                 │\n\
-             \x20  └─────────────────────────────────────────────────┘\n"
-        ))?;
+            .queue(Print("   API Key  "))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
         stdout
             .queue(SetForegroundColor(DIM))?
-            .queue(Print("   [R] Regenerate key\n\n"))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print("(programmatic access)\r\n\r\n"))?;
+        bg(&mut stdout, BG)?;
+
+        // Key callout box — red border, white key text on charcoal.
+        let box_w: usize = 56;
+        let border = "─".repeat(box_w);
+        let warn_text = "⚠ SAVE THIS NOW";
+        let warn_w = UnicodeWidthStr::width(warn_text);
+        // dim_pad fills the rest of the inner box after the warning text.
+        // Inner layout: 1 (space) + warn_w + dim_pad + 1 (trailing space before │) = box_w
+        let dim_pad = box_w.saturating_sub(2 + warn_w);
+        stdout
+            .queue(SetForegroundColor(RED))?
+            .queue(Print(format!("   ┌{border}┐\r\n")))?
+            .queue(Print("   │ "))?
+            .queue(SetForegroundColor(AMBER))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(warn_text))?
+            .queue(SetAttribute(Attribute::Reset))?
+            .queue(SetForegroundColor(DIM))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(Print(format!(
+                "{:<dim_pad$}",
+                " — will not be shown again.",
+            )))?
+            .queue(SetForegroundColor(RED))?
+            .queue(Print(" │\r\n"))?
+            .queue(Print(format!("   │{}│\r\n", " ".repeat(box_w))))?
+            .queue(Print("   │  "))?
+            .queue(SetForegroundColor(WHITE))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!(
+                "{:<width$}",
+                state.admin_key_raw,
+                width = box_w - 2
+            )))?
+            .queue(SetAttribute(Attribute::Reset))?
+            .queue(SetForegroundColor(RED))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(Print("│\r\n"))?
+            .queue(Print(format!("   │{}│\r\n", " ".repeat(box_w))))?
+            .queue(Print(format!("   └{border}┘\r\n")))?
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print("   [R] Regenerate key\r\n\r\n"))?;
+        bg(&mut stdout, BG)?;
 
         // Web UI login section
         stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(WHITE))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print("   Web UI Login (username + password)\n\n"))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print("   Web UI Login  "))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(DIM))?
+            .queue(Print("(username + password)\r\n\r\n"))?;
+        bg(&mut stdout, BG)?;
 
-        // Username
-        if field == 1 {
-            stdout
-                .queue(SetForegroundColor(BRAND))?
-                .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   ► Username:  > {}\n", username_input.display())))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetBackgroundColor(BG))?;
-        } else {
-            stdout
-                .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("     Username:  > {}\n", username_input.value())))?
-                .queue(SetBackgroundColor(BG))?;
-        }
+        render_field(&mut stdout, field == 1, "Username", &username_input)?;
 
-        // Password
+        // Password — masked when not editing
         if field == 2 {
+            bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(BRAND))?
+                .queue(SetForegroundColor(RED))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   ► Password:  > {}\n", password_input.display())))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetBackgroundColor(BG))?;
+                .queue(Print(format!("   > {:<14} ", "Password")))?
+                .queue(SetForegroundColor(DIM))?
+                .queue(Print("│ "))?
+                .queue(SetForegroundColor(WHITE))?
+                .queue(Print(format!("{}\r\n", password_input.display())))?
+                .queue(SetAttribute(Attribute::Reset))?;
+            bg(&mut stdout, BG)?;
         } else {
             let masked = if password_input.value().is_empty() {
                 "(not set — password login disabled)".to_string()
             } else {
                 "●".repeat(password_input.value().len())
             };
+            bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(SUCCESS))?
-                .queue(Print(format!("     Password:  > {masked}\n")))?
-                .queue(SetBackgroundColor(BG))?;
+                .queue(SetForegroundColor(DIM))?
+                .queue(Print(format!("     {:<14} │ {masked}\r\n", "Password")))?;
         }
 
-        stdout.queue(Print("\n"))?;
+        stdout.queue(Print("\r\n"))?;
+        bg(&mut stdout, BG)?;
         stdout
             .queue(SetForegroundColor(DIM))?
-            .queue(Print("   Both API key and password auth work for the web UI.\n"))?
-            .queue(Print("   Leave password empty to disable password login.\n"))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print(
+                "   Both API key and password auth work for the web UI.\r\n",
+            ))?
+            .queue(Print(
+                "   Leave password empty to disable password login.\r\n",
+            ))?;
 
         stdout.flush()?;
         print_footer(
             &mut stdout,
-            "[Tab] Next field  [←→] Cursor  [R] Regen key  [Enter] Accept  [Esc] Back",
+            "  [Tab] Next  [←→] Cursor  [R] Regen key  [Enter] Accept  [Esc] Back",
         )?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
-                KeyCode::Tab => { field = (field + 1) % 3; }
-                KeyCode::BackTab => { field = if field == 0 { 2 } else { field - 1 }; }
+                KeyCode::Tab => {
+                    field = (field + 1) % 3;
+                }
+                KeyCode::BackTab => {
+                    field = if field == 0 { 2 } else { field - 1 };
+                }
                 KeyCode::Enter => {
                     state.admin_username = username_input.value().to_string();
                     state.admin_password = password_input.value().to_string();
                     if !state.admin_password.is_empty() {
-                        // Hash the password with bcrypt
                         state.admin_password_hash = hash_password(&state.admin_password);
                     }
                     return Ok(StepOutcome::Next);
@@ -1033,42 +1620,50 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
                 }
-                // Text input for username/password fields
-                KeyCode::Left => {
-                    match field { 1 => username_input.move_left(), 2 => password_input.move_left(), _ => {} }
-                }
-                KeyCode::Right => {
-                    match field { 1 => username_input.move_right(), 2 => password_input.move_right(), _ => {} }
-                }
-                KeyCode::Home => {
-                    match field { 1 => username_input.move_home(), 2 => password_input.move_home(), _ => {} }
-                }
-                KeyCode::End => {
-                    match field { 1 => username_input.move_end(), 2 => password_input.move_end(), _ => {} }
-                }
-                KeyCode::Backspace => {
-                    match field { 1 => username_input.backspace(), 2 => password_input.backspace(), _ => {} }
-                }
-                KeyCode::Delete => {
-                    match field { 1 => username_input.delete(), 2 => password_input.delete(), _ => {} }
-                }
-                KeyCode::Char(c) if field >= 1 => {
-                    match field { 1 => username_input.insert(c), 2 => password_input.insert(c), _ => {} }
-                }
+                KeyCode::Left => match field {
+                    1 => username_input.move_left(),
+                    2 => password_input.move_left(),
+                    _ => {}
+                },
+                KeyCode::Right => match field {
+                    1 => username_input.move_right(),
+                    2 => password_input.move_right(),
+                    _ => {}
+                },
+                KeyCode::Home => match field {
+                    1 => username_input.move_home(),
+                    2 => password_input.move_home(),
+                    _ => {}
+                },
+                KeyCode::End => match field {
+                    1 => username_input.move_end(),
+                    2 => password_input.move_end(),
+                    _ => {}
+                },
+                KeyCode::Backspace => match field {
+                    1 => username_input.backspace(),
+                    2 => password_input.backspace(),
+                    _ => {}
+                },
+                KeyCode::Delete => match field {
+                    1 => username_input.delete(),
+                    2 => password_input.delete(),
+                    _ => {}
+                },
+                KeyCode::Char(c) if field >= 1 => match field {
+                    1 => username_input.insert(c),
+                    2 => password_input.insert(c),
+                    _ => {}
+                },
                 _ => {}
             }
         }
     }
 }
 
-/// Hash a password using SHA-256 (for config storage).
-/// In production, bcrypt would be used, but that requires the bcrypt crate
-/// which is already a workspace dependency. For the setup wizard we store
-/// a bcrypt hash.
+/// Hash a password using bcrypt.
 fn hash_password(password: &str) -> String {
-    // Use bcrypt with default cost
     bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap_or_else(|_| {
-        // Fallback to SHA-256 if bcrypt fails
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(password.as_bytes());
@@ -1083,17 +1678,10 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
     let mut custom_input = TextInput::new(&state.custom_commands);
     let mut exclude_input = TextInput::new(&state.excluded_commands);
     let mut timeout_input = TextInput::new(&state.tool_timeout);
-    let mut editing: Option<usize> = None; // Which row is being text-edited
+    let mut editing: Option<usize> = None;
 
     loop {
         let cmd_count = state.sandbox_commands.len();
-        // Layout rows:
-        // 0 = allow_all
-        // 1..=cmd_count = individual commands
-        // cmd_count+1 = allow_pipes
-        // cmd_count+2 = custom commands (text)
-        // cmd_count+3 = excluded commands (text)
-        // cmd_count+4 = timeout (text + unit)
         let row_allow_all = 0;
         let row_pipes = cmd_count + 1;
         let row_custom = cmd_count + 2;
@@ -1111,83 +1699,103 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 6)?;
 
+        bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(WHITE))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print("   Shell Sandbox Configuration\n"))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?
-            .queue(SetForegroundColor(DIM))?
-            .queue(Print("   (Space to toggle, Enter to edit text fields, Tab to cycle unit)\n\n"))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print("   Shell Sandbox\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(DIM))?.queue(Print(
+            "   Space toggles, Enter edits text, Tab cycles unit\r\n\r\n",
+        ))?;
+        bg(&mut stdout, BG)?;
 
         // Allow all
         let all_check = if state.allow_all_commands { "✓" } else { " " };
-        render_toggle_row(&mut stdout, selected == row_allow_all, &format!("[{all_check}] * (allow ALL commands)"))?;
+        render_toggle_row(
+            &mut stdout,
+            selected == row_allow_all,
+            state.allow_all_commands,
+            &format!("[{all_check}] * (allow ALL commands)"),
+        )?;
 
-        stdout.queue(Print("\n"))?;
+        stdout.queue(Print("\r\n"))?;
 
         // Individual commands
         for (i, (cmd, enabled)) in state.sandbox_commands.iter().enumerate() {
-            let check = if *enabled || state.allow_all_commands { "✓" } else { " " };
+            let on = *enabled || state.allow_all_commands;
+            let check = if on { "✓" } else { " " };
             let row = i + 1;
             let is_active = selected == row && editing.is_none();
-            let color = if state.allow_all_commands && !is_active { SUCCESS } else { DIM };
-            if is_active {
-                stdout
-                    .queue(SetForegroundColor(BRAND))?
-                    .queue(SetAttribute(Attribute::Bold))?
-                    .queue(Print(format!("   ► [{check}] {cmd}\n")))?
-                    .queue(SetAttribute(Attribute::Reset))?
-                    .queue(SetBackgroundColor(BG))?;
-            } else {
-                stdout
-                    .queue(SetForegroundColor(color))?
-                    .queue(Print(format!("     [{check}] {cmd}\n")))?
-                    .queue(SetBackgroundColor(BG))?;
-            }
+            render_toggle_row(&mut stdout, is_active, on, &format!("[{check}] {cmd}"))?;
         }
 
-        stdout.queue(Print("\n"))?;
+        stdout.queue(Print("\r\n"))?;
 
         // Allow pipes
         let pipe_check = if state.allow_pipes { "✓" } else { " " };
-        render_toggle_row(&mut stdout, selected == row_pipes, &format!("[{pipe_check}] Allow pipes & operators (|, &&, ||, ;, >)"))?;
+        render_toggle_row(
+            &mut stdout,
+            selected == row_pipes,
+            state.allow_pipes,
+            &format!("[{pipe_check}] Allow pipes & operators (|, &&, ||, ;, >)"),
+        )?;
 
-        stdout.queue(Print("\n"))?;
+        stdout.queue(Print("\r\n"))?;
 
-        // Custom commands
         let is_editing_custom = editing == Some(row_custom);
-        render_text_row(&mut stdout, selected == row_custom || is_editing_custom, "Add commands (comma-separated, wildcards: python*):", &custom_input, is_editing_custom)?;
+        render_text_row(
+            &mut stdout,
+            selected == row_custom || is_editing_custom,
+            "Add commands (comma-separated, wildcards: python*):",
+            &custom_input,
+            is_editing_custom,
+        )?;
 
-        // Excluded commands
         let is_editing_exclude = editing == Some(row_exclude);
-        render_text_row(&mut stdout, selected == row_exclude || is_editing_exclude, "Exclude commands (comma-separated):", &exclude_input, is_editing_exclude)?;
+        render_text_row(
+            &mut stdout,
+            selected == row_exclude || is_editing_exclude,
+            "Exclude commands (comma-separated):",
+            &exclude_input,
+            is_editing_exclude,
+        )?;
 
-        stdout.queue(Print("\n"))?;
+        stdout.queue(Print("\r\n"))?;
 
         // Timeout with unit
         let is_editing_timeout = editing == Some(row_timeout);
         if selected == row_timeout || is_editing_timeout {
-            let display = if is_editing_timeout { timeout_input.display() } else { timeout_input.value().to_string() };
+            let display = if is_editing_timeout {
+                timeout_input.display()
+            } else {
+                timeout_input.value().to_string()
+            };
+            bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(BRAND))?
+                .queue(SetForegroundColor(RED))?
                 .queue(SetAttribute(Attribute::Bold))?
-                .queue(Print(format!("   ► Timeout: > {display}  {unit_label}  [Tab to change unit]\n")))?
-                .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetBackgroundColor(BG))?;
-        } else {
-            stdout
+                .queue(Print("   > Timeout: "))?
+                .queue(SetForegroundColor(WHITE))?
+                .queue(Print(format!("{display}  ")))?
                 .queue(SetForegroundColor(DIM))?
-                .queue(Print(format!("     Timeout: > {}  {unit_label}\n", timeout_input.value())))?
-                .queue(SetBackgroundColor(BG))?;
+                .queue(Print(format!("{unit_label}  [Tab to change unit]\r\n")))?
+                .queue(SetAttribute(Attribute::Reset))?;
+            bg(&mut stdout, BG)?;
+        } else {
+            bg(&mut stdout, BG)?;
+            stdout.queue(SetForegroundColor(DIM))?.queue(Print(format!(
+                "     Timeout: {}  {unit_label}\r\n",
+                timeout_input.value()
+            )))?;
         }
 
         stdout.flush()?;
         let footer = if editing.is_some() {
-            "[←→] Cursor  [Enter/Tab] Done editing  [Esc] Cancel edit"
+            "  [←→] Cursor  [Enter/Tab] Done  [Esc] Cancel"
         } else {
-            "[↑↓] Navigate  [Space] Toggle  [Enter] Edit/Next  [Esc] Back"
+            "  [↑↓] Nav  [Space] Toggle  [Enter] Edit/Next  [Esc] Back"
         };
         print_footer(&mut stdout, footer)?;
 
@@ -1210,20 +1818,27 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                     KeyCode::End => input.move_end(),
                     KeyCode::Backspace => input.backspace(),
                     KeyCode::Delete => input.delete(),
-                    KeyCode::Enter => { editing = None; }
-                    KeyCode::Esc => { editing = None; }
+                    KeyCode::Enter => {
+                        editing = None;
+                    }
+                    KeyCode::Esc => {
+                        editing = None;
+                    }
                     KeyCode::Tab if is_timeout => {
-                        // Cycle timeout unit
                         state.timeout_unit = match state.timeout_unit {
                             TimeoutUnit::Seconds => TimeoutUnit::Minutes,
                             TimeoutUnit::Minutes => TimeoutUnit::Hours,
                             TimeoutUnit::Hours => TimeoutUnit::Seconds,
                         };
                     }
-                    KeyCode::Tab => { editing = None; }
+                    KeyCode::Tab => {
+                        editing = None;
+                    }
                     KeyCode::Char(c) => {
                         if is_timeout {
-                            if c.is_ascii_digit() { input.insert(c); }
+                            if c.is_ascii_digit() {
+                                input.insert(c);
+                            }
                         } else {
                             input.insert(c);
                         }
@@ -1236,25 +1851,28 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             // Normal navigation
             match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
-                    if selected > 0 { selected -= 1; }
+                    selected = selected.saturating_sub(1);
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if selected < total_rows - 1 { selected += 1; }
+                    if selected < total_rows - 1 {
+                        selected += 1;
+                    }
                 }
                 KeyCode::Char(' ') => {
                     if selected == row_allow_all {
                         state.allow_all_commands = !state.allow_all_commands;
                     } else if selected >= 1 && selected <= cmd_count {
-                        state.sandbox_commands[selected - 1].1 = !state.sandbox_commands[selected - 1].1;
+                        state.sandbox_commands[selected - 1].1 =
+                            !state.sandbox_commands[selected - 1].1;
                     } else if selected == row_pipes {
                         state.allow_pipes = !state.allow_pipes;
                     }
                 }
                 KeyCode::Enter => {
-                    if selected == row_custom || selected == row_exclude || selected == row_timeout {
+                    if selected == row_custom || selected == row_exclude || selected == row_timeout
+                    {
                         editing = Some(selected);
                     } else {
-                        // Save and advance
                         state.custom_commands = custom_input.value().to_string();
                         state.excluded_commands = exclude_input.value().to_string();
                         state.tool_timeout = timeout_input.value().to_string();
@@ -1278,46 +1896,77 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
     }
 }
 
-fn render_toggle_row(stdout: &mut io::Stdout, active: bool, label: &str) -> io::Result<()> {
+/// Render a checkbox-style toggle row. Active → red arrow + white text.
+/// Enabled-but-inactive → text color (visible but not selected).
+/// Disabled-and-inactive → dim.
+fn render_toggle_row(
+    stdout: &mut io::Stdout,
+    active: bool,
+    enabled: bool,
+    label: &str,
+) -> io::Result<()> {
     if active {
+        bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(RED))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print(format!("   ► {label}\n")))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print(format!("   > {label}\r\n")))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
+    } else if enabled {
+        bg(stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(TEXT))?
+            .queue(Print(format!("     {label}\r\n")))?;
     } else {
+        bg(stdout, BG)?;
         stdout
             .queue(SetForegroundColor(DIM))?
-            .queue(Print(format!("     {label}\n")))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print(format!("     {label}\r\n")))?;
     }
     Ok(())
 }
 
-fn render_text_row(stdout: &mut io::Stdout, active: bool, label: &str, input: &TextInput, editing: bool) -> io::Result<()> {
+fn render_text_row(
+    stdout: &mut io::Stdout,
+    active: bool,
+    label: &str,
+    input: &TextInput,
+    editing: bool,
+) -> io::Result<()> {
     if active {
+        bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(RED))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print(format!("   ► {label}\n")))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?
-            .queue(SetForegroundColor(SUCCESS))?;
+            .queue(Print(format!("   > {label}\r\n")))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
         if editing {
-            stdout.queue(Print(format!("     > {}\n", input.display())))?;
+            stdout
+                .queue(SetForegroundColor(WHITE))?
+                .queue(Print(format!("     {}\r\n", input.display())))?;
         } else {
-            let val = if input.value().is_empty() { "(press Enter to type)" } else { input.value() };
-            stdout.queue(Print(format!("     > {val}\n")))?;
+            let val = if input.value().is_empty() {
+                "(press Enter to type)"
+            } else {
+                input.value()
+            };
+            stdout
+                .queue(SetForegroundColor(WHITE))?
+                .queue(Print(format!("     {val}\r\n")))?;
         }
-        stdout.queue(SetBackgroundColor(BG))?;
     } else {
+        bg(stdout, BG)?;
         stdout
             .queue(SetForegroundColor(DIM))?
-            .queue(Print(format!("     {label}\n")))?;
-        let val = if input.value().is_empty() { "(none)" } else { input.value() };
-        stdout.queue(Print(format!("     > {val}\n")))?;
-        stdout.queue(SetBackgroundColor(BG))?;
+            .queue(Print(format!("     {label}\r\n")))?;
+        let val = if input.value().is_empty() {
+            "(none)"
+        } else {
+            input.value()
+        };
+        stdout.queue(Print(format!("     {val}\r\n")))?;
     }
     Ok(())
 }
@@ -1335,7 +1984,6 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
             .filter(|(_, e)| *e)
             .map(|(c, _)| c.as_str())
             .collect();
-        // Add custom commands
         if !state.custom_commands.is_empty() {
             cmds.push(&state.custom_commands);
         }
@@ -1354,76 +2002,104 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
     } else {
         ""
     };
-    let auth_str = if state.require_auth { "required" } else { "disabled" };
+    let auth_str = if state.require_auth {
+        "required"
+    } else {
+        "disabled"
+    };
 
     loop {
         let mut stdout = io::stdout();
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 7)?;
 
+        bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(WHITE))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print("   Review your configuration:\n\n"))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?
-            .queue(SetForegroundColor(SUCCESS))?
-            .queue(Print(format!("   Provider:   {}\n", p.name)))?
-            .queue(Print(format!("   Model:      {}\n", state.model)))?
-            .queue(Print(format!(
-                "   API key:    {}  (stored as SHA-256 hash)\n",
-                mask_key(&state.admin_key_raw)
-            )))?
-            .queue(Print(format!("   Login:      {}  {}\n",
-                state.admin_username,
-                if state.admin_password.is_empty() { "(password disabled)" } else { "(password set)" }
-            )))?
-            .queue(Print(format!(
-                "   Workspace:  {}{}\n",
-                state.workspace_dir, workspace_note
-            )))?
-            .queue(Print(format!(
-                "   Server:     {}:{}\n",
-                state.host, state.port
-            )))?
-            .queue(Print(format!("   Auth:       {}\n", auth_str)))?
-            .queue(Print(format!("   Sandbox:    {}\n", sandbox_str)))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print("   Review your configuration\r\n\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
 
+        let rows: &[(&str, String)] = &[
+            ("Provider", p.name.to_string()),
+            ("Model", state.model.clone()),
+            (
+                "API key",
+                format!(
+                    "{}   (stored as SHA-256 hash)",
+                    mask_key(&state.admin_key_raw)
+                ),
+            ),
+            (
+                "Login",
+                format!(
+                    "{}   {}",
+                    state.admin_username,
+                    if state.admin_password.is_empty() {
+                        "(password disabled)"
+                    } else {
+                        "(password set)"
+                    }
+                ),
+            ),
+            (
+                "Workspace",
+                format!("{}{workspace_note}", state.workspace_dir),
+            ),
+            ("Server", format!("{}:{}", state.host, state.port)),
+            ("Web UI", format!("{}:{}", state.host, state.web_port)),
+            ("Auth", auth_str.to_string()),
+            ("Sandbox", sandbox_str.clone()),
+        ];
+
+        for (label, value) in rows {
+            bg(&mut stdout, BG)?;
+            stdout
+                .queue(SetForegroundColor(DIM))?
+                .queue(Print(format!("   {label:<11} ")))?
+                .queue(SetForegroundColor(RULE_FG))?
+                .queue(Print("│ "))?
+                .queue(SetForegroundColor(WHITE))?
+                .queue(Print(format!("{value}\r\n")))?;
+        }
+
+        bg(&mut stdout, BG)?;
         stdout
-            .queue(Print("\n"))?
+            .queue(Print("\r\n"))?
+            .queue(SetForegroundColor(RULE_FG))?
+            .queue(Print(format!("   {RULE}\r\n\r\n")))?
+            .queue(SetForegroundColor(RED))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Write config.toml?  "))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout
             .queue(SetForegroundColor(DIM))?
-            .queue(Print(format!("   {RULE}\n")))?
-            .queue(SetBackgroundColor(BG))?;
-
-        stdout
-            .queue(SetForegroundColor(BRAND))?
-            .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print("\n   Write config.toml?\n"))?
-            .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(Print(format!("→ {}\r\n", config_path.display())))?;
+        bg(&mut stdout, BG)?;
         stdout.flush()?;
 
         print_footer(
             &mut stdout,
-            "[Enter] Write    [Esc] Go back  [Ctrl-C] Quit",
+            "  [Enter] Write    [Esc] Go back    [Ctrl-C] Quit",
         )?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
-                KeyCode::Enter => {
-                    // Write config
-                    match write_config(state, config_path).await {
-                        Ok(()) => return Ok(StepOutcome::Next),
-                        Err(e) => {
-                            let mut stdout = io::stdout();
-                            print_error(&mut stdout, &format!("Failed to write config: {e}"))?;
-                            stdout.queue(Print("   Press any key to try again...\n"))?;
-                            stdout.flush()?;
-                            event::read()?;
-                        }
+                KeyCode::Enter => match write_config(state, config_path).await {
+                    Ok(()) => return Ok(StepOutcome::Next),
+                    Err(e) => {
+                        let mut stdout = io::stdout();
+                        print_error(&mut stdout, &format!("Failed to write config: {e}"))?;
+                        bg(&mut stdout, BG)?;
+                        stdout
+                            .queue(SetForegroundColor(DIM))?
+                            .queue(Print("   Press any key to try again…\r\n"))?;
+                        stdout.flush()?;
+                        event::read()?;
                     }
-                }
+                },
                 KeyCode::Esc => return Ok(StepOutcome::Back),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
@@ -1446,73 +2122,117 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
         print_header(&mut stdout, 8)?;
 
         print_success(&mut stdout, "Setup complete — agent ready")?;
-        stdout
-            .queue(Print("\n"))?
-            .queue(SetForegroundColor(SUCCESS))?
-            .queue(Print(format!("   Provider:   {}\n", p.name)))?
-            .queue(Print(format!("   Model:      {}\n", state.model)))?
-            .queue(Print(format!(
-                "   Config:     {}  (written)\n",
-                config_path.display()
-            )))?
-            .queue(Print(format!(
-                "   Workspace:  {}  ({})\n",
-                state.workspace_dir,
-                if state.create_workspace { "initialized" } else { "exists" }
-            )))?
-            .queue(SetBackgroundColor(BG))?;
+        stdout.queue(Print("\r\n"))?;
 
-        stdout
-            .queue(Print("\n"))?
-            .queue(SetForegroundColor(DIM))?
-            .queue(Print(format!("   {RULE}\n")))?
-            .queue(SetBackgroundColor(BG))?;
+        let summary: &[(&str, String)] = &[
+            ("Provider", p.name.to_string()),
+            ("Model", state.model.clone()),
+            ("Config", format!("{}  (written)", config_path.display())),
+            (
+                "Workspace",
+                format!(
+                    "{}  ({})",
+                    state.workspace_dir,
+                    if state.create_workspace {
+                        "initialized"
+                    } else {
+                        "exists"
+                    }
+                ),
+            ),
+        ];
+        for (label, value) in summary {
+            bg(&mut stdout, BG)?;
+            stdout
+                .queue(SetForegroundColor(DIM))?
+                .queue(Print(format!("   {label:<11} ")))?
+                .queue(SetForegroundColor(RULE_FG))?
+                .queue(Print("│ "))?
+                .queue(SetForegroundColor(WHITE))?
+                .queue(Print(format!("{value}\r\n")))?;
+        }
 
-        // Key box
-        stdout.queue(Print(
-            "\n   ┌─────────────────────────────────────────────────┐\n\
-             \x20  │  Your admin API key (shown once):               │\n\
-             \x20  │                                                 │\n"
-        ))?;
+        bg(&mut stdout, BG)?;
         stdout
-            .queue(Print("   │  "))?
-            .queue(SetForegroundColor(SUCCESS))?
-            .queue(Print(format!("{:<47}", &state.admin_key_raw)))?
-            .queue(SetBackgroundColor(BG))?
-            .queue(Print("│\n"))?;
-        stdout.queue(Print(
-            "   │                                                 │\n\
-             \x20  └─────────────────────────────────────────────────┘\n\n"
-        ))?;
+            .queue(Print("\r\n"))?
+            .queue(SetForegroundColor(RULE_FG))?
+            .queue(Print(format!("   {RULE}\r\n\r\n")))?;
+        bg(&mut stdout, BG)?;
 
+        // Key reveal box
+        let box_w: usize = 56;
+        let border = "─".repeat(box_w);
+        let warn2_text = "⚠ Your admin API key";
+        let warn2_w = UnicodeWidthStr::width(warn2_text);
+        let dim_pad2 = box_w.saturating_sub(2 + warn2_w);
         stdout
-            .queue(SetForegroundColor(BRAND))?
+            .queue(SetForegroundColor(RED))?
+            .queue(Print(format!("   ┌{border}┐\r\n")))?
+            .queue(Print("   │ "))?
+            .queue(SetForegroundColor(AMBER))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print("   How do you want to start?\n\n"))?
+            .queue(Print(warn2_text))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetBackgroundColor(BG))?;
+            .queue(SetForegroundColor(DIM))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(Print(format!("{:<dim_pad2$}", " (shown once)")))?
+            .queue(SetForegroundColor(RED))?
+            .queue(Print(" │\r\n"))?
+            .queue(Print(format!("   │{}│\r\n", " ".repeat(box_w))))?
+            .queue(Print("   │  "))?
+            .queue(SetForegroundColor(WHITE))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!(
+                "{:<width$}",
+                state.admin_key_raw,
+                width = box_w - 2
+            )))?
+            .queue(SetAttribute(Attribute::Reset))?
+            .queue(SetForegroundColor(RED))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(Print("│\r\n"))?
+            .queue(Print(format!("   │{}│\r\n", " ".repeat(box_w))))?
+            .queue(Print(format!("   └{border}┘\r\n\r\n")))?;
+        bg(&mut stdout, BG)?;
 
-        let options = ["xenoclaw serve    start the agent runtime", "Exit              configure more later"];
-        for (i, opt) in options.iter().enumerate() {
+        stdout
+            .queue(SetForegroundColor(WHITE))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   What's next?\r\n\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+
+        let options = [
+            ("xenoclaw serve", "start the agent runtime"),
+            ("Exit", "configure more later"),
+        ];
+        for (i, (cmd, desc)) in options.iter().enumerate() {
             if i as u8 == selected {
+                bg(&mut stdout, BG)?;
                 stdout
-                    .queue(SetForegroundColor(BRAND))?
+                    .queue(SetForegroundColor(RED))?
                     .queue(SetAttribute(Attribute::Bold))?
-                    .queue(Print(format!("   ► [{}]  {opt}\n", i + 1)))?
-                    .queue(SetAttribute(Attribute::Reset))?
-                    .queue(SetBackgroundColor(BG))?;
+                    .queue(Print(format!("   > [{}]  ", i + 1)))?
+                    .queue(SetForegroundColor(WHITE))?
+                    .queue(Print(format!("{cmd:<18} ")))?
+                    .queue(SetForegroundColor(TEXT))?
+                    .queue(Print(format!("{desc}\r\n")))?
+                    .queue(SetAttribute(Attribute::Reset))?;
+                bg(&mut stdout, BG)?;
             } else {
+                bg(&mut stdout, BG)?;
                 stdout
                     .queue(SetForegroundColor(DIM))?
-                    .queue(Print(format!("     [{}]  {opt}\n", i + 1)))?
-                    .queue(SetBackgroundColor(BG))?;
+                    .queue(Print(format!("     [{}]  {cmd:<18} {desc}\r\n", i + 1)))?;
             }
         }
 
         stdout.flush()?;
         print_footer(
             &mut stdout,
-            "[↑↓/jk] Navigate  [Enter] Launch  [1/2] Quick select",
+            "  [↑↓/jk] Navigate  [Enter] Launch  [1/2] Quick select",
         )?;
 
         if let Event::Key(key) = event::read()? {
@@ -1524,12 +2244,10 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
                     selected = 1;
                 }
                 KeyCode::Char('1') => {
-                    selected = 0;
-                    return launch_or_exit(selected);
+                    return launch_or_exit(0);
                 }
                 KeyCode::Char('2') => {
-                    selected = 1;
-                    return launch_or_exit(selected);
+                    return launch_or_exit(1);
                 }
                 KeyCode::Enter => {
                     return launch_or_exit(selected);
@@ -1545,30 +2263,24 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
 
 fn launch_or_exit(selected: u8) -> Result<StepOutcome> {
     if selected == 0 {
-        // Launch xenoclaw serve via exec-replace on Unix
         terminal::disable_raw_mode()?;
         let mut stdout = io::stdout();
         stdout.queue(LeaveAlternateScreen)?;
         stdout.queue(ResetColor)?;
         stdout.flush()?;
-        println!("\nStarting xenoclaw serve...\n");
+        println!("\r\nStarting xenoclaw serve...\r\n");
 
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
-            let err = std::process::Command::new("xenoclaw")
-                .arg("serve")
-                .exec();
-            // exec() only returns on error
+            let err = std::process::Command::new("xenoclaw").arg("serve").exec();
             eprintln!("Failed to exec xenoclaw serve: {err}");
             std::process::exit(1);
         }
 
         #[cfg(not(unix))]
         {
-            let status = std::process::Command::new("xenoclaw")
-                .arg("serve")
-                .status();
+            let status = std::process::Command::new("xenoclaw").arg("serve").status();
             match status {
                 Ok(s) => std::process::exit(s.code().unwrap_or(0)),
                 Err(e) => {
@@ -1578,31 +2290,66 @@ fn launch_or_exit(selected: u8) -> Result<StepOutcome> {
             }
         }
     }
-    // Exit
     Ok(StepOutcome::Next)
 }
 
 // ─── Quit Confirmation ───────────────────────────────────────────────────────
 
+fn render_confirm_quit(stdout: &mut io::Stdout) -> io::Result<()> {
+    clear_screen(stdout)?;
+
+    // Paint a red-tinted callout for the warning
+    bg(stdout, BG)?;
+    stdout.queue(Print("\r\n\r\n"))?;
+    if bg_enabled() {
+        stdout.queue(SetBackgroundColor(RED_DEEP))?;
+    }
+    stdout
+        .queue(SetForegroundColor(WHITE))?
+        .queue(SetAttribute(Attribute::Bold))?
+        .queue(Print("   Quit setup?   "))?
+        .queue(SetAttribute(Attribute::Reset))?;
+    if bg_enabled() {
+        stdout.queue(SetBackgroundColor(BG))?;
+    }
+    stdout
+        .queue(SetForegroundColor(TEXT))?
+        .queue(Print("  Config has not been written.\r\n\r\n"))?
+        .queue(SetForegroundColor(DIM))?
+        .queue(Print("   ["))?
+        .queue(SetForegroundColor(RED))?
+        .queue(SetAttribute(Attribute::Bold))?
+        .queue(Print("Enter"))?
+        .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetForegroundColor(DIM))?;
+    bg(stdout, BG)?;
+    stdout
+        .queue(Print("] Quit    ["))?
+        .queue(SetForegroundColor(WHITE))?
+        .queue(SetAttribute(Attribute::Bold))?
+        .queue(Print("Esc"))?
+        .queue(SetAttribute(Attribute::Reset))?
+        .queue(SetForegroundColor(DIM))?;
+    bg(stdout, BG)?;
+    stdout.queue(Print("] Cancel\r\n"))?;
+    stdout.flush()
+}
+
 async fn confirm_quit() -> Result<bool> {
     let mut stdout = io::stdout();
-    clear_screen(&mut stdout)?;
-
-    stdout
-        .queue(SetForegroundColor(SUCCESS))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(Print("\n   Quit setup? Config has not been written.\n\n"))?
-        .queue(SetBackgroundColor(BG))?
-        .queue(Print("   [Enter] Quit    [Esc] Cancel\n"))?;
-    stdout.flush()?;
+    render_confirm_quit(&mut stdout)?;
 
     loop {
-        if let Event::Key(key) = event::read()? {
-            match key.code {
+        match event::read()? {
+            Event::Key(key) => match key.code {
                 KeyCode::Enter => return Ok(true),
                 KeyCode::Esc => return Ok(false),
                 _ => {}
+            },
+            Event::Resize(_, _) => {
+                render_confirm_quit(&mut stdout)?;
             }
+            _ => {}
         }
     }
 }
@@ -1612,10 +2359,7 @@ async fn confirm_quit() -> Result<bool> {
 async fn write_config(state: &WizardState, config_path: &Path) -> Result<()> {
     let p = &PROVIDERS[state.provider_idx];
 
-    // Resolve ~/.xenoclaw paths for data and logs
-    let xenoclaw_home = config_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."));
+    let xenoclaw_home = config_path.parent().unwrap_or_else(|| Path::new("."));
     let data_dir = xenoclaw_home.join("data");
     let log_dir = xenoclaw_home.join("logs");
 
@@ -1628,7 +2372,6 @@ async fn write_config(state: &WizardState, config_path: &Path) -> Result<()> {
                 all_cmds.push(cmd.clone());
             }
         }
-        // Add custom commands (comma-separated)
         if !state.custom_commands.is_empty() {
             for cmd in state.custom_commands.split(',') {
                 let trimmed = cmd.trim();
@@ -1642,15 +2385,21 @@ async fn write_config(state: &WizardState, config_path: &Path) -> Result<()> {
     let command_allowlist = if all_cmds.is_empty() {
         String::new()
     } else {
-        let items: Vec<String> = all_cmds.iter().map(|c| format!("\"{}\"", c)).collect();
+        let items: Vec<String> = all_cmds.iter().map(|c| format!("\"{c}\"")).collect();
         items.join(", ")
     };
 
-    let api_key_line = if p.needs_api_key && !state.api_key.is_empty() {
+    let is_cli_provider = p.default_base_url.is_empty() && !p.needs_api_key;
+
+    let api_key_line = if is_cli_provider {
+        String::new()
+    } else if p.needs_api_key && !state.api_key.is_empty() {
         format!("api_key       = \"{}\"", state.api_key)
     } else {
         "api_key       = \"\"".to_string()
     };
+
+    let base_url_line = format!("base_url      = \"{}\"", state.base_url);
 
     let timeout_value: u32 = state.tool_timeout.parse().unwrap_or(30);
     let timeout: u32 = match state.timeout_unit {
@@ -1671,7 +2420,7 @@ log_dir    = "{log_dir}"
 name          = "{provider_name}"
 provider_type = "{provider_type}"
 {api_key_line}
-base_url      = "{base_url}"
+{base_url_line}
 model         = "{model}"
 priority      = 1
 timeout_seconds = 30
@@ -1706,7 +2455,7 @@ port = {port}
         provider_name = p.name.to_lowercase().replace(' ', "-"),
         provider_type = p.provider_type,
         api_key_line = api_key_line,
-        base_url = state.base_url,
+        base_url_line = base_url_line,
         model = state.model,
         host = state.host,
         port = state.port,
@@ -1717,12 +2466,8 @@ port = {port}
         admin_password_hash = state.admin_password_hash,
     );
 
-    // Append coding section if sandbox commands are enabled
     let coding_section = if !all_cmds.is_empty() {
-        let mut blocklist_items: Vec<String> = vec![
-            "\"rm -rf\"".to_string(),
-            "\"dd\"".to_string(),
-        ];
+        let mut blocklist_items: Vec<String> = vec!["\"rm -rf\"".to_string(), "\"dd\"".to_string()];
         if !state.allow_pipes {
             blocklist_items.extend([
                 "\"|\"".to_string(),
@@ -1733,12 +2478,11 @@ port = {port}
                 "\">>\"".to_string(),
             ]);
         }
-        // Add user-specified exclusions
         if !state.excluded_commands.is_empty() {
             for cmd in state.excluded_commands.split(',') {
                 let trimmed = cmd.trim();
                 if !trimmed.is_empty() {
-                    blocklist_items.push(format!("\"{}\"", trimmed));
+                    blocklist_items.push(format!("\"{trimmed}\""));
                 }
             }
         }
@@ -1766,37 +2510,52 @@ undo_history_size    = 50
 
     let full_content = format!("{toml_content}{coding_section}");
 
-    // Ensure ~/.xenoclaw/ directory exists
     if let Some(parent) = config_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
 
-    // Create data and log directories
     tokio::fs::create_dir_all(&data_dir).await?;
     tokio::fs::create_dir_all(&log_dir).await?;
 
-    // Write the config file
     tokio::fs::write(config_path, &full_content).await?;
 
-    // Validate by parsing back
     common::config::load_config_from_str(&full_content)
         .map_err(|e| anyhow::anyhow!("Validation failed: {e}"))?;
 
-    // Create workspace directory (always — it's the default location)
     let ws_path = PathBuf::from(&state.workspace_dir);
     tokio::fs::create_dir_all(&ws_path).await?;
     tokio::fs::create_dir_all(ws_path.join("memory")).await?;
     tokio::fs::create_dir_all(ws_path.join("skills")).await?;
 
-    // Create stub files
     let stubs = [
-        ("SOUL.md", "# Soul\n\nDefine your agent's core values and ethical constraints here.\n"),
-        ("IDENTITY.md", "# Identity\n\nDefine your agent's name, persona, and tone here.\n"),
-        ("TOOLS.md", "# Tools\n\nTool catalogue will be populated automatically.\n"),
-        ("USER.md", "# User Context\n\nPersistent user context (name, projects, preferences).\n"),
-        ("MEMORY.md", "# Long-Term Memory\n\nAppend-only summary memory.\n"),
-        ("AGENTS.md", "# Known Agents\n\nOther agents and delegation instructions.\n"),
-        ("BOOTSTRAP.md", "# Bootstrap\n\nFirst-run onboarding instructions.\n\nonboarding_complete = false\n"),
+        (
+            "SOUL.md",
+            "# Soul\r\n\r\nDefine your agent's core values and ethical constraints here.\r\n",
+        ),
+        (
+            "IDENTITY.md",
+            "# Identity\r\n\r\nDefine your agent's name, persona, and tone here.\r\n",
+        ),
+        (
+            "TOOLS.md",
+            "# Tools\r\n\r\nTool catalogue will be populated automatically.\r\n",
+        ),
+        (
+            "USER.md",
+            "# User Context\r\n\r\nPersistent user context (name, projects, preferences).\r\n",
+        ),
+        (
+            "MEMORY.md",
+            "# Long-Term Memory\r\n\r\nAppend-only summary memory.\r\n",
+        ),
+        (
+            "AGENTS.md",
+            "# Known Agents\r\n\r\nOther agents and delegation instructions.\r\n",
+        ),
+        (
+            "BOOTSTRAP.md",
+            "# Bootstrap\r\n\r\nFirst-run onboarding instructions.\r\n\r\nonboarding_complete = false\r\n",
+        ),
     ];
 
     for (name, content) in stubs {

@@ -10,15 +10,22 @@
 //! - Standard text editing (backspace, delete, left/right cursor movement)
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use tokio::sync::mpsc;
 
 use crate::app::App;
+use crate::client::ClientCommand;
+use crate::slash;
 
 /// Process a key event and update application state accordingly.
 ///
-/// Input is buffered at the terminal level, so even with SSH latency
-/// up to 500ms, no keystrokes are dropped. Each keystroke is processed
-/// in order as it arrives.
-pub fn handle_key_event(app: &mut App, key: KeyEvent) {
+/// `cmd_tx` is optional — pass `Some` in the live UI to forward submitted
+/// messages and slash-command network actions to the WS task; pass `None`
+/// in unit tests.
+pub fn handle_key_event(
+    app: &mut App,
+    key: KeyEvent,
+    cmd_tx: Option<&mpsc::Sender<ClientCommand>>,
+) {
     // If help overlay is showing, any key dismisses it
     if app.show_help {
         app.show_help = false;
@@ -47,9 +54,41 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
             app.show_help = true;
         }
 
-        // Submit message: Enter
+        // Submit message: Enter (with slash command interception)
         (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Enter) => {
-            app.submit_input();
+            let content = app.input.trim().to_string();
+            if content.is_empty() {
+                return;
+            }
+
+            if let Some(cmd) = slash::parse(&content) {
+                app.input.clear();
+                app.input_cursor = 0;
+                if let Some(tx) = cmd_tx {
+                    // Full slash::execute handles all commands including Reconnect.
+                    slash::execute(cmd, app, tx);
+                } else {
+                    // No channel (tests / offline): handle local-only commands.
+                    match cmd {
+                        slash::SlashCommand::Exit => app.should_quit = true,
+                        slash::SlashCommand::Clear => app.clear_screen(),
+                        slash::SlashCommand::Status => app.show_status(),
+                        slash::SlashCommand::Help => app.show_help = true,
+                        slash::SlashCommand::Mode => app.toggle_mode(),
+                        slash::SlashCommand::Reconnect | slash::SlashCommand::Unknown(_) => {
+                            app.add_system_message(
+                                "This command requires a live connection.".to_string(),
+                            );
+                        }
+                    }
+                }
+            } else {
+                // Save content before submit_input() clears it.
+                app.submit_input();
+                if let Some(tx) = cmd_tx {
+                    let _ = tx.try_send(ClientCommand::SendMessage { content });
+                }
+            }
         }
 
         // History navigation: Up arrow
@@ -94,15 +133,15 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
             app.scroll_offset = 0;
         }
 
+        // Help overlay: '?' character (only when input is empty)
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('?')) if app.input.is_empty() => {
+            app.show_help = true;
+        }
+
         // Text input: regular characters
         (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
             app.input.insert(app.input_cursor, c);
             app.input_cursor += 1;
-        }
-
-        // Help overlay: '?' character (only when input is empty)
-        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('?')) if app.input.is_empty() => {
-            app.show_help = true;
         }
 
         // Backspace: delete character before cursor
@@ -235,22 +274,38 @@ mod tests {
     #[test]
     fn test_quit_ctrl_c() {
         let mut app = test_app();
-        handle_key_event(&mut app, make_key(KeyModifiers::CONTROL, KeyCode::Char('c')));
+        handle_key_event(
+            &mut app,
+            make_key(KeyModifiers::CONTROL, KeyCode::Char('c')),
+            None,
+        );
         assert!(app.should_quit);
     }
 
     #[test]
     fn test_quit_ctrl_q() {
         let mut app = test_app();
-        handle_key_event(&mut app, make_key(KeyModifiers::CONTROL, KeyCode::Char('q')));
+        handle_key_event(
+            &mut app,
+            make_key(KeyModifiers::CONTROL, KeyCode::Char('q')),
+            None,
+        );
         assert!(app.should_quit);
     }
 
     #[test]
     fn test_char_input() {
         let mut app = test_app();
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Char('h')));
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Char('i')));
+        handle_key_event(
+            &mut app,
+            make_key(KeyModifiers::NONE, KeyCode::Char('h')),
+            None,
+        );
+        handle_key_event(
+            &mut app,
+            make_key(KeyModifiers::NONE, KeyCode::Char('i')),
+            None,
+        );
         assert_eq!(app.input, "hi");
         assert_eq!(app.input_cursor, 2);
     }
@@ -260,7 +315,11 @@ mod tests {
         let mut app = test_app();
         app.input = "hello".to_string();
         app.input_cursor = 5;
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Backspace));
+        handle_key_event(
+            &mut app,
+            make_key(KeyModifiers::NONE, KeyCode::Backspace),
+            None,
+        );
         assert_eq!(app.input, "hell");
         assert_eq!(app.input_cursor, 4);
     }
@@ -270,7 +329,7 @@ mod tests {
         let mut app = test_app();
         app.input = "test message".to_string();
         app.input_cursor = 12;
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Enter));
+        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Enter), None);
         assert!(app.input.is_empty());
         assert_eq!(app.messages.len(), 1);
     }
@@ -282,7 +341,11 @@ mod tests {
             task: "test".to_string(),
             progress: None,
         };
-        handle_key_event(&mut app, make_key(KeyModifiers::CONTROL, KeyCode::Char('k')));
+        handle_key_event(
+            &mut app,
+            make_key(KeyModifiers::CONTROL, KeyCode::Char('k')),
+            None,
+        );
         assert_eq!(app.agent_status, crate::app::AgentStatus::Idle);
     }
 
@@ -290,14 +353,18 @@ mod tests {
     fn test_ctrl_m_toggles_mode() {
         let mut app = test_app();
         assert_eq!(app.mode, crate::app::InteractionMode::General);
-        handle_key_event(&mut app, make_key(KeyModifiers::CONTROL, KeyCode::Char('m')));
+        handle_key_event(
+            &mut app,
+            make_key(KeyModifiers::CONTROL, KeyCode::Char('m')),
+            None,
+        );
         assert_eq!(app.mode, crate::app::InteractionMode::Coding);
     }
 
     #[test]
     fn test_f1_shows_help() {
         let mut app = test_app();
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::F(1)));
+        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::F(1)), None);
         assert!(app.show_help);
     }
 
@@ -305,7 +372,11 @@ mod tests {
     fn test_help_dismissed_by_any_key() {
         let mut app = test_app();
         app.show_help = true;
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Char('a')));
+        handle_key_event(
+            &mut app,
+            make_key(KeyModifiers::NONE, KeyCode::Char('a')),
+            None,
+        );
         assert!(!app.show_help);
     }
 
@@ -315,16 +386,16 @@ mod tests {
         app.input = "hello".to_string();
         app.input_cursor = 3;
 
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Left));
+        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Left), None);
         assert_eq!(app.input_cursor, 2);
 
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Right));
+        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Right), None);
         assert_eq!(app.input_cursor, 3);
 
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Home));
+        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::Home), None);
         assert_eq!(app.input_cursor, 0);
 
-        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::End));
+        handle_key_event(&mut app, make_key(KeyModifiers::NONE, KeyCode::End), None);
         assert_eq!(app.input_cursor, 5);
     }
 
@@ -333,7 +404,11 @@ mod tests {
         let mut app = test_app();
         app.input = "some text".to_string();
         app.input_cursor = 5;
-        handle_key_event(&mut app, make_key(KeyModifiers::CONTROL, KeyCode::Char('u')));
+        handle_key_event(
+            &mut app,
+            make_key(KeyModifiers::CONTROL, KeyCode::Char('u')),
+            None,
+        );
         assert!(app.input.is_empty());
         assert_eq!(app.input_cursor, 0);
     }

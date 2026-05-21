@@ -14,8 +14,9 @@ use crate::TuiConfig;
 const DEFAULT_MAX_HISTORY: usize = 200;
 
 /// Agent operational status.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AgentStatus {
+    #[default]
     Idle,
     Working {
         task: String,
@@ -26,9 +27,19 @@ pub enum AgentStatus {
     },
 }
 
-impl Default for AgentStatus {
-    fn default() -> Self {
-        Self::Idle
+impl std::fmt::Display for AgentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgentStatus::Idle => write!(f, "Idle"),
+            AgentStatus::Working { task, progress } => {
+                write!(f, "Working: {task}")?;
+                if let Some(p) = progress {
+                    write!(f, " ({p})")?;
+                }
+                Ok(())
+            }
+            AgentStatus::Error { message } => write!(f, "Error: {message}"),
+        }
     }
 }
 
@@ -38,14 +49,22 @@ pub enum TaskProgress {
     /// Progress as a percentage (0-100).
     Percentage(u8),
     /// Progress as step count with label.
-    Steps { current: u32, total: u32, label: String },
+    Steps {
+        current: u32,
+        total: u32,
+        label: String,
+    },
 }
 
 impl std::fmt::Display for TaskProgress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TaskProgress::Percentage(p) => write!(f, "{}%", p),
-            TaskProgress::Steps { current, total, label } => {
+            TaskProgress::Steps {
+                current,
+                total,
+                label,
+            } => {
                 write!(f, "{}/{} {}", current, total, label)
             }
         }
@@ -62,8 +81,9 @@ pub struct ResourceUsage {
 }
 
 /// WebSocket connection state.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ConnectionState {
+    #[default]
     Connected,
     Disconnected {
         since: Instant,
@@ -72,12 +92,6 @@ pub enum ConnectionState {
     Reconnecting {
         attempt: u8,
     },
-}
-
-impl Default for ConnectionState {
-    fn default() -> Self {
-        Self::Connected
-    }
 }
 
 /// A single chat message displayed in the TUI.
@@ -281,8 +295,72 @@ impl App {
                 ChatRole::System,
                 "Task cancellation requested...".to_string(),
             );
-            // In a real implementation, this would send a cancel signal via WebSocket
             self.agent_status = AgentStatus::Idle;
+        }
+    }
+
+    /// Add a system message (used by slash commands).
+    pub fn add_system_message(&mut self, content: String) {
+        self.add_message(ChatRole::System, content);
+    }
+
+    /// Clear all messages from the chat history.
+    pub fn clear_screen(&mut self) {
+        self.messages.clear();
+        self.add_message(ChatRole::System, "Screen cleared.".to_string());
+    }
+
+    /// Show current status as a system message.
+    pub fn show_status(&mut self) {
+        let status_line = format!(
+            "Agent: {} | CPU: {:.1}% | Mem: {:.0}MB | Mode: {}",
+            self.agent_status,
+            self.resource_usage.cpu_percent,
+            self.resource_usage.memory_mb,
+            self.mode,
+        );
+        self.add_message(ChatRole::System, status_line);
+    }
+
+    /// Submit input inline (for inline mode — just adds to history).
+    pub fn submit_input_inline(&mut self, input: &str) {
+        self.input_history.push(input.to_string());
+        self.history_index = None;
+        self.saved_input.clear();
+    }
+
+    /// Navigate input history up (inline mode).
+    pub fn history_up_inline(&mut self, input: &mut String) {
+        if self.input_history.is_empty() {
+            return;
+        }
+        match self.history_index {
+            None => {
+                self.saved_input = input.clone();
+                let idx = self.input_history.len() - 1;
+                self.history_index = Some(idx);
+                *input = self.input_history[idx].clone();
+            }
+            Some(idx) if idx > 0 => {
+                let new_idx = idx - 1;
+                self.history_index = Some(new_idx);
+                *input = self.input_history[new_idx].clone();
+            }
+            _ => {}
+        }
+    }
+
+    /// Navigate input history down (inline mode).
+    pub fn history_down_inline(&mut self, input: &mut String) {
+        if let Some(idx) = self.history_index {
+            if idx + 1 < self.input_history.len() {
+                let new_idx = idx + 1;
+                self.history_index = Some(new_idx);
+                *input = self.input_history[new_idx].clone();
+            } else {
+                self.history_index = None;
+                *input = self.saved_input.clone();
+            }
         }
     }
 
@@ -292,10 +370,7 @@ impl App {
             InteractionMode::General => InteractionMode::Coding,
             InteractionMode::Coding => InteractionMode::General,
         };
-        self.add_message(
-            ChatRole::System,
-            format!("Switched to {} mode", self.mode),
-        );
+        self.add_message(ChatRole::System, format!("Switched to {} mode", self.mode));
     }
 
     /// Navigate input history (up).
@@ -325,21 +400,18 @@ impl App {
 
     /// Navigate input history (down).
     pub fn history_down(&mut self) {
-        match self.history_index {
-            Some(idx) => {
-                if idx + 1 < self.input_history.len() {
-                    let new_idx = idx + 1;
-                    self.history_index = Some(new_idx);
-                    self.input = self.input_history[new_idx].clone();
-                    self.input_cursor = self.input.len();
-                } else {
-                    // Restore saved input
-                    self.history_index = None;
-                    self.input = self.saved_input.clone();
-                    self.input_cursor = self.input.len();
-                }
+        if let Some(idx) = self.history_index {
+            if idx + 1 < self.input_history.len() {
+                let new_idx = idx + 1;
+                self.history_index = Some(new_idx);
+                self.input = self.input_history[new_idx].clone();
+                self.input_cursor = self.input.len();
+            } else {
+                // Restore saved input
+                self.history_index = None;
+                self.input = self.saved_input.clone();
+                self.input_cursor = self.input.len();
             }
-            None => {}
         }
     }
 
@@ -363,39 +435,8 @@ impl App {
 
     /// Handle auto-reconnection logic.
     fn handle_reconnection(&mut self) {
-        match &self.connection_state {
-            ConnectionState::Disconnected { reconnect_attempts, .. } => {
-                let attempts = *reconnect_attempts;
-                if attempts >= self.max_reconnect_attempts {
-                    return; // Give up after max attempts
-                }
-
-                let should_attempt = match self.last_reconnect_attempt {
-                    None => true,
-                    Some(last) => last.elapsed() >= self.reconnect_interval,
-                };
-
-                if should_attempt {
-                    self.connection_state = ConnectionState::Reconnecting {
-                        attempt: attempts + 1,
-                    };
-                    self.last_reconnect_attempt = Some(Instant::now());
-                    // In a real implementation, this would trigger a WebSocket reconnect
-                    self.simulate_reconnect_result(attempts + 1);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Simulate reconnection result (placeholder for real WebSocket logic).
-    fn simulate_reconnect_result(&mut self, attempt: u8) {
-        // In a real implementation, this would be async and attempt actual connection.
-        // For now, remain in disconnected state to show the UI behavior.
-        self.connection_state = ConnectionState::Disconnected {
-            since: Instant::now(),
-            reconnect_attempts: attempt,
-        };
+        // Reconnection is now handled by the client/ws task.
+        // This method remains for tick-based status refresh only.
     }
 
     /// Mark connection as disconnected.
@@ -405,17 +446,12 @@ impl App {
             reconnect_attempts: 0,
         };
         self.last_reconnect_attempt = None;
-        self.add_message(
-            ChatRole::System,
-            "Connection lost. Attempting to reconnect...".to_string(),
-        );
     }
 
     /// Mark connection as connected.
     pub fn set_connected(&mut self) {
         self.connection_state = ConnectionState::Connected;
         self.last_reconnect_attempt = None;
-        self.add_message(ChatRole::System, "Connected to agent.".to_string());
     }
 
     /// Update agent status from server data.
@@ -427,6 +463,26 @@ impl App {
     pub fn update_resources(&mut self, cpu: f32, memory: f32) {
         self.resource_usage.cpu_percent = cpu;
         self.resource_usage.memory_mb = memory;
+    }
+
+    /// Append a streaming token to the last assistant message, or start a new one.
+    pub fn append_assistant_token(&mut self, content: &str) {
+        if let Some(msg) = self.messages.back_mut() {
+            if msg.role == ChatRole::Assistant {
+                msg.content.push_str(content);
+                self.scroll_offset = 0;
+                return;
+            }
+        }
+        self.messages.push_back(ChatMessage {
+            role: ChatRole::Assistant,
+            content: content.to_string(),
+            timestamp: Utc::now(),
+        });
+        while self.messages.len() > self.max_history_size {
+            self.messages.pop_front();
+        }
+        self.scroll_offset = 0;
     }
 }
 

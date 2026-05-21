@@ -109,10 +109,7 @@ pub fn register_builtin_tools(config: BuiltinToolsConfig) -> ToolRegistry {
     registry.register(Arc::new(TaskListTool::new(Arc::clone(&config.scheduler))));
     registered_count += 2;
 
-    info!(
-        tool_count = registered_count,
-        "Built-in tools registered"
-    );
+    info!(tool_count = registered_count, "Built-in tools registered");
 
     registry
 }

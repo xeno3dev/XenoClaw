@@ -33,7 +33,11 @@ pub struct ConfigValidationError {
 
 impl fmt::Display for ConfigValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Configuration validation failed with {} error(s):", self.errors.len())?;
+        writeln!(
+            f,
+            "Configuration validation failed with {} error(s):",
+            self.errors.len()
+        )?;
         for error in &self.errors {
             writeln!(f, "  - {error}")?;
         }
@@ -129,7 +133,12 @@ fn validate_llm(config: &PlatformConfig, errors: &mut Vec<ValidationError>) {
             });
         }
 
-        if provider.base_url.trim().is_empty() {
+        let is_cli_provider = matches!(
+            provider.provider_type,
+            ProviderType::ClaudeCode | ProviderType::CopilotCli
+        );
+
+        if !is_cli_provider && provider.base_url.trim().is_empty() {
             errors.push(ValidationError {
                 setting: format!("{prefix}.base_url"),
                 reason: "base_url must not be empty".to_string(),
@@ -143,8 +152,12 @@ fn validate_llm(config: &PlatformConfig, errors: &mut Vec<ValidationError>) {
             });
         }
 
-        // API key is required for non-Ollama providers
-        if provider.provider_type != ProviderType::Ollama && provider.api_key.is_none() {
+        // API key is required for non-Ollama, non-CLI providers
+        let needs_api_key = !matches!(
+            provider.provider_type,
+            ProviderType::Ollama | ProviderType::ClaudeCode | ProviderType::CopilotCli
+        );
+        if needs_api_key && provider.api_key.is_none() {
             errors.push(ValidationError {
                 setting: format!("{prefix}.api_key"),
                 reason: format!(
@@ -466,8 +479,9 @@ mod tests {
             });
         }
         let errors = validate_config(&config);
-        assert!(errors.iter().any(|e| e.setting == "llm.providers"
-            && e.reason.contains("at most 10")));
+        assert!(errors
+            .iter()
+            .any(|e| e.setting == "llm.providers" && e.reason.contains("at most 10")));
     }
 
     #[test]
@@ -542,9 +556,7 @@ mod tests {
             language_servers: vec![],
         });
         let errors = validate_config(&config);
-        assert!(errors
-            .iter()
-            .any(|e| e.setting == "coding.workspace_dirs"));
+        assert!(errors.iter().any(|e| e.setting == "coding.workspace_dirs"));
     }
 
     #[test]

@@ -20,5 +20,17 @@ thiserror = { workspace = true }
 ratatui = "0.28"
 crossterm = { version = "0.28", features = ["event-stream"] }
 
+# HTTP client (workspace dep has json+stream)
+reqwest = { workspace = true }
+
+# WebSocket
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
+# Display width for Unicode
+unicode-width = "0.2"
+
+# Hidden password input
+rpassword = "7"
+
 # Async utilities
 futures = { workspace = true }

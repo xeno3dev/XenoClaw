@@ -92,9 +92,11 @@ impl JsonRpcResponse {
 // ─── JSON-RPC error codes ────────────────────────────────────────────────────
 
 const PARSE_ERROR: i64 = -32700;
+#[allow(dead_code)]
 const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
+#[allow(dead_code)]
 const INTERNAL_ERROR: i64 = -32603;
 
 // ─── MCP Server ──────────────────────────────────────────────────────────────
@@ -152,7 +154,9 @@ impl McpServer {
             }
 
             let id = request.id.unwrap();
-            let response = self.handle_request(&request.method, request.params, id.clone()).await;
+            let response = self
+                .handle_request(&request.method, request.params, id.clone())
+                .await;
             self.write_response(&mut stdout, &response).await?;
         }
 
@@ -302,7 +306,11 @@ impl McpServer {
 
     /// Handle `resources/read` — not implemented yet.
     fn handle_resources_read(&self, id: Value) -> JsonRpcResponse {
-        JsonRpcResponse::error(id, METHOD_NOT_FOUND, "resources/read is not implemented yet")
+        JsonRpcResponse::error(
+            id,
+            METHOD_NOT_FOUND,
+            "resources/read is not implemented yet",
+        )
     }
 
     /// Handle `prompts/list` — placeholder, returns empty list.

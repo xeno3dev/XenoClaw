@@ -168,7 +168,10 @@ impl Tool for McpProxyTool {
             .get("result")
             .ok_or_else(|| "MCP tool call response missing 'result' field".to_string())?;
 
-        let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+        let is_error = result
+            .get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         // Concatenate all text content blocks
         let content = result
@@ -294,9 +297,7 @@ pub async fn connect_mcp_servers(
 }
 
 /// Spawn a child process for an MCP server and perform the initialize handshake.
-async fn spawn_and_initialize(
-    config: &McpServerConfig,
-) -> Result<(Child, McpConnection), String> {
+async fn spawn_and_initialize(config: &McpServerConfig) -> Result<(Child, McpConnection), String> {
     let mut cmd = Command::new(&config.command);
     cmd.args(&config.args);
     cmd.envs(&config.env);
@@ -383,12 +384,7 @@ impl McpClientManager {
             }
 
             // Give the process a moment to exit, then force kill
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                child.wait(),
-            )
-            .await
-            {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await {
                 Ok(Ok(status)) => {
                     info!(pid = pid, status = %status, "MCP server process exited");
                 }
@@ -396,7 +392,10 @@ impl McpClientManager {
                     warn!(pid = pid, error = %e, "Error waiting for MCP server process");
                 }
                 Err(_) => {
-                    warn!(pid = pid, "MCP server process did not exit in time, killing");
+                    warn!(
+                        pid = pid,
+                        "MCP server process did not exit in time, killing"
+                    );
                     let _ = child.kill().await;
                 }
             }
@@ -408,6 +407,7 @@ impl McpClientManager {
     }
 
     /// Check if any child processes have exited unexpectedly and log warnings.
+    #[allow(dead_code)]
     pub async fn check_health(&mut self) {
         for child in &mut self.children {
             match child.try_wait() {
