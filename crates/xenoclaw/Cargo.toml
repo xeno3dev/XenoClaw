@@ -45,3 +45,10 @@ clap = { version = "4", features = ["derive"] }
 crossterm = { version = "0.28", features = ["event-stream"] }
 thiserror = { workspace = true }
 libc = "0.2"
+
+# Terminal Fix
+unicode-width = "0.2"
+
+# TUI dependency
+uuid = { workspace = true }
+rpassword = "7"

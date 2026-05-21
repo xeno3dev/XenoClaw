@@ -11,6 +11,7 @@ mod setup;
 mod tools;
 mod workspace;
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use tokio::sync::RwLock;
 use tracing::{error, info};
+use uuid::Uuid;
 
 use agent_core::{AgentCore, AgentCoreConfig, AgentStatus, EventBus, ToolRegistry};
 use api_server::{build_router, AppState};
@@ -61,6 +63,24 @@ enum Command {
     ResetKey,
     /// Run as an MCP server over stdio (for Claude Code / Copilot integration)
     Mcp,
+    /// Open an interactive chat session with a running XenoClaw agent.
+    Tui {
+        /// Inline mode — chat stays in your terminal scrollback (no alt-screen).
+        #[arg(long)]
+        inline: bool,
+
+        /// API endpoint. Defaults to http://<api.host>:<api.port> from config.
+        #[arg(long)]
+        endpoint: Option<String>,
+
+        /// API key. Defaults to $XENOCLAW_API_KEY, then prompts if missing.
+        #[arg(long)]
+        api_key: Option<String>,
+
+        /// Session ID. Defaults to a new random UUID.
+        #[arg(long)]
+        session: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -85,6 +105,12 @@ async fn main() -> Result<()> {
         }
         Command::ResetKey => reset_key(),
         Command::Mcp => run_mcp_server(config_path).await,
+        Command::Tui {
+            inline,
+            endpoint,
+            api_key,
+            session,
+        } => run_tui(config_path, inline, endpoint, api_key, session).await,
     }
 }
 
@@ -186,14 +212,13 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     });
 
     // Connect to external MCP servers and register their proxy tools
-    let mut mcp_manager = mcp_client::connect_mcp_servers(
-        &config.mcp.servers,
-        &mut tool_registry,
-    )
-    .await;
+    let mut mcp_manager =
+        mcp_client::connect_mcp_servers(&config.mcp.servers, &mut tool_registry).await;
 
-    let mut agent_config = AgentCoreConfig::default();
-    agent_config.system_prompt = Some(system_prompt);
+    let agent_config = AgentCoreConfig {
+        system_prompt: Some(system_prompt),
+        ..AgentCoreConfig::default()
+    };
 
     let agent_core = Arc::new(AgentCore::new(llm_router, tool_registry, agent_config));
 
@@ -215,8 +240,12 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     let plugin_registry = Arc::new(RwLock::new(ToolRegistry::new()));
     let event_bus = EventBus::new(256);
     let plugin_limits = config.security.resource_limits.clone();
-    let mut plugin_manager =
-        PluginManager::new(config.plugins.clone(), plugin_registry, event_bus, plugin_limits);
+    let mut plugin_manager = PluginManager::new(
+        config.plugins.clone(),
+        plugin_registry,
+        event_bus,
+        plugin_limits,
+    );
 
     // Process supervisor
     let supervisor = Arc::new(ProcessSupervisor::new(SupervisorConfig::default()));
@@ -275,7 +304,10 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     });
 
     // Start supervisor (which starts the agent)
-    supervisor.start().await.context("Failed to start process supervisor")?;
+    supervisor
+        .start()
+        .await
+        .context("Failed to start process supervisor")?;
 
     // Spawn SIGHUP reload handler
     let shared_config = Arc::new(RwLock::new(config));
@@ -382,15 +414,100 @@ async fn run_mcp_server(config_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
+/// Run the TUI client.
+async fn run_tui(
+    config_path: PathBuf,
+    inline: bool,
+    endpoint: Option<String>,
+    api_key: Option<String>,
+    session: Option<String>,
+) -> Result<()> {
+    // Load configuration (same as serve)
+    let config = match load_config(&config_path) {
+        Ok(cfg) => cfg,
+        Err(ConfigError::FileNotFound(_)) => {
+            eprintln!(
+                "Configuration file not found: {}\n\n\
+                 Run `xenoclaw setup` to create one interactively,\n\
+                 or copy config.example.toml to config.toml and fill in your values.",
+                config_path.display()
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Configuration error:\n{e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Build API base URL
+    let api_base_url =
+        endpoint.unwrap_or_else(|| format!("http://{}:{}", config.api.host, config.api.port));
+
+    // Resolve API key: --api-key > env var > prompt
+    let api_key = match api_key {
+        Some(k) => k,
+        None => match std::env::var("XENOCLAW_API_KEY") {
+            Ok(k) => k,
+            Err(_) => {
+                eprint!("Enter API key: ");
+                std::io::stdout().flush()?;
+                rpassword::read_password()?
+            }
+        },
+    };
+
+    // Resolve session ID
+    let session_id = match session {
+        Some(s) => Uuid::parse_str(&s).context("Invalid session UUID")?,
+        None => Uuid::new_v4(),
+    };
+
+    // Build WebSocket URL
+    let ws_url = {
+        let base = api_base_url.trim_start_matches("http://");
+        format!("ws://{}/api/v1/ws/chat?token={}", base, api_key)
+    };
+
+    // Health check before starting the UI
+    {
+        let client = tui::client::http::ApiClient::new(api_base_url.clone(), api_key.clone());
+        if let Err(e) = client.health().await {
+            eprintln!(
+                "Agent not reachable at {api_base_url} — is 'xenoclaw serve' running?\nError: {e}"
+            );
+            std::process::exit(1);
+        }
+        println!("Agent reachable ✓");
+    }
+
+    // Build TUI config
+    let tui_config = tui::TuiConfig {
+        api_base_url,
+        ws_url,
+        api_key,
+        session_id,
+        inline,
+        status_refresh_interval: std::time::Duration::from_secs(2),
+        reconnect_interval: std::time::Duration::from_secs(5),
+        max_reconnect_attempts: 6,
+        max_history_size: 200,
+    };
+
+    // Run the TUI
+    tui::run(tui_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("TUI error: {e}"))
+}
+
 /// Wait for SIGINT or SIGTERM.
 async fn shutdown_signal() {
     let ctrl_c = tokio::signal::ctrl_c();
 
     #[cfg(unix)]
     {
-        let mut sigterm =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("failed to register SIGTERM handler");
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to register SIGTERM handler");
         tokio::select! {
             _ = ctrl_c => {},
             _ = sigterm.recv() => {},
