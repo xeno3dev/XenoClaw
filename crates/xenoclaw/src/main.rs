@@ -132,6 +132,14 @@ fn dirs_or_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/tmp"))
 }
 
+/// Returns the data directory: $XENOCLAW_DATA_DIR when set (systemd service),
+/// otherwise ~/.xenoclaw/data for local dev.
+fn data_dir() -> PathBuf {
+    std::env::var_os("XENOCLAW_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| xenoclaw_home().join("data"))
+}
+
 /// Resolve a relative plugins directory to an absolute path.
 ///
 /// Preference order:
@@ -147,7 +155,7 @@ fn resolve_plugins_dir(dir: &Path) -> PathBuf {
     }
     std::env::var_os("XENOCLAW_DATA_DIR")
         .map(|d| PathBuf::from(d).join("plugins"))
-        .unwrap_or_else(|| xenoclaw_home().join("plugins"))
+        .unwrap_or_else(|| data_dir().join("plugins"))
 }
 
 /// Start the agent runtime.
@@ -201,7 +209,7 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     let scheduler = Arc::new(Scheduler::new(scheduler_config));
 
     // Initialize the database for memory tools
-    let data_dir = xenoclaw_home().join("data");
+    let data_dir = data_dir();
     let db_pool = match std::fs::create_dir_all(&data_dir) {
         Ok(()) => {
             let db_path = data_dir.join("xenoclaw.db");
@@ -392,7 +400,7 @@ async fn run_mcp_server(config_path: PathBuf) -> Result<()> {
     info!("XenoClaw MCP server starting");
 
     // Initialize the database for memory tools
-    let data_dir = xenoclaw_home().join("data");
+    let data_dir = data_dir();
     let db_pool = match std::fs::create_dir_all(&data_dir) {
         Ok(()) => {
             let db_path = data_dir.join("xenoclaw.db");
