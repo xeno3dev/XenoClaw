@@ -746,7 +746,11 @@ impl Default for PluginConfig {
 }
 
 fn default_plugins_dir() -> PathBuf {
-    PathBuf::from("./plugins")
+    // Prefer $XENOCLAW_DATA_DIR/plugins (set by the systemd unit to /var/lib/xenoclaw).
+    // Fall back to ./plugins for local dev runs where the env var is absent.
+    std::env::var_os("XENOCLAW_DATA_DIR")
+        .map(|d| PathBuf::from(d).join("plugins"))
+        .unwrap_or_else(|| PathBuf::from("./plugins"))
 }
 
 fn default_reload_interval() -> u32 {

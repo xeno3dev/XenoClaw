@@ -31,6 +31,12 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=xenoclaw-agent
 
+# Let systemd create and chown these directories to the service user automatically.
+# Resolves to /var/lib/xenoclaw, /var/log/xenoclaw, and /run/xenoclaw.
+StateDirectory=xenoclaw
+LogsDirectory=xenoclaw
+RuntimeDirectory=xenoclaw
+
 # Resource limits
 LimitNOFILE=65536
 
