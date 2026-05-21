@@ -75,7 +75,11 @@ impl CliHealth {
     /// Returns `(binary, args)` to run the install command.
     pub fn install_command(cli: CliType) -> (&'static str, &'static [&'static str]) {
         match cli {
-            CliType::ClaudeCode => ("npm", &["install", "-g", "@anthropic-ai/claude-code"]),
+            // Native installer replaced npm as of Feb 2026; piped through sh so
+            // a shell is required (sh is universally available on Linux/macOS).
+            CliType::ClaudeCode => {
+                ("sh", &["-c", "curl -fsSL https://claude.ai/install.sh | sh"])
+            }
             CliType::CopilotCli => ("gh", &["extension", "install", "github/gh-copilot"]),
             CliType::GeminiCli => ("npm", &["install", "-g", "@google/gemini-cli"]),
             CliType::CodexCli => ("npm", &["install", "-g", "@openai/codex"]),
@@ -136,15 +140,16 @@ async fn check_claude_code() -> CliHealth {
         false
     };
 
-    // Auto-install requires npm.
-    let can_auto_install = run_silent("npm", &["--version"]).await.is_some();
+    // Native installer (curl) replaced npm as of Feb 2026.
+    // curl is available on virtually every system; npm is no longer required.
+    let can_auto_install = run_silent("curl", &["--version"]).await.is_some();
 
     CliHealth {
         installed,
         logged_in,
         can_auto_install,
-        install_prereq: "npm",
-        install_instructions: "npm install -g @anthropic-ai/claude-code",
+        install_prereq: "curl",
+        install_instructions: "curl -fsSL https://claude.ai/install.sh | sh",
         version,
     }
 }
