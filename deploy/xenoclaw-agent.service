@@ -35,11 +35,10 @@ SyslogIdentifier=xenoclaw-agent
 LimitNOFILE=65536
 
 # Security hardening
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
+# ProtectSystem, ProtectHome, and PrivateTmp require mount namespaces and will
+# fail with exit code 226/NAMESPACE inside LXC containers (Proxmox). They are
+# intentionally omitted here. NoNewPrivileges works everywhere (prctl, no ns).
 NoNewPrivileges=true
-ReadWritePaths=/var/lib/xenoclaw /var/log/xenoclaw /tmp/xenoclaw
 
 [Install]
 WantedBy=multi-user.target
