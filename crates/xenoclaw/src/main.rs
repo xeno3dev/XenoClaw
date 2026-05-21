@@ -13,7 +13,7 @@ mod tools;
 mod workspace;
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -132,6 +132,24 @@ fn dirs_or_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/tmp"))
 }
 
+/// Resolve a relative plugins directory to an absolute path.
+///
+/// Preference order:
+///   1. Already absolute — use as-is.
+///   2. $XENOCLAW_DATA_DIR is set (systemd service) → data_dir/plugins.
+///   3. Fall back to ~/.xenoclaw/plugins.
+///
+/// This runs at startup after config load, so it fixes both serde defaults
+/// and any explicit `./plugins` written into config.toml.
+fn resolve_plugins_dir(dir: &Path) -> PathBuf {
+    if dir.is_absolute() {
+        return dir.to_path_buf();
+    }
+    std::env::var_os("XENOCLAW_DATA_DIR")
+        .map(|d| PathBuf::from(d).join("plugins"))
+        .unwrap_or_else(|| xenoclaw_home().join("plugins"))
+}
+
 /// Start the agent runtime.
 async fn serve(config_path: PathBuf) -> Result<()> {
     // Load configuration
@@ -241,8 +259,10 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     let plugin_registry = Arc::new(RwLock::new(ToolRegistry::new()));
     let event_bus = EventBus::new(256);
     let plugin_limits = config.security.resource_limits.clone();
+    let mut plugins_config = config.plugins.clone();
+    plugins_config.directory = resolve_plugins_dir(&plugins_config.directory);
     let mut plugin_manager = PluginManager::new(
-        config.plugins.clone(),
+        plugins_config,
         plugin_registry,
         event_bus,
         plugin_limits,
