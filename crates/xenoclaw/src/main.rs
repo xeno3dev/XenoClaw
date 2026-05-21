@@ -5,6 +5,7 @@
 //! - `setup`: Run the first-run configuration wizard
 //! - `reset-key`: Generate a new admin API key
 
+mod cli_health;
 mod mcp_client;
 mod mcp_server;
 mod setup;

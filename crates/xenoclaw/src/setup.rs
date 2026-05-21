@@ -36,6 +36,8 @@ use unicode_width::UnicodeWidthStr;
 
 use security_layer::auth::ApiKeyAuthenticator;
 
+use crate::cli_health::{inject_mcp_config, CliHealth, CliType};
+
 // ─── Color Palette — Xeno Brand (X3NO: black, red, charcoal accents) ─────────
 //
 // Three-tier color selection, detected once at startup:
@@ -403,6 +405,12 @@ struct WizardState {
     allow_pipes: bool,
     tool_timeout: String,
     timeout_unit: TimeoutUnit,
+    /// CLI providers only: false when the CLI is not installed/logged-in
+    /// and the user chose to skip — disables "Start server" on the done screen.
+    cli_provider_ready: bool,
+    /// Claude Code only: true once xenoclaw has been injected into
+    /// ~/.claude/settings.json as an MCP server.
+    mcp_registered: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -453,6 +461,8 @@ impl Default for WizardState {
             allow_pipes: false,
             tool_timeout: "30".to_string(),
             timeout_unit: TimeoutUnit::Seconds,
+            cli_provider_ready: true,
+            mcp_registered: false,
         }
     }
 }
@@ -1045,108 +1055,332 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
 
 /// Step 2b — CLI-backed providers (Claude Code CLI, GitHub Copilot CLI).
 ///
-/// These providers don't need an API key or base URL — they shell out to a
-/// locally installed CLI. Show which CLI is required, let the user confirm or
-/// change the model, then proceed.
+/// Checks whether the selected CLI is installed and authenticated, offers to
+/// fix either problem interactively, and (for Claude Code) injects XenoClaw
+/// into the CLI's MCP server list before proceeding.
+///
+/// Sets `state.cli_provider_ready = false` if the user skips a failing check,
+/// which greys out "Start server" on the final done screen.
 async fn step_cli_provider(state: &mut WizardState) -> Result<StepOutcome> {
     let p = &PROVIDERS[state.provider_idx];
+    let cli_type = if p.provider_type == "claude_code" {
+        CliType::ClaudeCode
+    } else {
+        CliType::CopilotCli
+    };
+    let cli_name = CliHealth::display_name(cli_type);
+
     let mut model_input = TextInput::new(&state.model);
     let mut editing = false;
 
-    let (cli_name, cli_check_cmd, cli_hint) = if p.provider_type == "claude_code" {
-        (
-            "Claude Code CLI",
-            "claude --version",
-            "Run `claude auth` to authenticate if not already done.",
-        )
-    } else {
-        (
-            "GitHub Copilot CLI",
-            "gh copilot --version",
-            "Run `gh extension install github/gh-copilot` if not installed.",
-        )
-    };
+    // ── Phase 0: show "Checking…" while we run the async probes ─────────────
+    {
+        let mut stdout = io::stdout();
+        clear_screen(&mut stdout)?;
+        print_header(&mut stdout, 2)?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(white()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!("   {cli_name}\r\n\r\n")))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print("   Checking status…\r\n"))?;
+        stdout.flush()?;
+    }
 
+    let mut health = CliHealth::check(cli_type).await;
+
+    // ── Main render + interaction loop ───────────────────────────────────────
     loop {
         let mut stdout = io::stdout();
         clear_screen(&mut stdout)?;
         print_header(&mut stdout, 2)?;
 
+        // Title
         bg(&mut stdout, BG)?;
         stdout
             .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print(format!("   {}\r\n", p.name)))?
+            .queue(Print(format!("   {cli_name}\r\n\r\n")))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
-        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
-            "   No API key or base URL required — uses a local CLI.\r\n\r\n",
-        ))?;
-        bg(&mut stdout, BG)?;
 
-        // Requirement callout
-        stdout
-            .queue(SetForegroundColor(amber()))?
-            .queue(SetAttribute(Attribute::Bold))?
-            .queue(Print("   Requires: "))?
-            .queue(SetAttribute(Attribute::Reset))?;
-        bg(&mut stdout, BG)?;
-        stdout
-            .queue(SetForegroundColor(white()))?
-            .queue(Print(format!("{cli_name}  ")))?
-            .queue(SetForegroundColor(dim()))?
-            .queue(Print(format!("({cli_check_cmd})\r\n")))?;
-        bg(&mut stdout, BG)?;
-        stdout
-            .queue(SetForegroundColor(dim()))?
-            .queue(Print(format!("   {cli_hint}\r\n\r\n")))?;
-        bg(&mut stdout, BG)?;
+        // ── Status rows ──────────────────────────────────────────────────────
 
-        // Model field
-        render_text_row(&mut stdout, true, "Model", &model_input, editing)?;
-        stdout.queue(Print("\r\n"))?;
-
-        stdout.flush()?;
-        print_footer(
+        // Installed row
+        render_cli_status_row(
             &mut stdout,
-            "  [Enter] Confirm  [E] Edit model  [Esc] Back  [Ctrl-C] Quit",
+            "Installed",
+            health.installed,
+            health.version.as_deref(),
         )?;
 
-        if let Event::Key(key) = event::read()? {
-            match key.code {
-                KeyCode::Enter if editing => {
-                    editing = false;
-                }
-                KeyCode::Enter => {
-                    state.model = model_input.value().to_string();
-                    return Ok(StepOutcome::Next);
-                }
-                KeyCode::Char('e') | KeyCode::Char('E') if !editing => {
-                    editing = true;
-                }
-                KeyCode::Left if editing => {
-                    model_input.move_left();
-                }
-                KeyCode::Right if editing => {
-                    model_input.move_right();
-                }
-                KeyCode::Backspace if editing => {
-                    model_input.backspace();
-                }
-                KeyCode::Delete if editing => {
-                    model_input.delete();
-                }
-                KeyCode::Char(c) if editing => {
-                    model_input.insert(c);
-                }
-                KeyCode::Esc => return Ok(StepOutcome::Back),
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    return Ok(StepOutcome::Quit);
-                }
+        // Authenticated row (only meaningful if installed)
+        if health.installed {
+            render_cli_status_row(&mut stdout, "Authenticated", health.logged_in, None)?;
+        } else {
+            bg(&mut stdout, BG)?;
+            stdout
+                .queue(SetForegroundColor(dim()))?
+                .queue(Print("   —  Authenticated   (skipped — not installed)\r\n"))?;
+        }
+
+        // MCP row (Claude Code only, shown once registered)
+        if CliHealth::supports_mcp(cli_type) && state.mcp_registered {
+            bg(&mut stdout, BG)?;
+            stdout
+                .queue(SetForegroundColor(green()))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(Print("   ✓  "))?
+                .queue(SetAttribute(Attribute::Reset))?;
+            bg(&mut stdout, BG)?;
+            stdout
+                .queue(SetForegroundColor(white()))?
+                .queue(Print("MCP configured  "))?
+                .queue(SetForegroundColor(dim()))?
+                .queue(Print("~/.claude/settings.json\r\n"))?;
+        }
+
+        stdout.queue(Print("\r\n"))?;
+        bg(&mut stdout, BG)?;
+
+        // ── Action block ─────────────────────────────────────────────────────
+
+        if health.is_ready() {
+            // All good — show model field and let user continue
+            render_text_row(&mut stdout, true, "Model", &model_input, editing)?;
+            stdout.queue(Print("\r\n"))?;
+            stdout.flush()?;
+            print_footer(
+                &mut stdout,
+                "  [Enter] Continue  [E] Edit model  [Esc] Back  [Ctrl-C] Quit",
+            )?;
+
+            match event::read()? {
+                Event::Key(key) => match key.code {
+                    KeyCode::Enter if editing => {
+                        editing = false;
+                    }
+                    KeyCode::Enter => {
+                        state.model = model_input.value().to_string();
+                        state.cli_provider_ready = true;
+
+                        // Inject MCP config for Claude Code
+                        if CliHealth::supports_mcp(cli_type) && !state.mcp_registered {
+                            match inject_mcp_config() {
+                                Ok(()) => {
+                                    state.mcp_registered = true;
+                                }
+                                Err(e) => {
+                                    // Non-fatal: log and continue without MCP
+                                    let _ = e; // shown on review screen
+                                }
+                            }
+                        }
+                        return Ok(StepOutcome::Next);
+                    }
+                    KeyCode::Char('e') | KeyCode::Char('E') if !editing => {
+                        editing = true;
+                    }
+                    KeyCode::Left if editing => model_input.move_left(),
+                    KeyCode::Right if editing => model_input.move_right(),
+                    KeyCode::Home if editing => model_input.move_home(),
+                    KeyCode::End if editing => model_input.move_end(),
+                    KeyCode::Backspace if editing => model_input.backspace(),
+                    KeyCode::Delete if editing => model_input.delete(),
+                    KeyCode::Char(c) if editing => model_input.insert(c),
+                    KeyCode::Esc => return Ok(StepOutcome::Back),
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        return Ok(StepOutcome::Quit);
+                    }
+                    _ => {}
+                },
+                Event::Resize(_, _) => continue,
+                _ => {}
+            }
+        } else if !health.installed {
+            // ── Not installed ────────────────────────────────────────────────
+            if health.can_auto_install {
+                bg(&mut stdout, BG)?;
+                stdout
+                    .queue(SetForegroundColor(amber()))?
+                    .queue(Print(format!(
+                        "   {} is available — XenoClaw can install for you.\r\n\r\n",
+                        health.install_prereq
+                    )))?;
+                bg(&mut stdout, BG)?;
+                stdout.flush()?;
+                print_footer(
+                    &mut stdout,
+                    "  [I] Install now  [S] Skip (serve disabled)  [Esc] Back",
+                )?;
+            } else {
+                bg(&mut stdout, BG)?;
+                stdout
+                    .queue(SetForegroundColor(amber()))?
+                    .queue(Print(format!(
+                        "   Cannot auto-install — {} not found in PATH.\r\n",
+                        health.install_prereq
+                    )))?
+                    .queue(SetForegroundColor(dim()))?
+                    .queue(Print(format!(
+                        "   Manual install:  {}\r\n\r\n",
+                        health.install_instructions
+                    )))?;
+                bg(&mut stdout, BG)?;
+                stdout.flush()?;
+                print_footer(
+                    &mut stdout,
+                    "  [S] Skip (serve disabled)  [Esc] Back  [Ctrl-C] Quit",
+                )?;
+            }
+
+            match event::read()? {
+                Event::Key(key) => match key.code {
+                    KeyCode::Char('i') | KeyCode::Char('I') if health.can_auto_install => {
+                        // Suspend TUI and run the install command
+                        let (bin, args) = CliHealth::install_command(cli_type);
+                        cli_run_interactive(&mut stdout, "Installing", bin, args)?;
+                        // Re-check after install
+                        health = CliHealth::check(cli_type).await;
+                    }
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        state.cli_provider_ready = false;
+                        state.model = model_input.value().to_string();
+                        return Ok(StepOutcome::Next);
+                    }
+                    KeyCode::Esc => return Ok(StepOutcome::Back),
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        return Ok(StepOutcome::Quit);
+                    }
+                    _ => {}
+                },
+                Event::Resize(_, _) => continue,
+                _ => {}
+            }
+        } else {
+            // ── Installed but not logged in ──────────────────────────────────
+            bg(&mut stdout, BG)?;
+            stdout
+                .queue(SetForegroundColor(amber()))?
+                .queue(Print(format!(
+                    "   {cli_name} is installed but you are not logged in.\r\n\r\n"
+                )))?;
+            bg(&mut stdout, BG)?;
+            stdout.flush()?;
+            print_footer(
+                &mut stdout,
+                "  [L] Login now  [S] Skip (serve disabled)  [Esc] Back  [Ctrl-C] Quit",
+            )?;
+
+            match event::read()? {
+                Event::Key(key) => match key.code {
+                    KeyCode::Char('l') | KeyCode::Char('L') => {
+                        // Suspend TUI and hand off to the CLI's own login flow
+                        let (bin, args) = CliHealth::login_command(cli_type);
+                        cli_run_interactive(&mut stdout, "Login", bin, args)?;
+                        health = CliHealth::check(cli_type).await;
+                    }
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        state.cli_provider_ready = false;
+                        state.model = model_input.value().to_string();
+                        return Ok(StepOutcome::Next);
+                    }
+                    KeyCode::Esc => return Ok(StepOutcome::Back),
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        return Ok(StepOutcome::Quit);
+                    }
+                    _ => {}
+                },
+                Event::Resize(_, _) => continue,
                 _ => {}
             }
         }
     }
+}
+
+// ─── CLI step helpers ────────────────────────────────────────────────────────
+
+/// Render a single ✓ / ✗ status row for the CLI check screen.
+fn render_cli_status_row(
+    stdout: &mut io::Stdout,
+    label: &str,
+    ok: bool,
+    extra: Option<&str>,
+) -> io::Result<()> {
+    bg(stdout, BG)?;
+    if ok {
+        stdout
+            .queue(SetForegroundColor(green()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   ✓  "))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
+        stdout.queue(SetForegroundColor(white()))?.queue(Print(format!("{label:<16}")))?;
+        if let Some(v) = extra {
+            stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!("  {v}")))?;
+        }
+    } else {
+        stdout
+            .queue(SetForegroundColor(red()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   ✗  "))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(format!("{label:<16}")))?;
+    }
+    stdout.queue(Print("\r\n"))?;
+    stdout.flush()
+}
+
+/// Suspend the TUI, run an external command with inherited stdio, then resume.
+///
+/// Used for both install (e.g. `npm install -g …`) and login flows
+/// (e.g. `claude auth login`, `gh auth login`). The command runs with full
+/// terminal access so OAuth device-code prompts, browser redirects, and
+/// progress bars all work normally.
+fn cli_run_interactive(
+    stdout: &mut io::Stdout,
+    verb: &str,
+    bin: &str,
+    args: &[&str],
+) -> io::Result<()> {
+    // Leave the wizard's alternate screen
+    terminal::disable_raw_mode()?;
+    stdout.queue(crossterm::terminal::LeaveAlternateScreen)?;
+    stdout.queue(crossterm::style::ResetColor)?;
+    stdout.flush()?;
+
+    println!();
+    println!("─── XenoClaw: {verb} ───────────────────────────────────────────");
+    println!("Running: {bin} {}", args.join(" "));
+    println!("Complete the flow below, then XenoClaw will resume.");
+    println!();
+
+    let _ = std::process::Command::new(bin)
+        .args(args)
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status();
+
+    println!();
+    println!("─── Returning to XenoClaw setup ────────────────────────────────");
+    println!("Press Enter to continue…");
+
+    // Wait for Enter so the user can read any output before we wipe the screen
+    let _ = std::io::stdin().read_line(&mut String::new());
+
+    // Restore the wizard's alternate screen
+    stdout.queue(crossterm::terminal::EnterAlternateScreen)?;
+    stdout.flush()?;
+    terminal::enable_raw_mode()?;
+    Ok(())
 }
 
 async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
@@ -2255,12 +2489,41 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
 
-        let options = [
-            ("xenoclaw serve", "start the agent runtime"),
+        // "xenoclaw serve" is greyed out and unselectable when the CLI
+        // provider failed its health checks and the user skipped fixing them.
+        let serve_blocked = !state.cli_provider_ready;
+
+        // Clamp selection: if serve is blocked and user is on option 0, move to 1.
+        if serve_blocked && selected == 0 {
+            selected = 1;
+        }
+
+        let options: &[(&str, &str)] = &[
+            (
+                "xenoclaw serve",
+                if serve_blocked {
+                    "CLI provider not ready — fix install/login first"
+                } else {
+                    "start the agent runtime"
+                },
+            ),
             ("Exit", "configure more later"),
         ];
+
         for (i, (cmd, desc)) in options.iter().enumerate() {
-            if i as u8 == selected {
+            let blocked = i == 0 && serve_blocked;
+            if blocked {
+                // Greyed-out, non-selectable row
+                bg(&mut stdout, BG)?;
+                stdout
+                    .queue(SetForegroundColor(dim()))?
+                    .queue(Print(format!("     [{}]  {cmd:<18} ", i + 1)))?
+                    .queue(SetForegroundColor(red()))?
+                    .queue(SetAttribute(Attribute::Italic))?
+                    .queue(Print(format!("{desc}\r\n")))?
+                    .queue(SetAttribute(Attribute::Reset))?;
+                bg(&mut stdout, BG)?;
+            } else if i as u8 == selected {
                 bg(&mut stdout, BG)?;
                 stdout
                     .queue(SetForegroundColor(red()))?
@@ -2280,21 +2543,38 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
             }
         }
 
+        // Warn if serve is blocked
+        if serve_blocked {
+            stdout.queue(Print("\r\n"))?;
+            bg(&mut stdout, BG)?;
+            stdout
+                .queue(SetForegroundColor(amber()))?
+                .queue(Print(
+                    "   ⚠  CLI provider not ready. Re-run `xenoclaw setup` after\r\n",
+                ))?
+                .queue(Print("      installing/logging in to enable serve.\r\n"))?;
+            bg(&mut stdout, BG)?;
+        }
+
         stdout.flush()?;
-        print_footer(
-            &mut stdout,
-            "  [↑↓/jk] Navigate  [Enter] Launch  [1/2] Quick select",
-        )?;
+        let footer = if serve_blocked {
+            "  [↑↓/jk] Navigate  [Enter] Exit  [2] Exit"
+        } else {
+            "  [↑↓/jk] Navigate  [Enter] Launch  [1/2] Quick select"
+        };
+        print_footer(&mut stdout, footer)?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
-                    selected = 0;
+                    if !serve_blocked {
+                        selected = 0;
+                    }
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     selected = 1;
                 }
-                KeyCode::Char('1') => {
+                KeyCode::Char('1') if !serve_blocked => {
                     return launch_or_exit(0);
                 }
                 KeyCode::Char('2') => {
