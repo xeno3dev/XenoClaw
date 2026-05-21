@@ -38,117 +38,123 @@ use security_layer::auth::ApiKeyAuthenticator;
 
 // ─── Color Palette — Xeno Brand (X3NO: black, red, charcoal accents) ─────────
 //
-// Colors are selected at runtime based on terminal color depth:
-//   - Truecolor (COLORTERM=truecolor|24bit): exact 24-bit RGB values
-//   - 256-color fallback (SSH, web consoles, tmux without truecolor):
-//     nearest ANSI 256-color indexed equivalents
+// Three-tier color selection, detected once at startup:
 //
-// All fallbacks use Color::AnsiValue which emits \x1b[38;5;Nm — supported by
-// every xterm-compatible terminal, reliably forwarded over SSH.
+//   Tier 1 — TrueColor  (COLORTERM=truecolor|24bit)
+//     Exact 24-bit RGB.  Kitty, Alacritty, WezTerm, modern xterm.
+//
+//   Tier 2 — Color256  (TERM contains "256color")
+//     Nearest ANSI 256-color index (\x1b[38;5;Nm).
+//     Every xterm-256color terminal including SSH forwarding and web consoles
+//     that set TERM=xterm-256color.
+//
+//   Tier 3 — Color16  (everything else: TERM=xterm, linux, vt100, etc.)
+//     Basic 8/16-color named constants (\x1b[31m etc.).
+//     Works on every terminal without exception — Proxmox pct enter, mosh,
+//     old SSH, serial consoles, and anywhere 256-color isn't advertised.
+//     BG fill is also skipped at this tier (AnsiValue won't render reliably).
 
-static TRUECOLOR: OnceLock<bool> = OnceLock::new();
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ColorDepth {
+    TrueColor,
+    Color256,
+    Color16,
+}
 
-fn truecolor() -> bool {
-    *TRUECOLOR.get_or_init(|| {
-        matches!(
+static COLOR_DEPTH: OnceLock<ColorDepth> = OnceLock::new();
+
+fn color_depth() -> ColorDepth {
+    *COLOR_DEPTH.get_or_init(|| {
+        if matches!(
             std::env::var("COLORTERM").as_deref(),
             Ok("truecolor") | Ok("24bit")
-        )
+        ) {
+            return ColorDepth::TrueColor;
+        }
+        if let Ok(term) = std::env::var("TERM") {
+            if term.contains("256color") {
+                return ColorDepth::Color256;
+            }
+        }
+        ColorDepth::Color16
     })
 }
 
-/// Primary brand red — headers, ► cursor, active selections, "XENOCLAW" banner.
-/// Fallback: AnsiValue(196) = #ff0000
 fn red() -> Color {
-    if truecolor() {
-        Color::Rgb { r: 255, g: 56, b: 56 }
-    } else {
-        Color::AnsiValue(196)
+    match color_depth() {
+        ColorDepth::TrueColor => Color::Rgb { r: 255, g: 56, b: 56 },
+        ColorDepth::Color256 => Color::AnsiValue(196),
+        ColorDepth::Color16 => Color::Red,
     }
 }
 
-/// Bright crimson for emphasis (commit boxes, key reveals).
-/// Fallback: AnsiValue(203) = #ff5f5f
 fn red_bright() -> Color {
-    if truecolor() {
-        Color::Rgb { r: 255, g: 96, b: 96 }
-    } else {
-        Color::AnsiValue(203)
+    match color_depth() {
+        ColorDepth::TrueColor => Color::Rgb { r: 255, g: 96, b: 96 },
+        ColorDepth::Color256 => Color::AnsiValue(203),
+        ColorDepth::Color16 => Color::Red,
     }
 }
 
-/// Deep blood-red for backgrounds of error/warning callouts.
-/// Fallback: AnsiValue(88) = #870000
 fn red_deep() -> Color {
-    if truecolor() {
-        Color::Rgb { r: 120, g: 20, b: 20 }
-    } else {
-        Color::AnsiValue(88)
+    match color_depth() {
+        ColorDepth::TrueColor => Color::Rgb { r: 120, g: 20, b: 20 },
+        ColorDepth::Color256 => Color::AnsiValue(88),
+        ColorDepth::Color16 => Color::DarkRed,
     }
 }
 
-/// Pure white — body text, values, key contents (the "pop" color).
-/// Fallback: AnsiValue(255) = #eeeeee
 fn white() -> Color {
-    if truecolor() {
-        Color::Rgb { r: 240, g: 240, b: 240 }
-    } else {
-        Color::AnsiValue(255)
+    match color_depth() {
+        ColorDepth::TrueColor => Color::Rgb { r: 240, g: 240, b: 240 },
+        ColorDepth::Color256 => Color::AnsiValue(255),
+        ColorDepth::Color16 => Color::White,
     }
 }
 
-/// Soft white-grey — secondary labels, hints.
-/// Fallback: AnsiValue(251) = #c6c6c6
 fn text() -> Color {
-    if truecolor() {
-        Color::Rgb { r: 200, g: 200, b: 200 }
-    } else {
-        Color::AnsiValue(251)
+    match color_depth() {
+        ColorDepth::TrueColor => Color::Rgb { r: 200, g: 200, b: 200 },
+        ColorDepth::Color256 => Color::AnsiValue(251),
+        ColorDepth::Color16 => Color::Grey,
     }
 }
 
-/// Medium grey — inactive menu items, dim text.
-/// Fallback: AnsiValue(244) = #808080
 fn dim() -> Color {
-    if truecolor() {
-        Color::Rgb { r: 130, g: 130, b: 135 }
-    } else {
-        Color::AnsiValue(244)
+    match color_depth() {
+        ColorDepth::TrueColor => Color::Rgb { r: 130, g: 130, b: 135 },
+        ColorDepth::Color256 => Color::AnsiValue(244),
+        ColorDepth::Color16 => Color::DarkGrey,
     }
 }
 
-/// Dark grey — horizontal rules, borders.
-/// Fallback: AnsiValue(239) = #4e4e4e
 fn rule_fg() -> Color {
-    if truecolor() {
-        Color::Rgb { r: 75, g: 75, b: 80 }
-    } else {
-        Color::AnsiValue(239)
+    match color_depth() {
+        ColorDepth::TrueColor => Color::Rgb { r: 75, g: 75, b: 80 },
+        ColorDepth::Color256 => Color::AnsiValue(239),
+        ColorDepth::Color16 => Color::DarkGrey,
     }
 }
 
-/// Success green — ✓ checkmarks ONLY (sparingly, for visual confirmation).
-/// Fallback: AnsiValue(83) = #5fff5f
 fn green() -> Color {
-    if truecolor() {
-        Color::Rgb { r: 80, g: 220, b: 100 }
-    } else {
-        Color::AnsiValue(83)
+    match color_depth() {
+        ColorDepth::TrueColor => Color::Rgb { r: 80, g: 220, b: 100 },
+        ColorDepth::Color256 => Color::AnsiValue(83),
+        ColorDepth::Color16 => Color::Green,
     }
 }
 
-/// Amber — warnings, "save this now" callouts.
-/// Fallback: AnsiValue(214) = #ffaf00
 fn amber() -> Color {
-    if truecolor() {
-        Color::Rgb { r: 255, g: 176, b: 0 }
-    } else {
-        Color::AnsiValue(214)
+    match color_depth() {
+        ColorDepth::TrueColor => Color::Rgb { r: 255, g: 176, b: 0 },
+        ColorDepth::Color256 => Color::AnsiValue(214),
+        ColorDepth::Color16 => Color::Yellow,
     }
 }
 
 /// Charcoal background — ANSI 256-color #233 (#121212).
-/// Always uses AnsiValue so it renders reliably on SSH and web consoles.
+/// Only used when color256 or truecolor is available; bg_enabled() returns
+/// false on Color16 terminals where AnsiValue sequences don't render.
 const BG: Color = Color::AnsiValue(233);
 
 const TOTAL_STEPS: u8 = 8;
@@ -476,13 +482,10 @@ const COMPACT_BANNER: &str = "[ X E N O C L A W ]";
 
 /// Returns true if backgrounds should be painted.
 ///
-/// Disabled only for truly incapable terminals:
-/// - `NO_COLOR` env var set — universal opt-out standard
-/// - `TERM=dumb` — no color support at all
-///
-/// SSH sessions are NOT suppressed: BG now uses ANSI 256-color which passes
-/// through every SSH layer cleanly. Override with `XENOCLAW_FORCE_BG=0` to
-/// disable explicitly, or `XENOCLAW_FORCE_BG=1` to force-enable.
+/// BG uses ANSI 256-color (AnsiValue(233)), which requires at least a
+/// 256-color capable terminal. Disabled automatically on Color16 terminals
+/// (TERM=xterm, linux, vt100, etc.) where AnsiValue sequences are unreliable.
+/// Force-override with XENOCLAW_FORCE_BG=0 (off) or =1 (on).
 fn bg_enabled() -> bool {
     if std::env::var("XENOCLAW_FORCE_BG").as_deref() == Ok("0") {
         return false;
@@ -498,7 +501,8 @@ fn bg_enabled() -> bool {
             return false;
         }
     }
-    true
+    // Skip BG on basic 16-color terminals — AnsiValue(233) won't render.
+    color_depth() != ColorDepth::Color16
 }
 
 /// Conditionally paint a background — no-op when `bg_enabled()` is false.
