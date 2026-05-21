@@ -41,9 +41,8 @@ async fn setup_store_with_capacity(max_entries: u64) -> (KnowledgeStore, TempDir
 /// Produces strings of length MAX_CONTENT_SIZE+1 to MAX_CONTENT_SIZE+5000.
 fn oversized_content_strategy() -> impl Strategy<Value = String> {
     ((MAX_CONTENT_SIZE + 1)..=(MAX_CONTENT_SIZE + 5000)).prop_flat_map(|len| {
-        proptest::collection::vec(b'a'..=b'z', len).prop_map(|bytes| {
-            bytes.into_iter().map(|b| b as char).collect::<String>()
-        })
+        proptest::collection::vec(b'a'..=b'z', len)
+            .prop_map(|bytes| bytes.into_iter().map(|b| b as char).collect::<String>())
     })
 }
 
@@ -51,9 +50,8 @@ fn oversized_content_strategy() -> impl Strategy<Value = String> {
 /// Produces strings of length 0 to MAX_CONTENT_SIZE.
 fn valid_content_strategy() -> impl Strategy<Value = String> {
     (0..=MAX_CONTENT_SIZE).prop_flat_map(|len| {
-        proptest::collection::vec(b'a'..=b'z', len).prop_map(|bytes| {
-            bytes.into_iter().map(|b| b as char).collect::<String>()
-        })
+        proptest::collection::vec(b'a'..=b'z', len)
+            .prop_map(|bytes| bytes.into_iter().map(|b| b as char).collect::<String>())
     })
 }
 

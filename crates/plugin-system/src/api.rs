@@ -219,7 +219,11 @@ impl PluginApi {
         callback: EventHandlerFn,
     ) -> Result<(), PluginError> {
         // Check the shared handler registry for cross-plugin conflicts
-        if let Err(existing_plugin) = self.handler_registry.register(handler_name, &self.plugin_name).await {
+        if let Err(existing_plugin) = self
+            .handler_registry
+            .register(handler_name, &self.plugin_name)
+            .await
+        {
             error!(
                 plugin = %self.plugin_name,
                 handler = %handler_name,
@@ -306,7 +310,9 @@ impl PluginApi {
         }
 
         // Remove all handler names owned by this plugin from the shared registry
-        self.handler_registry.unregister_plugin(&self.plugin_name).await;
+        self.handler_registry
+            .unregister_plugin(&self.plugin_name)
+            .await;
 
         info!(plugin = %self.plugin_name, "Plugin API cleanup complete");
     }
@@ -439,12 +445,7 @@ mod tests {
             max_processes: 5,
         }));
 
-        PluginApi::new(
-            plugin_name.to_string(),
-            registry,
-            event_bus,
-            enforcer,
-        )
+        PluginApi::new(plugin_name.to_string(), registry, event_bus, enforcer)
     }
 
     /// Create two PluginApi instances sharing the same tool registry and handler registry.
@@ -508,7 +509,10 @@ mod tests {
         let tool2 = Arc::new(TestTool::new("shared_tool"));
         let result = api2.register_tool(tool2).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), PluginError::NameConflict { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            PluginError::NameConflict { .. }
+        ));
     }
 
     #[tokio::test]
@@ -629,7 +633,10 @@ mod tests {
 
         // Verify the error identifies both plugins
         match result.unwrap_err() {
-            PluginError::NameConflict { name, existing_plugin } => {
+            PluginError::NameConflict {
+                name,
+                existing_plugin,
+            } => {
                 assert_eq!(name, "search");
                 assert_eq!(existing_plugin, "plugin-alpha");
             }
@@ -680,7 +687,10 @@ mod tests {
 
         // Verify the error identifies both plugins
         match result.unwrap_err() {
-            PluginError::NameConflict { name, existing_plugin } => {
+            PluginError::NameConflict {
+                name,
+                existing_plugin,
+            } => {
                 assert_eq!(name, "on_file_change");
                 assert_eq!(existing_plugin, "plugin-alpha");
             }
@@ -764,7 +774,10 @@ mod tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            PluginError::NameConflict { name, existing_plugin } => {
+            PluginError::NameConflict {
+                name,
+                existing_plugin,
+            } => {
                 assert_eq!(name, "builtin_search");
                 assert_eq!(existing_plugin, "built-in");
             }
@@ -863,7 +876,10 @@ mod tests {
         let registry = EventHandlerRegistry::new();
 
         assert!(registry.register("handler_a", "plugin-1").await.is_ok());
-        assert_eq!(registry.owner("handler_a").await, Some("plugin-1".to_string()));
+        assert_eq!(
+            registry.owner("handler_a").await,
+            Some("plugin-1".to_string())
+        );
         assert_eq!(registry.owner("nonexistent").await, None);
     }
 
@@ -886,7 +902,10 @@ mod tests {
 
         // Can re-register after unregister
         assert!(registry.register("handler_y", "plugin-2").await.is_ok());
-        assert_eq!(registry.owner("handler_y").await, Some("plugin-2".to_string()));
+        assert_eq!(
+            registry.owner("handler_y").await,
+            Some("plugin-2".to_string())
+        );
     }
 
     #[tokio::test]

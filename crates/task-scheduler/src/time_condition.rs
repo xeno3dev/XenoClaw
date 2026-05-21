@@ -133,13 +133,27 @@ impl TimeCondition {
         match input.as_str() {
             "weekday" => Ok(ConditionNode::Atom(AtomicCondition::Weekday)),
             "weekend" => Ok(ConditionNode::Atom(AtomicCondition::Weekend)),
-            "monday" | "mon" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(Weekday::Mon))),
-            "tuesday" | "tue" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(Weekday::Tue))),
-            "wednesday" | "wed" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(Weekday::Wed))),
-            "thursday" | "thu" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(Weekday::Thu))),
-            "friday" | "fri" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(Weekday::Fri))),
-            "saturday" | "sat" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(Weekday::Sat))),
-            "sunday" | "sun" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(Weekday::Sun))),
+            "monday" | "mon" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(
+                Weekday::Mon,
+            ))),
+            "tuesday" | "tue" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(
+                Weekday::Tue,
+            ))),
+            "wednesday" | "wed" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(
+                Weekday::Wed,
+            ))),
+            "thursday" | "thu" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(
+                Weekday::Thu,
+            ))),
+            "friday" | "fri" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(
+                Weekday::Fri,
+            ))),
+            "saturday" | "sat" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(
+                Weekday::Sat,
+            ))),
+            "sunday" | "sun" => Ok(ConditionNode::Atom(AtomicCondition::DayOfWeek(
+                Weekday::Sun,
+            ))),
             _ => {
                 // Try "after X"
                 if let Some(time_str) = input.strip_prefix("after ") {
@@ -149,7 +163,10 @@ impl TimeCondition {
                 // Try "before X"
                 if let Some(time_str) = input.strip_prefix("before ") {
                     let (hour, minute) = Self::parse_time(time_str.trim())?;
-                    return Ok(ConditionNode::Atom(AtomicCondition::Before { hour, minute }));
+                    return Ok(ConditionNode::Atom(AtomicCondition::Before {
+                        hour,
+                        minute,
+                    }));
                 }
                 // Try "between X and Y"
                 if let Some(rest) = input.strip_prefix("between ") {
@@ -182,13 +199,17 @@ impl TimeCondition {
         if input.contains(':') {
             let parts: Vec<&str> = input.split(':').collect();
             if parts.len() == 2 {
-                let hour: u32 = parts[0].parse().map_err(|_| TaskError::InvalidCronExpression {
-                    expression: format!("invalid hour in time: '{}'", input),
-                })?;
-                let minute: u32 =
-                    parts[1].parse().map_err(|_| TaskError::InvalidCronExpression {
-                        expression: format!("invalid minute in time: '{}'", input),
+                let hour: u32 = parts[0]
+                    .parse()
+                    .map_err(|_| TaskError::InvalidCronExpression {
+                        expression: format!("invalid hour in time: '{}'", input),
                     })?;
+                let minute: u32 =
+                    parts[1]
+                        .parse()
+                        .map_err(|_| TaskError::InvalidCronExpression {
+                            expression: format!("invalid minute in time: '{}'", input),
+                        })?;
                 if hour > 23 || minute > 59 {
                     return Err(TaskError::InvalidCronExpression {
                         expression: format!("time out of range: '{}'", input),
@@ -202,9 +223,11 @@ impl TimeCondition {
         if input.ends_with("am") || input.ends_with("pm") {
             let is_pm = input.ends_with("pm");
             let num_str = &input[..input.len() - 2];
-            let hour: u32 = num_str.parse().map_err(|_| TaskError::InvalidCronExpression {
-                expression: format!("invalid hour in time: '{}'", input),
-            })?;
+            let hour: u32 = num_str
+                .parse()
+                .map_err(|_| TaskError::InvalidCronExpression {
+                    expression: format!("invalid hour in time: '{}'", input),
+                })?;
 
             if hour == 0 || hour > 12 {
                 return Err(TaskError::InvalidCronExpression {
@@ -213,9 +236,17 @@ impl TimeCondition {
             }
 
             let hour_24 = if is_pm {
-                if hour == 12 { 12 } else { hour + 12 }
+                if hour == 12 {
+                    12
+                } else {
+                    hour + 12
+                }
             } else {
-                if hour == 12 { 0 } else { hour }
+                if hour == 12 {
+                    0
+                } else {
+                    hour
+                }
             };
 
             return Ok((hour_24, 0));

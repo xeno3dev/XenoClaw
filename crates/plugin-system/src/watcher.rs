@@ -73,9 +73,8 @@ impl PluginWatcher {
         let plugins_dir = self.loader.plugins_dir().to_path_buf();
 
         if !plugins_dir.exists() {
-            std::fs::create_dir_all(&plugins_dir).map_err(|e| {
-                format!("Failed to create plugins directory: {e}")
-            })?;
+            std::fs::create_dir_all(&plugins_dir)
+                .map_err(|e| format!("Failed to create plugins directory: {e}"))?;
         }
 
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
@@ -253,11 +252,8 @@ async fn process_reloads(
         // Check if the plugin is currently loaded
         if loader.is_loaded(plugin_name).await {
             // Reload existing plugin (with graceful timeout for in-flight ops)
-            match tokio::time::timeout(
-                config.graceful_timeout,
-                loader.reload_plugin(plugin_name),
-            )
-            .await
+            match tokio::time::timeout(config.graceful_timeout, loader.reload_plugin(plugin_name))
+                .await
             {
                 Ok(Ok(manifest)) => {
                     info!(

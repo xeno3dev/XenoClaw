@@ -171,19 +171,24 @@ impl LlmProvider for OpenAiProvider {
             });
         }
 
-        let oai_response: OpenAiResponse = response.json().await.map_err(|e| {
-            LlmError::InvalidResponse {
-                provider: self.name.clone(),
-                reason: format!("Failed to parse response: {e}"),
-            }
-        })?;
+        let oai_response: OpenAiResponse =
+            response
+                .json()
+                .await
+                .map_err(|e| LlmError::InvalidResponse {
+                    provider: self.name.clone(),
+                    reason: format!("Failed to parse response: {e}"),
+                })?;
 
-        let choice = oai_response.choices.into_iter().next().ok_or_else(|| {
-            LlmError::InvalidResponse {
-                provider: self.name.clone(),
-                reason: "No choices in response".to_string(),
-            }
-        })?;
+        let choice =
+            oai_response
+                .choices
+                .into_iter()
+                .next()
+                .ok_or_else(|| LlmError::InvalidResponse {
+                    provider: self.name.clone(),
+                    reason: "No choices in response".to_string(),
+                })?;
 
         let tool_calls = choice
             .message
@@ -301,7 +306,10 @@ fn parse_sse_chunks(text: &str, provider_name: &str) -> Vec<Result<CompletionChu
                             .into_iter()
                             .map(|tc| LlmToolCall {
                                 id: tc.id.unwrap_or_default(),
-                                name: tc.function.map(|f| f.name.unwrap_or_default()).unwrap_or_default(),
+                                name: tc
+                                    .function
+                                    .map(|f| f.name.unwrap_or_default())
+                                    .unwrap_or_default(),
                                 arguments: tc.function_args_fragment.unwrap_or_default(),
                             })
                             .collect();
@@ -452,16 +460,14 @@ mod tests {
 
     #[test]
     fn test_endpoint_construction() {
-        let provider =
-            OpenAiProvider::new("test", "https://api.openai.com", None, "gpt-4", 30);
+        let provider = OpenAiProvider::new("test", "https://api.openai.com", None, "gpt-4", 30);
         assert_eq!(
             provider.endpoint(),
             "https://api.openai.com/v1/chat/completions"
         );
 
         // Trailing slash should be stripped
-        let provider =
-            OpenAiProvider::new("test", "https://api.openai.com/", None, "gpt-4", 30);
+        let provider = OpenAiProvider::new("test", "https://api.openai.com/", None, "gpt-4", 30);
         assert_eq!(
             provider.endpoint(),
             "https://api.openai.com/v1/chat/completions"
@@ -470,8 +476,7 @@ mod tests {
 
     #[test]
     fn test_request_body_construction() {
-        let provider =
-            OpenAiProvider::new("test", "http://localhost", None, "gpt-4o", 30);
+        let provider = OpenAiProvider::new("test", "http://localhost", None, "gpt-4o", 30);
 
         let request = CompletionRequest {
             messages: vec![
@@ -503,8 +508,7 @@ mod tests {
 
     #[test]
     fn test_request_body_with_tools() {
-        let provider =
-            OpenAiProvider::new("test", "http://localhost", None, "gpt-4o", 30);
+        let provider = OpenAiProvider::new("test", "http://localhost", None, "gpt-4o", 30);
 
         let request = CompletionRequest {
             messages: vec![ChatMessage {

@@ -69,10 +69,7 @@ pub struct WsAuthQuery {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatClientMessage {
     /// Send a message to the agent.
-    Message {
-        session_id: String,
-        content: String,
-    },
+    Message { session_id: String, content: String },
     /// Ping to keep connection alive.
     Ping,
 }
@@ -82,10 +79,7 @@ pub enum ChatClientMessage {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatServerMessage {
     /// A streamed token from the LLM response.
-    Token {
-        session_id: String,
-        content: String,
-    },
+    Token { session_id: String, content: String },
     /// Indicates the response is complete.
     Done {
         session_id: String,
@@ -98,9 +92,7 @@ pub enum ChatServerMessage {
         message: String,
     },
     /// Authentication result.
-    Authenticated {
-        user_id: String,
-    },
+    Authenticated { user_id: String },
     /// Pong response to client ping.
     Pong,
 }
@@ -127,14 +119,9 @@ pub enum EventsServerMessage {
         timestamp: String,
     },
     /// Authentication result.
-    Authenticated {
-        user_id: String,
-    },
+    Authenticated { user_id: String },
     /// An error occurred.
-    Error {
-        error_code: String,
-        message: String,
-    },
+    Error { error_code: String, message: String },
     /// Pong response.
     Pong,
 }
@@ -181,11 +168,7 @@ impl WsState {
     }
 
     /// Publish a system event to all connected event stream clients.
-    pub async fn publish_event(
-        &self,
-        event_type: String,
-        payload: serde_json::Value,
-    ) {
+    pub async fn publish_event(&self, event_type: String, payload: serde_json::Value) {
         let id = Uuid::new_v4();
         let timestamp = Utc::now().to_rfc3339();
 
@@ -469,7 +452,10 @@ async fn handle_chat_message(
         return;
     }
 
-    debug!(session_id = session_id, "Processing chat message via WebSocket");
+    debug!(
+        session_id = session_id,
+        "Processing chat message via WebSocket"
+    );
 
     // In a full implementation, this would:
     // 1. Load session context from Memory Store
@@ -477,11 +463,7 @@ async fn handle_chat_message(
     // 3. Stream tokens back as they arrive
     //
     // For now, send a placeholder response to demonstrate the streaming protocol.
-    let response_tokens = vec![
-        "Message received",
-        " and queued",
-        " for processing.",
-    ];
+    let response_tokens = vec!["Message received", " and queued", " for processing."];
 
     for token in &response_tokens {
         let msg = ChatServerMessage::Token {
@@ -507,10 +489,9 @@ async fn handle_chat_message(
 
 /// Authenticate a WebSocket connection using the token query parameter.
 async fn authenticate_ws(state: &AppState, auth: &WsAuthQuery) -> Result<Uuid, String> {
-    let token = auth
-        .token
-        .as_deref()
-        .ok_or_else(|| "Missing token query parameter. Connect with ?token=<api-key>".to_string())?;
+    let token = auth.token.as_deref().ok_or_else(|| {
+        "Missing token query parameter. Connect with ?token=<api-key>".to_string()
+    })?;
 
     // Validate the API key
     match state.authenticator.authenticate(token, &state.api_keys) {
@@ -530,10 +511,7 @@ async fn send_chat_message(socket: &mut WebSocket, msg: &ChatServerMessage) -> R
 }
 
 /// Send a serialized events message over the WebSocket.
-async fn send_events_message(
-    socket: &mut WebSocket,
-    msg: &EventsServerMessage,
-) -> Result<(), ()> {
+async fn send_events_message(socket: &mut WebSocket, msg: &EventsServerMessage) -> Result<(), ()> {
     let text = serde_json::to_string(msg).map_err(|e| {
         error!("Failed to serialize events message: {}", e);
     })?;

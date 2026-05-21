@@ -12,7 +12,7 @@
 //! NOTE: These tests use global Prometheus metrics state, so they must be
 //! serialized to avoid interference between parallel test threads.
 
-use common::alerting::{AlertCondition, AlertRule, AlertSeverity, evaluate_single_rule};
+use common::alerting::{evaluate_single_rule, AlertCondition, AlertRule, AlertSeverity};
 use common::metrics;
 use proptest::prelude::*;
 use std::sync::Mutex;

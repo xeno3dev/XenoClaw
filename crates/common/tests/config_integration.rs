@@ -189,10 +189,7 @@ fn test_env_override_monitoring_settings() {
     let config =
         config::load_config_from_str(MINIMAL_VALID_TOML).expect("Should load valid config");
 
-    assert_eq!(
-        config.monitoring.log_level,
-        common::config::LogLevel::Debug
-    );
+    assert_eq!(config.monitoring.log_level, common::config::LogLevel::Debug);
     assert_eq!(config.monitoring.metrics_port, 9200);
 
     // Clean up
@@ -335,7 +332,9 @@ agent_name = ""
 
     if let Err(ConfigError::Validation(ref v)) = result {
         // Verify the error identifies the setting by name
-        assert!(v.errors.iter().any(|e| e.setting.contains("agent_name")
-            || e.setting.contains("llm.providers")));
+        assert!(v
+            .errors
+            .iter()
+            .any(|e| e.setting.contains("agent_name") || e.setting.contains("llm.providers")));
     }
 }

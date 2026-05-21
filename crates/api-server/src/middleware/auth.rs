@@ -20,7 +20,12 @@ pub struct AuthenticatedKey(pub ApiKeyId);
 
 /// Axum middleware layer type alias for convenience.
 pub type AuthLayer = axum::middleware::FromFnLayer<
-    fn(State<AppState>, Request<axum::body::Body>, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, ApiError>> + Send>>,
+    fn(
+        State<AppState>,
+        Request<axum::body::Body>,
+        Next,
+    )
+        -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, ApiError>> + Send>>,
     AppState,
     (State<AppState>, Request<axum::body::Body>, Next),
 >;
@@ -86,7 +91,11 @@ pub async fn auth_middleware(
         .map(|k| k.rate_limit);
 
     // Check rate limit
-    if let Err(err) = state.rate_limiter.check_rate_limit(key_id, key_rate_limit).await {
+    if let Err(err) = state
+        .rate_limiter
+        .check_rate_limit(key_id, key_rate_limit)
+        .await
+    {
         return Err(ApiError::from_security_error(err, request_id));
     }
 

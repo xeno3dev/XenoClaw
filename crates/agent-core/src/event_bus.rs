@@ -288,10 +288,7 @@ mod tests {
         let bus = EventBus::new(16);
         let mut rx = bus.subscribe(EventType::ToolRegistered);
 
-        let event = Event::new(
-            EventType::ToolRegistered,
-            json!({ "tool_name": "echo" }),
-        );
+        let event = Event::new(EventType::ToolRegistered, json!({ "tool_name": "echo" }));
         let count = bus.publish(event.clone());
         assert_eq!(count, 1);
 
@@ -306,10 +303,7 @@ mod tests {
         let mut rx1 = bus.subscribe(EventType::TaskCompleted);
         let mut rx2 = bus.subscribe(EventType::TaskCompleted);
 
-        let event = Event::new(
-            EventType::TaskCompleted,
-            json!({ "task_id": "abc-123" }),
-        );
+        let event = Event::new(EventType::TaskCompleted, json!({ "task_id": "abc-123" }));
         let count = bus.publish(event);
         assert_eq!(count, 2);
 
@@ -431,7 +425,10 @@ mod tests {
         assert_eq!(EventType::TaskCompleted.to_string(), "task_completed");
         assert_eq!(EventType::TaskFailed.to_string(), "task_failed");
         assert_eq!(EventType::MessageReceived.to_string(), "message_received");
-        assert_eq!(EventType::AgentModeChanged.to_string(), "agent_mode_changed");
+        assert_eq!(
+            EventType::AgentModeChanged.to_string(),
+            "agent_mode_changed"
+        );
         assert_eq!(EventType::PluginLoaded.to_string(), "plugin_loaded");
         assert_eq!(EventType::PluginUnloaded.to_string(), "plugin_unloaded");
     }

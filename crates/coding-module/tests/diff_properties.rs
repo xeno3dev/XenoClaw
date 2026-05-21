@@ -6,9 +6,7 @@
 //! Property 32: Cumulative Diff Equivalence
 //! Property 33: Session Change Summary Accuracy
 
-use coding_module::{
-    generate_unified_diff, ChangeTracker, DiffLine, UnifiedDiff,
-};
+use coding_module::{generate_unified_diff, ChangeTracker, DiffLine, UnifiedDiff};
 use proptest::prelude::*;
 use std::path::Path;
 
@@ -43,16 +41,15 @@ fn non_empty_text_strategy() -> impl Strategy<Value = String> {
 
 /// Generate a pair of (before, after) text contents that are different.
 fn diff_pair_strategy() -> impl Strategy<Value = (String, String)> {
-    (text_content_strategy(), text_content_strategy()).prop_filter(
-        "before and after must differ",
-        |(before, after)| before != after,
-    )
+    (text_content_strategy(), text_content_strategy())
+        .prop_filter("before and after must differ", |(before, after)| {
+            before != after
+        })
 }
 
 /// Generate a file path (simple name for testing).
 fn file_path_strategy() -> impl Strategy<Value = String> {
-    proptest::string::string_regex("/tmp/[a-z]{1,10}\\.txt")
-        .unwrap()
+    proptest::string::string_regex("/tmp/[a-z]{1,10}\\.txt").unwrap()
 }
 
 /// Generate a sequence of modifications to a single file (2-5 edits).
@@ -77,9 +74,10 @@ fn multi_file_changes_strategy() -> impl Strategy<Value = Vec<(String, String, S
         paths.dedup();
         paths.len() == changes.len()
     })
-    .prop_filter("at least one file must have different before/after", |changes| {
-        changes.iter().any(|(_, before, after)| before != after)
-    })
+    .prop_filter(
+        "at least one file must have different before/after",
+        |changes| changes.iter().any(|(_, before, after)| before != after),
+    )
 }
 
 // ============================================================================

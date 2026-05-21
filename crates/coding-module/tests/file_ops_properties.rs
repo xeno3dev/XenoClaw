@@ -115,10 +115,10 @@ fn multiple_occurrence_edit_strategy() -> impl Strategy<Value = (String, String,
 /// Strategy that produces (content, old_str) where old_str does NOT exist
 /// in content.
 fn missing_old_str_strategy() -> impl Strategy<Value = (String, String)> {
-    (file_content_strategy(), old_str_strategy()).prop_filter(
-        "old_str must not exist in content",
-        |(content, old_str)| !content.contains(old_str.as_str()),
-    )
+    (file_content_strategy(), old_str_strategy())
+        .prop_filter("old_str must not exist in content", |(content, old_str)| {
+            !content.contains(old_str.as_str())
+        })
 }
 
 // ============================================================================

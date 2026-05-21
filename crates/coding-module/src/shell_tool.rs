@@ -107,10 +107,8 @@ impl Tool for ShellCommandTool {
             .and_then(|v| v.as_u64())
             .map(Duration::from_secs);
 
-        let env: Option<HashMap<String, String>> = arguments
-            .get("env")
-            .and_then(|v| v.as_object())
-            .map(|obj| {
+        let env: Option<HashMap<String, String>> =
+            arguments.get("env").and_then(|v| v.as_object()).map(|obj| {
                 obj.iter()
                     .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                     .collect()
@@ -127,13 +125,7 @@ impl Tool for ShellCommandTool {
         // Execute the command
         let result = self
             .executor
-            .execute(
-                command,
-                &args,
-                cwd.as_ref(),
-                env.as_ref(),
-                timeout,
-            )
+            .execute(command, &args, cwd.as_ref(), env.as_ref(), timeout)
             .await;
 
         match result {
@@ -196,7 +188,10 @@ mod tests {
         let schema = tool.parameters_schema();
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"]["command"].is_object());
-        assert!(schema["required"].as_array().unwrap().contains(&json!("command")));
+        assert!(schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("command")));
     }
 
     #[tokio::test]

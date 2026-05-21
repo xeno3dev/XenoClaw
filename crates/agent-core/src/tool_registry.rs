@@ -137,10 +137,7 @@ impl ToolRegistry {
         let tool_name = tool.name().to_string();
 
         if let Some(existing) = self.tools.get(&tool_name) {
-            let existing_source = existing
-                .plugin_name
-                .as_deref()
-                .unwrap_or("built-in");
+            let existing_source = existing.plugin_name.as_deref().unwrap_or("built-in");
             warn!(
                 tool_name = %tool_name,
                 new_plugin = %plugin_name,

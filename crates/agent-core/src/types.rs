@@ -18,10 +18,7 @@ pub enum AgentStatus {
     /// Agent is idle, waiting for work.
     Idle,
     /// Agent is actively processing a task.
-    Working {
-        task: String,
-        progress: Option<f32>,
-    },
+    Working { task: String, progress: Option<f32> },
     /// Agent encountered an error.
     Error { message: String },
     /// Agent is shutting down.
@@ -82,7 +79,9 @@ pub enum ModeError {
 #[derive(Debug, thiserror::Error)]
 pub enum ShutdownError {
     /// Timed out waiting for in-flight requests to drain.
-    #[error("Shutdown timed out after {elapsed_seconds}s with {pending_requests} requests pending")]
+    #[error(
+        "Shutdown timed out after {elapsed_seconds}s with {pending_requests} requests pending"
+    )]
     Timeout {
         elapsed_seconds: u64,
         pending_requests: usize,

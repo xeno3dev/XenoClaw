@@ -143,7 +143,10 @@ impl IdentityMapper {
         };
         let removed = self.mappings.remove(&key);
         if removed.is_some() {
-            info!("Removed identity mapping for {:?}:{}", platform, platform_user_id);
+            info!(
+                "Removed identity mapping for {:?}:{}",
+                platform, platform_user_id
+            );
         }
         removed
     }
@@ -151,7 +154,11 @@ impl IdentityMapper {
     /// Look up the operator account for a platform identity.
     ///
     /// Returns None if no mapping exists.
-    pub fn get_user_id(&self, platform: Platform, platform_user_id: &str) -> Option<&IdentityMapping> {
+    pub fn get_user_id(
+        &self,
+        platform: Platform,
+        platform_user_id: &str,
+    ) -> Option<&IdentityMapping> {
         let key = PlatformIdentity {
             platform,
             platform_user_id: platform_user_id.to_string(),
@@ -271,11 +278,9 @@ async fn validate_telegram_credentials(config: &serde_json::Value) -> Result<(),
         .build()
         .map_err(|e| MessagingError::ConnectionFailed(format!("HTTP client error: {}", e)))?;
 
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| MessagingError::ConnectionFailed(format!("Telegram connection failed: {}", e)))?;
+    let response = client.get(&url).send().await.map_err(|e| {
+        MessagingError::ConnectionFailed(format!("Telegram connection failed: {}", e))
+    })?;
 
     if !response.status().is_success() {
         return Err(MessagingError::AuthFailed(format!(
@@ -311,7 +316,9 @@ async fn validate_discord_credentials(config: &serde_json::Value) -> Result<(), 
         .header("Authorization", format!("Bot {}", bot_token))
         .send()
         .await
-        .map_err(|e| MessagingError::ConnectionFailed(format!("Discord connection failed: {}", e)))?;
+        .map_err(|e| {
+            MessagingError::ConnectionFailed(format!("Discord connection failed: {}", e))
+        })?;
 
     if !response.status().is_success() {
         return Err(MessagingError::AuthFailed(format!(
@@ -346,10 +353,7 @@ async fn validate_whatsapp_credentials(config: &serde_json::Value) -> Result<(),
     }
 
     // Test connection by calling the WhatsApp Business API
-    let url = format!(
-        "https://graph.facebook.com/v18.0/{}",
-        phone_number_id
-    );
+    let url = format!("https://graph.facebook.com/v18.0/{}", phone_number_id);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -541,12 +545,7 @@ mod tests {
         let mut mapper = IdentityMapper::new();
         let user_id = UserId::new();
 
-        mapper.add_mapping(
-            Platform::Discord,
-            "abc".to_string(),
-            user_id,
-            Role::Admin,
-        );
+        mapper.add_mapping(Platform::Discord, "abc".to_string(), user_id, Role::Admin);
         assert_eq!(mapper.len(), 1);
 
         let removed = mapper.remove_mapping(Platform::Discord, "abc");
@@ -592,20 +591,21 @@ mod tests {
             user_id_1,
             Role::Operator,
         );
-        mapper.add_mapping(
-            Platform::Discord,
-            "123".to_string(),
-            user_id_2,
-            Role::Admin,
-        );
+        mapper.add_mapping(Platform::Discord, "123".to_string(), user_id_2, Role::Admin);
 
         assert_eq!(mapper.len(), 2);
         assert_eq!(
-            mapper.get_user_id(Platform::Telegram, "123").unwrap().user_id,
+            mapper
+                .get_user_id(Platform::Telegram, "123")
+                .unwrap()
+                .user_id,
             user_id_1
         );
         assert_eq!(
-            mapper.get_user_id(Platform::Discord, "123").unwrap().user_id,
+            mapper
+                .get_user_id(Platform::Discord, "123")
+                .unwrap()
+                .user_id,
             user_id_2
         );
     }
@@ -689,8 +689,7 @@ mod tests {
         };
         let content = MessageContent::Text("hello".to_string());
 
-        let result =
-            send_with_retry(&bot, &target, content, 3, Duration::from_millis(10)).await;
+        let result = send_with_retry(&bot, &target, content, 3, Duration::from_millis(10)).await;
         assert!(result.is_ok());
     }
 
@@ -704,8 +703,7 @@ mod tests {
         };
         let content = MessageContent::Text("hello".to_string());
 
-        let result =
-            send_with_retry(&bot, &target, content, 3, Duration::from_millis(10)).await;
+        let result = send_with_retry(&bot, &target, content, 3, Duration::from_millis(10)).await;
         assert!(result.is_ok());
     }
 
@@ -719,8 +717,7 @@ mod tests {
         };
         let content = MessageContent::Text("hello".to_string());
 
-        let result =
-            send_with_retry(&bot, &target, content, 3, Duration::from_millis(10)).await;
+        let result = send_with_retry(&bot, &target, content, 3, Duration::from_millis(10)).await;
         assert!(result.is_err());
         match result.unwrap_err() {
             MessagingError::SendFailed(msg) => {
@@ -741,8 +738,7 @@ mod tests {
         let content = MessageContent::Text("hello".to_string());
 
         // With 0 retries, only the initial attempt is made
-        let result =
-            send_with_retry(&bot, &target, content, 0, Duration::from_millis(10)).await;
+        let result = send_with_retry(&bot, &target, content, 0, Duration::from_millis(10)).await;
         assert!(result.is_err());
     }
 

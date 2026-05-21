@@ -18,8 +18,8 @@ use common::config::ResourceLimits;
 use common::errors::PluginError;
 use security_layer::ResourceEnforcer;
 
-use crate::api::PluginApi;
 use crate::api::EventHandlerRegistry;
+use crate::api::PluginApi;
 use crate::manifest::PluginManifest;
 
 /// Information about a loaded plugin.

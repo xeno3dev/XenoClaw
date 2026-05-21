@@ -19,7 +19,9 @@ use uuid::Uuid;
 use common::config::SchedulerConfig;
 use common::types::{SessionId, TaskId};
 use memory_store::db::init_database;
-use memory_store::{create_session_state_table, restore_session_state, save_session_state, SessionState};
+use memory_store::{
+    create_session_state_table, restore_session_state, save_session_state, SessionState,
+};
 
 // ============================================================================
 // Strategies for generating arbitrary SessionState values
@@ -69,7 +71,11 @@ fn arb_scheduler_config() -> impl Strategy<Value = SchedulerConfig> {
 
 /// Generate arbitrary metadata (0 to 10 key-value pairs).
 fn arb_metadata() -> impl Strategy<Value = HashMap<String, String>> {
-    prop::collection::hash_map("[a-zA-Z_][a-zA-Z0-9_]{0,20}", "[a-zA-Z0-9 _.-]{0,50}", 0..10)
+    prop::collection::hash_map(
+        "[a-zA-Z_][a-zA-Z0-9_]{0,20}",
+        "[a-zA-Z0-9 _.-]{0,50}",
+        0..10,
+    )
 }
 
 /// Generate an arbitrary DateTime<Utc> within a reasonable range.
@@ -89,7 +95,14 @@ fn arb_session_state() -> impl Strategy<Value = SessionState> {
         arb_metadata(),
     )
         .prop_map(
-            |(session_id, task_queue, conversation_context, scheduler_config, persisted_at, metadata)| {
+            |(
+                session_id,
+                task_queue,
+                conversation_context,
+                scheduler_config,
+                persisted_at,
+                metadata,
+            )| {
                 SessionState {
                     session_id,
                     task_queue,

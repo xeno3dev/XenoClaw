@@ -200,12 +200,7 @@ impl GitOperations {
     }
 
     /// Run a git command and return its output.
-    async fn run_git(
-        &self,
-        args: &[&str],
-        cwd: &Path,
-        auth: &GitAuth,
-    ) -> Result<String, GitError> {
+    async fn run_git(&self, args: &[&str], cwd: &Path, auth: &GitAuth) -> Result<String, GitError> {
         let mut cmd = Command::new("git");
         cmd.args(args).current_dir(cwd).kill_on_drop(true);
 
@@ -330,7 +325,11 @@ impl GitOperations {
 
         // Get current branch name
         let branch = self
-            .run_git(&["rev-parse", "--abbrev-ref", "HEAD"], repo_dir, &GitAuth::None)
+            .run_git(
+                &["rev-parse", "--abbrev-ref", "HEAD"],
+                repo_dir,
+                &GitAuth::None,
+            )
             .await
             .unwrap_or_else(|_| "unknown".to_string())
             .trim()
@@ -373,9 +372,7 @@ impl GitOperations {
     /// Get the list of files that would conflict on push.
     async fn get_conflicting_files(&self, repo_dir: &Path) -> Vec<String> {
         // Fetch and compare to find divergent files
-        let _ = self
-            .run_git(&["fetch"], repo_dir, &GitAuth::None)
-            .await;
+        let _ = self.run_git(&["fetch"], repo_dir, &GitAuth::None).await;
 
         let diff_output = self
             .run_git(
@@ -394,17 +391,14 @@ impl GitOperations {
     }
 
     /// Create a commit with the given message.
-    pub async fn commit(
-        &self,
-        repo_dir: &Path,
-        message: &str,
-    ) -> Result<CommitResult, GitError> {
+    pub async fn commit(&self, repo_dir: &Path, message: &str) -> Result<CommitResult, GitError> {
         self.validate_repo_dir(repo_dir)?;
 
         info!(repo = %repo_dir.display(), "Creating commit");
 
         // Stage all changes
-        self.run_git(&["add", "-A"], repo_dir, &GitAuth::None).await?;
+        self.run_git(&["add", "-A"], repo_dir, &GitAuth::None)
+            .await?;
 
         // Create the commit
         self.run_git(&["commit", "-m", message], repo_dir, &GitAuth::None)
@@ -441,11 +435,7 @@ impl GitOperations {
     }
 
     /// Merge a branch into the current branch.
-    pub async fn merge(
-        &self,
-        repo_dir: &Path,
-        branch: &str,
-    ) -> Result<MergeResult, GitError> {
+    pub async fn merge(&self, repo_dir: &Path, branch: &str) -> Result<MergeResult, GitError> {
         self.validate_repo_dir(repo_dir)?;
 
         info!(repo = %repo_dir.display(), branch = %branch, "Merging branch");
@@ -644,7 +634,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let ops = GitOperations::new(test_config(tmp.path()));
         let result = ops.validate_repo_dir(Path::new("/etc"));
-        assert!(matches!(result, Err(GitError::UnauthorizedDirectory { .. })));
+        assert!(matches!(
+            result,
+            Err(GitError::UnauthorizedDirectory { .. })
+        ));
     }
 
     #[test]
@@ -653,7 +646,10 @@ mod tests {
             repository_dirs: vec![],
         });
         let result = ops.validate_repo_dir(Path::new("/tmp"));
-        assert!(matches!(result, Err(GitError::UnauthorizedDirectory { .. })));
+        assert!(matches!(
+            result,
+            Err(GitError::UnauthorizedDirectory { .. })
+        ));
     }
 
     #[test]
@@ -672,9 +668,15 @@ mod tests {
 
     #[test]
     fn test_is_auth_failure_patterns() {
-        assert!(GitOperations::is_auth_failure("Authentication failed for 'https://github.com'"));
-        assert!(GitOperations::is_auth_failure("Permission denied (publickey)"));
-        assert!(GitOperations::is_auth_failure("fatal: could not read from remote repository"));
+        assert!(GitOperations::is_auth_failure(
+            "Authentication failed for 'https://github.com'"
+        ));
+        assert!(GitOperations::is_auth_failure(
+            "Permission denied (publickey)"
+        ));
+        assert!(GitOperations::is_auth_failure(
+            "fatal: could not read from remote repository"
+        ));
         assert!(!GitOperations::is_auth_failure("Everything up-to-date"));
     }
 
@@ -724,9 +726,17 @@ mod tests {
 
     #[test]
     fn test_build_summary_truncation() {
-        let files = vec!["a_very_long_filename_that_would_exceed_the_limit_if_not_truncated_properly.rs".to_string()];
+        let files = vec![
+            "a_very_long_filename_that_would_exceed_the_limit_if_not_truncated_properly.rs"
+                .to_string(),
+        ];
         let summary = GitOperations::build_summary("refactor", "long-component-name", &files);
-        assert!(summary.len() <= 72, "Summary was {} chars: {}", summary.len(), summary);
+        assert!(
+            summary.len() <= 72,
+            "Summary was {} chars: {}",
+            summary.len(),
+            summary
+        );
     }
 
     #[test]
@@ -1037,21 +1047,39 @@ mod tests {
 
         // All operations should fail on unauthorized directory
         let result = ops.diff(other.path()).await;
-        assert!(matches!(result, Err(GitError::UnauthorizedDirectory { .. })));
+        assert!(matches!(
+            result,
+            Err(GitError::UnauthorizedDirectory { .. })
+        ));
 
         let result = ops.commit(other.path(), "test").await;
-        assert!(matches!(result, Err(GitError::UnauthorizedDirectory { .. })));
+        assert!(matches!(
+            result,
+            Err(GitError::UnauthorizedDirectory { .. })
+        ));
 
         let result = ops.branch(other.path(), "test", false).await;
-        assert!(matches!(result, Err(GitError::UnauthorizedDirectory { .. })));
+        assert!(matches!(
+            result,
+            Err(GitError::UnauthorizedDirectory { .. })
+        ));
 
         let result = ops.merge(other.path(), "test").await;
-        assert!(matches!(result, Err(GitError::UnauthorizedDirectory { .. })));
+        assert!(matches!(
+            result,
+            Err(GitError::UnauthorizedDirectory { .. })
+        ));
 
         let result = ops.pull(other.path(), &GitAuth::None).await;
-        assert!(matches!(result, Err(GitError::UnauthorizedDirectory { .. })));
+        assert!(matches!(
+            result,
+            Err(GitError::UnauthorizedDirectory { .. })
+        ));
 
         let result = ops.push(other.path(), &GitAuth::None).await;
-        assert!(matches!(result, Err(GitError::UnauthorizedDirectory { .. })));
+        assert!(matches!(
+            result,
+            Err(GitError::UnauthorizedDirectory { .. })
+        ));
     }
 }

@@ -569,7 +569,10 @@ mod tests {
         }];
 
         let result = validate_path(&allowed_dir.join("test.txt"), AccessType::Write, &rules);
-        assert!(matches!(result, Err(SecurityError::SandboxViolation { .. })));
+        assert!(matches!(
+            result,
+            Err(SecurityError::SandboxViolation { .. })
+        ));
     }
 
     #[test]
@@ -586,7 +589,10 @@ mod tests {
         fs::write(forbidden_dir.join("secret.txt"), "secret").unwrap();
 
         let result = validate_path(&forbidden_dir.join("secret.txt"), AccessType::Read, &rules);
-        assert!(matches!(result, Err(SecurityError::SandboxViolation { .. })));
+        assert!(matches!(
+            result,
+            Err(SecurityError::SandboxViolation { .. })
+        ));
     }
 
     #[test]
@@ -621,7 +627,10 @@ mod tests {
         // Try to escape using .. to reach the parent
         let escape_path = allowed_dir.join("..").join("outside.txt");
         let result = validate_path(&escape_path, AccessType::Read, &rules);
-        assert!(matches!(result, Err(SecurityError::SandboxViolation { .. })));
+        assert!(matches!(
+            result,
+            Err(SecurityError::SandboxViolation { .. })
+        ));
     }
 
     #[test]
@@ -660,7 +669,10 @@ mod tests {
         let rules: Vec<FilesystemRule> = vec![];
 
         let result = validate_path(&allowed_dir.join("test.txt"), AccessType::Read, &rules);
-        assert!(matches!(result, Err(SecurityError::SandboxViolation { .. })));
+        assert!(matches!(
+            result,
+            Err(SecurityError::SandboxViolation { .. })
+        ));
     }
 
     // =========================================================================

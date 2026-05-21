@@ -12,8 +12,8 @@ use proptest::prelude::*;
 
 use common::errors::SecurityError;
 use common::types::ApiKeyId;
-use security_layer::rate_limit::{RateLimitConfig, RateLimiter};
 use security_layer::brute_force::{BruteForceConfig, BruteForceProtection};
+use security_layer::rate_limit::{RateLimitConfig, RateLimiter};
 
 // ============================================================================
 // Strategies
@@ -26,9 +26,8 @@ fn rate_limit_strategy() -> impl Strategy<Value = u32> {
 
 /// Generate an arbitrary IPv4 address for brute-force testing.
 fn ipv4_strategy() -> impl Strategy<Value = IpAddr> {
-    (any::<u8>(), any::<u8>(), any::<u8>(), any::<u8>()).prop_map(|(a, b, c, d)| {
-        IpAddr::V4(Ipv4Addr::new(a, b, c, d))
-    })
+    (any::<u8>(), any::<u8>(), any::<u8>(), any::<u8>())
+        .prop_map(|(a, b, c, d)| IpAddr::V4(Ipv4Addr::new(a, b, c, d)))
 }
 
 // ============================================================================

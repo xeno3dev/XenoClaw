@@ -105,9 +105,7 @@ impl LlmRouter {
         request: &CompletionRequest,
     ) -> Result<CompletionResponse, LlmError> {
         if self.providers.is_empty() {
-            return Err(LlmError::AllProvidersFailed {
-                attempts: vec![],
-            });
+            return Err(LlmError::AllProvidersFailed { attempts: vec![] });
         }
 
         let mut attempts: Vec<ProviderAttempt> = Vec::new();
@@ -135,10 +133,7 @@ impl LlmRouter {
                     let error_str = err.to_string();
 
                     // Log the failover event
-                    let next_provider = self
-                        .providers
-                        .get(idx + 1)
-                        .map(|e| e.name.as_str());
+                    let next_provider = self.providers.get(idx + 1).map(|e| e.name.as_str());
 
                     if let Some(fallback) = next_provider {
                         warn!(
@@ -178,9 +173,7 @@ impl LlmRouter {
         request: &CompletionRequest,
     ) -> Result<BoxStream<'static, Result<CompletionChunk, LlmError>>, LlmError> {
         if self.providers.is_empty() {
-            return Err(LlmError::AllProvidersFailed {
-                attempts: vec![],
-            });
+            return Err(LlmError::AllProvidersFailed { attempts: vec![] });
         }
 
         let mut attempts: Vec<ProviderAttempt> = Vec::new();
@@ -206,10 +199,7 @@ impl LlmRouter {
                     let elapsed_ms = start.elapsed().as_millis() as u64;
                     let error_str = err.to_string();
 
-                    let next_provider = self
-                        .providers
-                        .get(idx + 1)
-                        .map(|e| e.name.as_str());
+                    let next_provider = self.providers.get(idx + 1).map(|e| e.name.as_str());
 
                     if let Some(fallback) = next_provider {
                         warn!(
@@ -343,24 +333,26 @@ mod tests {
             if let Some(ref err) = self.fail_with {
                 // Clone the error by recreating it
                 match err {
-                    LlmError::Timeout { provider, elapsed_ms } => {
-                        Err(LlmError::Timeout {
-                            provider: provider.clone(),
-                            elapsed_ms: *elapsed_ms,
-                        })
-                    }
+                    LlmError::Timeout {
+                        provider,
+                        elapsed_ms,
+                    } => Err(LlmError::Timeout {
+                        provider: provider.clone(),
+                        elapsed_ms: *elapsed_ms,
+                    }),
                     LlmError::InvalidResponse { provider, reason } => {
                         Err(LlmError::InvalidResponse {
                             provider: provider.clone(),
                             reason: reason.clone(),
                         })
                     }
-                    LlmError::RateLimited { provider, retry_after } => {
-                        Err(LlmError::RateLimited {
-                            provider: provider.clone(),
-                            retry_after: *retry_after,
-                        })
-                    }
+                    LlmError::RateLimited {
+                        provider,
+                        retry_after,
+                    } => Err(LlmError::RateLimited {
+                        provider: provider.clone(),
+                        retry_after: *retry_after,
+                    }),
                     LlmError::AllProvidersFailed { attempts } => {
                         Err(LlmError::AllProvidersFailed {
                             attempts: attempts.clone(),
@@ -384,24 +376,26 @@ mod tests {
             self.call_count.fetch_add(1, Ordering::SeqCst);
             if let Some(ref err) = self.fail_with {
                 match err {
-                    LlmError::Timeout { provider, elapsed_ms } => {
-                        Err(LlmError::Timeout {
-                            provider: provider.clone(),
-                            elapsed_ms: *elapsed_ms,
-                        })
-                    }
+                    LlmError::Timeout {
+                        provider,
+                        elapsed_ms,
+                    } => Err(LlmError::Timeout {
+                        provider: provider.clone(),
+                        elapsed_ms: *elapsed_ms,
+                    }),
                     LlmError::InvalidResponse { provider, reason } => {
                         Err(LlmError::InvalidResponse {
                             provider: provider.clone(),
                             reason: reason.clone(),
                         })
                     }
-                    LlmError::RateLimited { provider, retry_after } => {
-                        Err(LlmError::RateLimited {
-                            provider: provider.clone(),
-                            retry_after: *retry_after,
-                        })
-                    }
+                    LlmError::RateLimited {
+                        provider,
+                        retry_after,
+                    } => Err(LlmError::RateLimited {
+                        provider: provider.clone(),
+                        retry_after: *retry_after,
+                    }),
                     LlmError::AllProvidersFailed { attempts } => {
                         Err(LlmError::AllProvidersFailed {
                             attempts: attempts.clone(),
@@ -945,9 +939,9 @@ mod tests {
                 let priorities_vec: Vec<u8> = priorities.into_iter().collect();
                 proptest::collection::vec(
                     (
-                        "[a-z][a-z0-9-]{2,20}",   // name
-                        "[a-z][a-z0-9-]{2,20}",   // model
-                        5u32..=120,               // timeout
+                        "[a-z][a-z0-9-]{2,20}", // name
+                        "[a-z][a-z0-9-]{2,20}", // model
+                        5u32..=120,             // timeout
                     ),
                     n,
                 )
@@ -973,14 +967,13 @@ mod tests {
 
     /// Strategy: generate an invalid provider count (0 or 11-15).
     fn invalid_provider_count_strategy() -> impl Strategy<Value = usize> {
-        prop_oneof![
-            Just(0usize),
-            11usize..=15,
-        ]
+        prop_oneof![Just(0usize), 11usize..=15,]
     }
 
     /// Helper: create a minimal valid PlatformConfig with given LLM providers.
-    fn platform_config_with_providers(providers: Vec<ProviderConfig>) -> common::config::PlatformConfig {
+    fn platform_config_with_providers(
+        providers: Vec<ProviderConfig>,
+    ) -> common::config::PlatformConfig {
         use common::config::*;
         PlatformConfig {
             general: GeneralConfig::default(),
@@ -993,6 +986,7 @@ mod tests {
             messaging: MessagingConfig::default(),
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),
+            mcp: McpConfig::default(),
         }
     }
 

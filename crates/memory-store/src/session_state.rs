@@ -96,14 +96,10 @@ pub async fn create_session_state_table(pool: &SqlitePool) -> Result<(), StoreEr
 ///
 /// Serializes the state as JSON and upserts it into the `session_state` table.
 /// If a state already exists for this session, it is replaced.
-pub async fn save_session_state(
-    pool: &SqlitePool,
-    state: &SessionState,
-) -> Result<(), StoreError> {
-    let state_json =
-        serde_json::to_string(state).map_err(|e| StoreError::CorruptedData {
-            details: format!("failed to serialize session state: {e}"),
-        })?;
+pub async fn save_session_state(pool: &SqlitePool, state: &SessionState) -> Result<(), StoreError> {
+    let state_json = serde_json::to_string(state).map_err(|e| StoreError::CorruptedData {
+        details: format!("failed to serialize session state: {e}"),
+    })?;
 
     let session_id_str = state.session_id.0.to_string();
     let persisted_at_str = state.persisted_at.to_rfc3339();
@@ -215,10 +211,7 @@ impl SessionStateFallback {
     }
 
     /// Restore session state, checking in-memory cache first, then the database.
-    pub async fn restore(
-        &self,
-        session_id: SessionId,
-    ) -> Result<Option<SessionState>, StoreError> {
+    pub async fn restore(&self, session_id: SessionId) -> Result<Option<SessionState>, StoreError> {
         // Check in-memory cache first
         {
             let cache = self.cache.read().await;
@@ -292,10 +285,7 @@ impl SessionStateFallback {
 
     /// Check if the database is reachable by executing a simple query.
     async fn check_store_available(pool: &SqlitePool) -> bool {
-        sqlx::query("SELECT 1")
-            .fetch_one(pool)
-            .await
-            .is_ok()
+        sqlx::query("SELECT 1").fetch_one(pool).await.is_ok()
     }
 }
 
@@ -480,7 +470,9 @@ mod tests {
         let session_id = SessionId::new();
 
         let mut state = sample_state(session_id);
-        state.metadata.insert("version".to_string(), "1.0".to_string());
+        state
+            .metadata
+            .insert("version".to_string(), "1.0".to_string());
         state
             .metadata
             .insert("last_model".to_string(), "gpt-4".to_string());
@@ -595,7 +587,8 @@ and tabs	here. Unicode: 日本語 🎉"#;
 
     #[tokio::test]
     async fn test_session_state_serialization_deterministic() {
-        let session_id = SessionId(Uuid::parse_str("12345678-1234-1234-1234-123456789abc").unwrap());
+        let session_id =
+            SessionId(Uuid::parse_str("12345678-1234-1234-1234-123456789abc").unwrap());
         let task_id = TaskId(Uuid::parse_str("abcdefab-abcd-abcd-abcd-abcdefabcdef").unwrap());
 
         let state = SessionState {

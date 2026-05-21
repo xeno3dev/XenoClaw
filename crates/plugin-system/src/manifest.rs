@@ -73,12 +73,11 @@ impl PluginManifest {
             .unwrap_or("unknown")
             .to_string();
 
-        let content = std::fs::read_to_string(manifest_path).map_err(|e| {
-            PluginError::InvalidManifest {
+        let content =
+            std::fs::read_to_string(manifest_path).map_err(|e| PluginError::InvalidManifest {
                 name: plugin_name.clone(),
                 reason: format!("cannot read manifest file: {e}"),
-            }
-        })?;
+            })?;
 
         let manifest: PluginManifest =
             toml::from_str(&content).map_err(|e| PluginError::InvalidManifest {
@@ -116,7 +115,9 @@ impl PluginManifest {
         {
             return Err(PluginError::InvalidManifest {
                 name: self.name.clone(),
-                reason: "plugin name must contain only alphanumeric characters, hyphens, or underscores".to_string(),
+                reason:
+                    "plugin name must contain only alphanumeric characters, hyphens, or underscores"
+                        .to_string(),
             });
         }
 

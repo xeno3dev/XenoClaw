@@ -243,11 +243,9 @@ async fn create_indexes(pool: &SqlitePool) -> Result<(), DbError> {
     .execute(pool)
     .await?;
 
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, start_time)",
-    )
-    .execute(pool)
-    .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, start_time)")
+        .execute(pool)
+        .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp)")
         .execute(pool)
@@ -270,19 +268,12 @@ async fn create_indexes(pool: &SqlitePool) -> Result<(), DbError> {
 async fn load_sqlite_vec(pool: &SqlitePool) {
     // sqlite-vec is typically loaded as a shared library extension.
     // Common paths vary by system. We try a few known locations.
-    let extension_names = [
-        "vec0",
-        "sqlite_vec",
-        "sqlite-vec",
-    ];
+    let extension_names = ["vec0", "sqlite_vec", "sqlite-vec"];
 
     for ext_name in &extension_names {
-        let result = sqlx::query(&format!(
-            "SELECT load_extension('{}')",
-            ext_name
-        ))
-        .execute(pool)
-        .await;
+        let result = sqlx::query(&format!("SELECT load_extension('{}')", ext_name))
+            .execute(pool)
+            .await;
 
         match result {
             Ok(_) => {
@@ -340,13 +331,12 @@ mod tests {
         ];
 
         for table_name in &expected_tables {
-            let result = sqlx::query(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            )
-            .bind(table_name)
-            .fetch_optional(&pool)
-            .await
-            .unwrap();
+            let result =
+                sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+                    .bind(table_name)
+                    .fetch_optional(&pool)
+                    .await
+                    .unwrap();
 
             assert!(
                 result.is_some(),
@@ -368,13 +358,12 @@ mod tests {
         ];
 
         for index_name in &expected_indexes {
-            let result = sqlx::query(
-                "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
-            )
-            .bind(index_name)
-            .fetch_optional(&pool)
-            .await
-            .unwrap();
+            let result =
+                sqlx::query("SELECT name FROM sqlite_master WHERE type='index' AND name=?")
+                    .bind(index_name)
+                    .fetch_optional(&pool)
+                    .await
+                    .unwrap();
 
             assert!(
                 result.is_some(),

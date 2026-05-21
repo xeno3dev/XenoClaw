@@ -82,8 +82,8 @@ impl RateLimiter {
     ) -> Result<(), SecurityError> {
         let now = Utc::now();
         let limit = key_limit.unwrap_or(self.config.default_limit);
-        let window = chrono::Duration::from_std(self.config.window)
-            .unwrap_or(chrono::Duration::seconds(60));
+        let window =
+            chrono::Duration::from_std(self.config.window).unwrap_or(chrono::Duration::seconds(60));
         let window_start = now - window;
 
         let mut records = self.records.write().await;
@@ -100,7 +100,9 @@ impl RateLimiter {
             let oldest_in_window = record.timestamps.first().copied().unwrap_or(now);
             let expires_at = oldest_in_window + window;
             let retry_after = if expires_at > now {
-                (expires_at - now).to_std().unwrap_or(Duration::from_secs(1))
+                (expires_at - now)
+                    .to_std()
+                    .unwrap_or(Duration::from_secs(1))
             } else {
                 Duration::from_secs(1)
             };
@@ -125,8 +127,8 @@ impl RateLimiter {
     /// Should be called periodically to prevent unbounded memory growth.
     pub async fn cleanup_expired(&self) {
         let now = Utc::now();
-        let window = chrono::Duration::from_std(self.config.window)
-            .unwrap_or(chrono::Duration::seconds(60));
+        let window =
+            chrono::Duration::from_std(self.config.window).unwrap_or(chrono::Duration::seconds(60));
         let window_start = now - window;
 
         let mut records = self.records.write().await;
@@ -148,8 +150,8 @@ impl RateLimiter {
     /// Get the current request count for a specific API key within the window.
     pub async fn current_count(&self, key_id: ApiKeyId) -> u32 {
         let now = Utc::now();
-        let window = chrono::Duration::from_std(self.config.window)
-            .unwrap_or(chrono::Duration::seconds(60));
+        let window =
+            chrono::Duration::from_std(self.config.window).unwrap_or(chrono::Duration::seconds(60));
         let window_start = now - window;
 
         let records = self.records.read().await;

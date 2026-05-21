@@ -18,7 +18,9 @@ pub mod webhook;
 pub use cron_parser::CronSchedule;
 pub use dependency::{DependencyGraph, MAX_DEPENDENCY_DEPTH};
 pub use file_watcher::FileWatcher;
-pub use retry::{calculate_backoff, cleanup_old_history, execute_with_retry, DEFAULT_RETENTION_DAYS};
+pub use retry::{
+    calculate_backoff, cleanup_old_history, execute_with_retry, DEFAULT_RETENTION_DAYS,
+};
 pub use scheduler::{Scheduler, SchedulerConfig, TaskExecutor};
 pub use time_condition::TimeCondition;
 pub use webhook::WebhookRegistry;

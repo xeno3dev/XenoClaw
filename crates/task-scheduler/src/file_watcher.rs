@@ -7,9 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use notify::{
-    Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
-};
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 
@@ -86,7 +84,11 @@ impl FileWatcher {
     }
 
     /// Register a task's file change trigger.
-    pub async fn watch_task(&self, task_id: TaskId, trigger: &TaskTrigger) -> Result<(), FileWatcherError> {
+    pub async fn watch_task(
+        &self,
+        task_id: TaskId,
+        trigger: &TaskTrigger,
+    ) -> Result<(), FileWatcherError> {
         if let TaskTrigger::FileChange { paths, events } = trigger {
             let config = WatchConfig {
                 paths: paths.clone(),
@@ -108,12 +110,12 @@ impl FileWatcher {
                         // Watch the parent directory for creation events
                         if let Some(parent) = path.parent() {
                             if parent.exists() {
-                                watcher
-                                    .watch(parent, RecursiveMode::NonRecursive)
-                                    .map_err(|e| FileWatcherError::WatchFailed {
+                                watcher.watch(parent, RecursiveMode::NonRecursive).map_err(
+                                    |e| FileWatcherError::WatchFailed {
                                         path: parent.to_path_buf(),
                                         reason: e.to_string(),
-                                    })?;
+                                    },
+                                )?;
                                 debug!(
                                     "Watching parent {:?} for creation of {:?} for task {}",
                                     parent, path, task_id

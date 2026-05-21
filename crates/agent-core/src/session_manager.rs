@@ -207,18 +207,19 @@ impl SessionManager {
             None => return false,
         };
 
-        let restored = match memory_store::session_state::restore_session_state(pool, session_id).await {
-            Ok(Some(state)) => state,
-            Ok(None) => return false,
-            Err(e) => {
-                warn!(
-                    session_id = %session_id,
-                    error = %e,
-                    "Failed to restore session state from SQLite"
-                );
-                return false;
-            }
-        };
+        let restored =
+            match memory_store::session_state::restore_session_state(pool, session_id).await {
+                Ok(Some(state)) => state,
+                Ok(None) => return false,
+                Err(e) => {
+                    warn!(
+                        session_id = %session_id,
+                        error = %e,
+                        "Failed to restore session state from SQLite"
+                    );
+                    return false;
+                }
+            };
 
         // Create the session and populate with restored context
         if self.create_session(session_id).await.is_err() {
@@ -232,10 +233,7 @@ impl SessionManager {
                     id: MessageId::new(),
                     session_id,
                     role: MessageRole::System,
-                    content: format!(
-                        "[Restored Context] {}",
-                        restored.conversation_context
-                    ),
+                    content: format!("[Restored Context] {}", restored.conversation_context),
                     tool_calls: None,
                     tool_results: None,
                     timestamp: Utc::now(),
@@ -259,10 +257,7 @@ impl SessionManager {
     /// # Errors
     /// - `SessionError::MaxSessionsReached` if creating a new session would
     ///   exceed the configured maximum.
-    pub async fn get_context(
-        &self,
-        session_id: SessionId,
-    ) -> Result<SessionContext, SessionError> {
+    pub async fn get_context(&self, session_id: SessionId) -> Result<SessionContext, SessionError> {
         let sessions = self.sessions.read().await;
         if let Some(ctx) = sessions.get(&session_id) {
             return Ok(ctx.clone());
@@ -506,10 +501,7 @@ impl SessionManager {
             .collect();
 
         if !user_messages.is_empty() {
-            summary_parts.push(format!(
-                "User discussed {} topic(s):",
-                user_messages.len()
-            ));
+            summary_parts.push(format!("User discussed {} topic(s):", user_messages.len()));
             // Include abbreviated content from each user message
             for msg in user_messages.iter().take(20) {
                 let abbreviated = if msg.content.len() > 100 {
@@ -648,7 +640,10 @@ mod tests {
         // 4th session should fail
         let sid = SessionId::new();
         let result = mgr.get_context(sid).await;
-        assert!(matches!(result, Err(SessionError::MaxSessionsReached { max: 3 })));
+        assert!(matches!(
+            result,
+            Err(SessionError::MaxSessionsReached { max: 3 })
+        ));
     }
 
     #[tokio::test]
@@ -824,7 +819,11 @@ mod tests {
 
         // Token count should be less than the original 90 (15 * 6)
         // because summarization replaces older messages with a shorter summary
-        assert!(token_count < 90, "Token count {} should be less than 90", token_count);
+        assert!(
+            token_count < 90,
+            "Token count {} should be less than 90",
+            token_count
+        );
 
         // Token count should include the preserved messages (10 * 6 = 60) + summary tokens
         let preserved_tokens = 10 * 6u32;

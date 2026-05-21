@@ -574,7 +574,7 @@ fn allowlist_entries_filtered(
         .filter(|(h, p)| {
             if h == target_host {
                 match p {
-                    None => false,           // Wildcard port would match — exclude
+                    None => false,                      // Wildcard port would match — exclude
                     Some(port) => *port != target_port, // Only keep if port doesn't match
                 }
             } else {

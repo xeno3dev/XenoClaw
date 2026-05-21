@@ -168,7 +168,11 @@ impl UndoHistory {
                 info!(path = %path.display(), "Undo: deleted created file");
                 Ok(())
             }
-            UndoEntry::Edit { path, before_content, .. } => {
+            UndoEntry::Edit {
+                path,
+                before_content,
+                ..
+            } => {
                 // Undo edit by restoring the before_content
                 std::fs::write(path, before_content).map_err(|e| {
                     format!("Failed to undo edit (restore '{}': {})", path.display(), e)
@@ -188,7 +192,11 @@ impl UndoHistory {
                     })?;
                 }
                 std::fs::write(path, content).map_err(|e| {
-                    format!("Failed to undo delete (recreate '{}': {})", path.display(), e)
+                    format!(
+                        "Failed to undo delete (recreate '{}': {})",
+                        path.display(),
+                        e
+                    )
                 })?;
                 info!(path = %path.display(), "Undo: recreated deleted file");
                 Ok(())
@@ -406,12 +414,19 @@ mod tests {
         assert_eq!(history.len(), 3);
 
         // The oldest (/a) should be gone, newest entries are /b, /c, /d
-        let paths: Vec<_> = history.entries().iter().map(|e| e.path().to_path_buf()).collect();
-        assert_eq!(paths, vec![
-            PathBuf::from("/b"),
-            PathBuf::from("/c"),
-            PathBuf::from("/d"),
-        ]);
+        let paths: Vec<_> = history
+            .entries()
+            .iter()
+            .map(|e| e.path().to_path_buf())
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/b"),
+                PathBuf::from("/c"),
+                PathBuf::from("/d"),
+            ]
+        );
     }
 
     #[test]
@@ -473,7 +488,9 @@ mod tests {
         fs::write(&file_path, "original content").unwrap();
 
         // Edit the file
-        let result = tracked.edit_file(&file_path, "original", "modified").unwrap();
+        let result = tracked
+            .edit_file(&file_path, "original", "modified")
+            .unwrap();
         assert_eq!(result, "modified content");
         assert_eq!(fs::read_to_string(&file_path).unwrap(), "modified content");
         assert_eq!(tracked.history_len(), 1);
@@ -616,7 +633,9 @@ mod tests {
         // Create 4 files — the first should be evicted from history
         for i in 0..4 {
             let path = tmp.path().join(format!("file_{}.txt", i));
-            tracked.create_file(&path, &format!("content {}", i)).unwrap();
+            tracked
+                .create_file(&path, &format!("content {}", i))
+                .unwrap();
         }
 
         assert_eq!(tracked.history_len(), 3);

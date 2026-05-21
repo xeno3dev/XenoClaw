@@ -35,11 +35,7 @@ impl SessionRouter {
     ///
     /// If a session already exists for this (platform, user_id) pair, returns it.
     /// Otherwise, creates a new SessionId and stores the mapping.
-    pub async fn get_or_create_session(
-        &self,
-        platform: Platform,
-        user_id: &str,
-    ) -> SessionId {
+    pub async fn get_or_create_session(&self, platform: Platform, user_id: &str) -> SessionId {
         let key = (platform, user_id.to_string());
 
         // Fast path: check if session already exists (read lock)
@@ -77,11 +73,7 @@ impl SessionRouter {
     /// Get an existing session without creating one.
     ///
     /// Returns `None` if no session exists for this (platform, user_id) pair.
-    pub async fn get_session(
-        &self,
-        platform: Platform,
-        user_id: &str,
-    ) -> Option<SessionId> {
+    pub async fn get_session(&self, platform: Platform, user_id: &str) -> Option<SessionId> {
         let key = (platform, user_id.to_string());
         let sessions = self.sessions.read().await;
         sessions.get(&key).copied()
@@ -90,11 +82,7 @@ impl SessionRouter {
     /// Remove a session mapping (e.g., when a user is deauthorized).
     ///
     /// Returns the removed SessionId if one existed.
-    pub async fn remove_session(
-        &self,
-        platform: Platform,
-        user_id: &str,
-    ) -> Option<SessionId> {
+    pub async fn remove_session(&self, platform: Platform, user_id: &str) -> Option<SessionId> {
         let key = (platform, user_id.to_string());
         let mut sessions = self.sessions.write().await;
         let removed = sessions.remove(&key);
@@ -200,9 +188,7 @@ mod tests {
             .get_or_create_session(Platform::Telegram, "user123")
             .await;
 
-        let removed = router
-            .remove_session(Platform::Telegram, "user123")
-            .await;
+        let removed = router.remove_session(Platform::Telegram, "user123").await;
         assert_eq!(removed, Some(session));
 
         // Should no longer exist

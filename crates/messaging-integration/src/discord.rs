@@ -84,7 +84,9 @@ impl MessagingBot for DiscordBot {
         let client = Client::builder(&self.config.bot_token, intents)
             .event_handler(event_handler)
             .await
-            .map_err(|e| MessagingError::ConnectionFailed(format!("Failed to build Discord client: {e}")))?;
+            .map_err(|e| {
+                MessagingError::ConnectionFailed(format!("Failed to build Discord client: {e}"))
+            })?;
 
         // Store the client for later shutdown
         {
@@ -137,10 +139,9 @@ impl MessagingBot for DiscordBot {
             .as_ref()
             .ok_or_else(|| MessagingError::ConnectionFailed("Discord client not started".into()))?;
 
-        let channel_id = target
-            .channel_id
-            .as_ref()
-            .ok_or_else(|| MessagingError::SendFailed("No channel_id specified for Discord message".into()))?;
+        let channel_id = target.channel_id.as_ref().ok_or_else(|| {
+            MessagingError::SendFailed("No channel_id specified for Discord message".into())
+        })?;
 
         let channel = ChannelId::new(
             channel_id
@@ -233,7 +234,9 @@ impl EventHandler for DiscordEventHandler {
         }
 
         // Filter by channel if configured
-        if !self.config.channel_ids.is_empty() && !self.config.channel_ids.contains(&msg.channel_id.get()) {
+        if !self.config.channel_ids.is_empty()
+            && !self.config.channel_ids.contains(&msg.channel_id.get())
+        {
             return;
         }
 
@@ -323,12 +326,18 @@ mod tests {
 
     #[test]
     fn test_management_command_parse_status() {
-        assert_eq!(ManagementCommand::parse("!status"), Some(ManagementCommand::Status));
+        assert_eq!(
+            ManagementCommand::parse("!status"),
+            Some(ManagementCommand::Status)
+        );
     }
 
     #[test]
     fn test_management_command_parse_tasks() {
-        assert_eq!(ManagementCommand::parse("!tasks"), Some(ManagementCommand::Tasks));
+        assert_eq!(
+            ManagementCommand::parse("!tasks"),
+            Some(ManagementCommand::Tasks)
+        );
     }
 
     #[test]
@@ -362,7 +371,9 @@ mod tests {
     fn test_management_command_parse_schedule() {
         assert_eq!(
             ManagementCommand::parse("!schedule 0 * * * * run_backup"),
-            Some(ManagementCommand::Schedule("0 * * * * run_backup".to_string()))
+            Some(ManagementCommand::Schedule(
+                "0 * * * * run_backup".to_string()
+            ))
         );
     }
 

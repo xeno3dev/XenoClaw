@@ -162,10 +162,13 @@ impl LlmProvider for OllamaProvider {
         }
 
         let ollama_response: OllamaResponse =
-            response.json().await.map_err(|e| LlmError::InvalidResponse {
-                provider: self.name.clone(),
-                reason: format!("Failed to parse response: {e}"),
-            })?;
+            response
+                .json()
+                .await
+                .map_err(|e| LlmError::InvalidResponse {
+                    provider: self.name.clone(),
+                    reason: format!("Failed to parse response: {e}"),
+                })?;
 
         let tool_calls = ollama_response
             .message
@@ -442,7 +445,8 @@ mod tests {
 
     #[test]
     fn test_parse_ollama_ndjson_content() {
-        let text = r#"{"model":"llama3.1","message":{"role":"assistant","content":"Hi"},"done":false}"#;
+        let text =
+            r#"{"model":"llama3.1","message":{"role":"assistant","content":"Hi"},"done":false}"#;
         let results = parse_ollama_ndjson(text, "test");
         assert_eq!(results.len(), 1);
         let chunk = results[0].as_ref().unwrap();

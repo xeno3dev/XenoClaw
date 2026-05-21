@@ -89,7 +89,10 @@ impl HealthMonitor {
 
     /// Check if the agent is unresponsive (no response within timeout).
     pub async fn is_unresponsive(&self) -> bool {
-        matches!(self.current_status().await, HealthStatus::Unresponsive { .. })
+        matches!(
+            self.current_status().await,
+            HealthStatus::Unresponsive { .. }
+        )
     }
 
     /// Get the duration since the last healthy response.

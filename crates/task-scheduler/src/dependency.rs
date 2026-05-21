@@ -63,10 +63,7 @@ impl DependencyGraph {
         // Temporarily add the edges to check for cycles
         self.edges.insert(task_id, dependencies.to_vec());
         for dep_id in dependencies {
-            self.reverse_edges
-                .entry(*dep_id)
-                .or_default()
-                .push(task_id);
+            self.reverse_edges.entry(*dep_id).or_default().push(task_id);
         }
 
         // Check for cycles using DFS
@@ -385,7 +382,7 @@ mod tests {
         // If we try to make A depend on C: A -> C -> B -> A (cycle!)
         // But A is already in the graph. We need to remove and re-add.
         // However, remove cleans up B's dep on A.
-        
+
         // Better approach: build the cycle in one shot.
         // Fresh graph: A depends on B, B depends on A
         let mut graph2 = DependencyGraph::new();
@@ -402,21 +399,21 @@ mod tests {
         // and Y already depends on X. No cycle yet.
         // To create a cycle, we need X to depend on Y (or something downstream).
         // Since X is already added with no deps, we can't change it.
-        
+
         // The only way to create a cycle is if the NEW task being added
         // is already a dependency (direct or transitive) of one of its own dependencies.
         // Example: X (no deps), Y depends on X. Now add X2 that depends on Y
         // and is also a dependency of X. But X has no deps...
-        
+
         // Actually, the cycle detection should catch: if we add task Z
         // with deps = [Y], and Y depends on X, and X depends on Z — but X has no deps.
-        
+
         // The real scenario: self-dependency is already tested.
         // For a 2-node cycle: we need to add a task that depends on something
         // that already depends on it. This means the task being added must
         // already exist in the graph as a dependency of its own dependency.
         // But if it's being added for the first time, it can't be a dependency yet.
-        
+
         // So a 2-node cycle can only happen if:
         // 1. Task A exists with dep on B
         // 2. Task B is added with dep on A

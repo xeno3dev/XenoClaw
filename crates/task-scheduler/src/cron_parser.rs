@@ -23,11 +23,10 @@ impl CronSchedule {
     /// - The expression is not valid cron syntax
     /// - The effective interval between executions is less than 1 minute
     pub fn parse(expression: &str) -> Result<Self, TaskError> {
-        let schedule = Schedule::from_str(expression).map_err(|e| {
-            TaskError::InvalidCronExpression {
+        let schedule =
+            Schedule::from_str(expression).map_err(|e| TaskError::InvalidCronExpression {
                 expression: format!("{}: {}", expression, e),
-            }
-        })?;
+            })?;
 
         let cron_schedule = Self {
             expression: expression.to_string(),

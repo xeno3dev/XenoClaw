@@ -239,12 +239,29 @@ impl LspClientManager {
     fn default_language_extensions() -> HashMap<String, Vec<String>> {
         let mut map = HashMap::new();
         map.insert("rust".to_string(), vec!["rs".to_string()]);
-        map.insert("typescript".to_string(), vec!["ts".to_string(), "tsx".to_string()]);
-        map.insert("javascript".to_string(), vec!["js".to_string(), "jsx".to_string(), "mjs".to_string()]);
-        map.insert("python".to_string(), vec!["py".to_string(), "pyi".to_string()]);
+        map.insert(
+            "typescript".to_string(),
+            vec!["ts".to_string(), "tsx".to_string()],
+        );
+        map.insert(
+            "javascript".to_string(),
+            vec!["js".to_string(), "jsx".to_string(), "mjs".to_string()],
+        );
+        map.insert(
+            "python".to_string(),
+            vec!["py".to_string(), "pyi".to_string()],
+        );
         map.insert("go".to_string(), vec!["go".to_string()]);
         map.insert("c".to_string(), vec!["c".to_string(), "h".to_string()]);
-        map.insert("cpp".to_string(), vec!["cpp".to_string(), "cc".to_string(), "cxx".to_string(), "hpp".to_string()]);
+        map.insert(
+            "cpp".to_string(),
+            vec![
+                "cpp".to_string(),
+                "cc".to_string(),
+                "cxx".to_string(),
+                "hpp".to_string(),
+            ],
+        );
         map.insert("java".to_string(), vec!["java".to_string()]);
         map.insert("ruby".to_string(), vec!["rb".to_string()]);
         map.insert("php".to_string(), vec!["php".to_string()]);
@@ -318,15 +335,21 @@ impl LspClientManager {
             reason: e.to_string(),
         })?;
 
-        let stdin = child.stdin.take().ok_or_else(|| LspError::ServerStartFailed {
-            language: config.language.clone(),
-            reason: "Failed to capture stdin".to_string(),
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| LspError::ServerStartFailed {
+                language: config.language.clone(),
+                reason: "Failed to capture stdin".to_string(),
+            })?;
 
-        let stdout = child.stdout.take().ok_or_else(|| LspError::ServerStartFailed {
-            language: config.language.clone(),
-            reason: "Failed to capture stdout".to_string(),
-        })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| LspError::ServerStartFailed {
+                language: config.language.clone(),
+                reason: "Failed to capture stdout".to_string(),
+            })?;
 
         let stdout_reader = Arc::new(Mutex::new(BufReader::new(stdout)));
 
@@ -381,11 +404,7 @@ impl LspClientManager {
         // Send initialize request with timeout
         let init_result = tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            Self::send_request_on_connection(
-                &mut connection,
-                "initialize",
-                Some(init_params),
-            ),
+            Self::send_request_on_connection(&mut connection, "initialize", Some(init_params)),
         )
         .await
         .map_err(|_| LspError::ServerStartFailed {
@@ -442,11 +461,7 @@ impl LspClientManager {
         let server = server_mutex.lock().await;
 
         // Return cached diagnostics for this file
-        Ok(server
-            .diagnostics
-            .get(path)
-            .cloned()
-            .unwrap_or_default())
+        Ok(server.diagnostics.get(path).cloned().unwrap_or_default())
     }
 
     /// Go to definition at the given position.
@@ -491,7 +506,9 @@ impl LspClientManager {
             Self::send_request_on_connection(&mut server, "textDocument/definition", Some(params)),
         )
         .await
-        .map_err(|_| LspError::Timeout { language: language.clone() })?
+        .map_err(|_| LspError::Timeout {
+            language: language.clone(),
+        })?
         .map_err(|e| LspError::CommunicationError {
             language: language.clone(),
             reason: e.to_string(),
@@ -542,7 +559,9 @@ impl LspClientManager {
             Self::send_request_on_connection(&mut server, "textDocument/references", Some(params)),
         )
         .await
-        .map_err(|_| LspError::Timeout { language: language.clone() })?
+        .map_err(|_| LspError::Timeout {
+            language: language.clone(),
+        })?
         .map_err(|e| LspError::CommunicationError {
             language: language.clone(),
             reason: e.to_string(),
@@ -594,7 +613,9 @@ impl LspClientManager {
             Self::send_request_on_connection(&mut server, "textDocument/rename", Some(params)),
         )
         .await
-        .map_err(|_| LspError::Timeout { language: language.clone() })?
+        .map_err(|_| LspError::Timeout {
+            language: language.clone(),
+        })?
         .map_err(|e| LspError::CommunicationError {
             language: language.clone(),
             reason: e.to_string(),
@@ -645,27 +666,19 @@ impl LspClientManager {
             }]
         });
 
-        Self::send_notification_on_connection(
-            &mut server,
-            "textDocument/didChange",
-            Some(params),
-        )
-        .await
-        .map_err(|e| LspError::CommunicationError {
-            language: language.clone(),
-            reason: e.to_string(),
-        })?;
+        Self::send_notification_on_connection(&mut server, "textDocument/didChange", Some(params))
+            .await
+            .map_err(|e| LspError::CommunicationError {
+                language: language.clone(),
+                reason: e.to_string(),
+            })?;
 
         debug!(language = %language, path = %path.display(), "Notified server of file change");
         Ok(())
     }
 
     /// Notify the language server that a file was opened.
-    pub async fn notify_file_opened(
-        &self,
-        path: &Path,
-        content: &str,
-    ) -> Result<(), LspError> {
+    pub async fn notify_file_opened(&self, path: &Path, content: &str) -> Result<(), LspError> {
         let language = match self.detect_language(path) {
             Some(lang) => lang,
             None => return Ok(()),
@@ -696,16 +709,12 @@ impl LspClientManager {
             }
         });
 
-        Self::send_notification_on_connection(
-            &mut server,
-            "textDocument/didOpen",
-            Some(params),
-        )
-        .await
-        .map_err(|e| LspError::CommunicationError {
-            language: language.clone(),
-            reason: e.to_string(),
-        })?;
+        Self::send_notification_on_connection(&mut server, "textDocument/didOpen", Some(params))
+            .await
+            .map_err(|e| LspError::CommunicationError {
+                language: language.clone(),
+                reason: e.to_string(),
+            })?;
 
         Ok(())
     }
@@ -730,12 +739,7 @@ impl LspClientManager {
             match shutdown_result {
                 Ok(Ok(_)) => {
                     // Send exit notification
-                    let _ = Self::send_notification_on_connection(
-                        &mut server,
-                        "exit",
-                        None,
-                    )
-                    .await;
+                    let _ = Self::send_notification_on_connection(&mut server, "exit", None).await;
                     debug!(language = %language, "Language server shut down gracefully");
                 }
                 Ok(Err(e)) => {
@@ -800,9 +804,9 @@ impl LspClientManager {
     /// Check if a server process is still alive.
     fn is_server_alive(server: &mut LspServerConnection) -> bool {
         match server.process.try_wait() {
-            Ok(None) => true,  // Still running
+            Ok(None) => true,     // Still running
             Ok(Some(_)) => false, // Exited
-            Err(_) => false,   // Error checking status
+            Err(_) => false,      // Error checking status
         }
     }
 
@@ -926,8 +930,7 @@ impl LspClientManager {
             }
         }
 
-        let length = content_length
-            .ok_or_else(|| "No Content-Length header found".to_string())?;
+        let length = content_length.ok_or_else(|| "No Content-Length header found".to_string())?;
 
         // Read the body
         let mut body = vec![0u8; length];
@@ -937,14 +940,11 @@ impl LspClientManager {
             .await
             .map_err(|e| format!("Failed to read body: {e}"))?;
 
-        String::from_utf8(body)
-            .map_err(|e| format!("Invalid UTF-8 in response body: {e}"))
+        String::from_utf8(body).map_err(|e| format!("Invalid UTF-8 in response body: {e}"))
     }
 
     /// Parse a location response (single Location or LocationLink).
-    fn parse_location_response(
-        value: &serde_json::Value,
-    ) -> Result<Option<Location>, LspError> {
+    fn parse_location_response(value: &serde_json::Value) -> Result<Option<Location>, LspError> {
         if value.is_null() {
             return Ok(None);
         }
@@ -970,9 +970,7 @@ impl LspClientManager {
     }
 
     /// Parse an array of locations response.
-    fn parse_locations_response(
-        value: &serde_json::Value,
-    ) -> Result<Vec<Location>, LspError> {
+    fn parse_locations_response(value: &serde_json::Value) -> Result<Vec<Location>, LspError> {
         if value.is_null() {
             return Ok(Vec::new());
         }
@@ -1017,9 +1015,7 @@ impl LspClientManager {
     }
 
     /// Parse a WorkspaceEdit response into a list of TextEdits.
-    fn parse_workspace_edit_response(
-        value: &serde_json::Value,
-    ) -> Result<Vec<TextEdit>, LspError> {
+    fn parse_workspace_edit_response(value: &serde_json::Value) -> Result<Vec<TextEdit>, LspError> {
         if value.is_null() {
             return Ok(Vec::new());
         }
@@ -1180,7 +1176,10 @@ mod tests {
     fn test_diagnostic_severity_from_lsp() {
         assert_eq!(DiagnosticSeverity::from_lsp(1), DiagnosticSeverity::Error);
         assert_eq!(DiagnosticSeverity::from_lsp(2), DiagnosticSeverity::Warning);
-        assert_eq!(DiagnosticSeverity::from_lsp(3), DiagnosticSeverity::Information);
+        assert_eq!(
+            DiagnosticSeverity::from_lsp(3),
+            DiagnosticSeverity::Information
+        );
         assert_eq!(DiagnosticSeverity::from_lsp(4), DiagnosticSeverity::Hint);
         assert_eq!(DiagnosticSeverity::from_lsp(99), DiagnosticSeverity::Hint);
     }
@@ -1376,7 +1375,8 @@ mod tests {
 
     #[test]
     fn test_parse_workspace_edit_null() {
-        let edits = LspClientManager::parse_workspace_edit_response(&serde_json::Value::Null).unwrap();
+        let edits =
+            LspClientManager::parse_workspace_edit_response(&serde_json::Value::Null).unwrap();
         assert!(edits.is_empty());
     }
 
@@ -1389,27 +1389,40 @@ mod tests {
     #[tokio::test]
     async fn test_has_server_for_file_no_servers() {
         let manager = LspClientManager::new();
-        assert!(!manager.has_server_for_file(Path::new("/project/main.rs")).await);
+        assert!(
+            !manager
+                .has_server_for_file(Path::new("/project/main.rs"))
+                .await
+        );
     }
 
     #[tokio::test]
     async fn test_get_diagnostics_no_server() {
         let manager = LspClientManager::new();
-        let diagnostics = manager.get_diagnostics(Path::new("/project/main.rs")).await.unwrap();
+        let diagnostics = manager
+            .get_diagnostics(Path::new("/project/main.rs"))
+            .await
+            .unwrap();
         assert!(diagnostics.is_empty());
     }
 
     #[tokio::test]
     async fn test_goto_definition_no_server() {
         let manager = LspClientManager::new();
-        let result = manager.goto_definition(Path::new("/project/main.rs"), 5, 10).await.unwrap();
+        let result = manager
+            .goto_definition(Path::new("/project/main.rs"), 5, 10)
+            .await
+            .unwrap();
         assert_eq!(result, None);
     }
 
     #[tokio::test]
     async fn test_find_references_no_server() {
         let manager = LspClientManager::new();
-        let result = manager.find_references(Path::new("/project/main.rs"), 5, 10).await.unwrap();
+        let result = manager
+            .find_references(Path::new("/project/main.rs"), 5, 10)
+            .await
+            .unwrap();
         assert!(result.is_empty());
     }
 
@@ -1450,7 +1463,9 @@ mod tests {
             args: vec![],
         }];
 
-        let results = manager.initialize(&configs, Path::new("/tmp/workspace")).await;
+        let results = manager
+            .initialize(&configs, Path::new("/tmp/workspace"))
+            .await;
         assert_eq!(results.len(), 1);
         assert!(results[0].is_err());
 
@@ -1474,7 +1489,9 @@ mod tests {
             },
         ];
 
-        let results = manager.initialize(&configs, Path::new("/tmp/workspace")).await;
+        let results = manager
+            .initialize(&configs, Path::new("/tmp/workspace"))
+            .await;
         assert_eq!(results.len(), 2);
         // Both should fail but the function should not panic
         assert!(results[0].is_err());

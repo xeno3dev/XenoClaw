@@ -32,10 +32,7 @@ fn bounded_depth_dag_strategy(
 ) -> impl Strategy<Value = (Vec<TaskId>, Vec<Vec<usize>>)> {
     (min_nodes..=max_nodes).prop_flat_map(move |n| {
         // Assign each node a level from 1 to MAX_DEPENDENCY_DEPTH
-        let level_strategies = proptest::collection::vec(
-            1..=MAX_DEPENDENCY_DEPTH,
-            n,
-        );
+        let level_strategies = proptest::collection::vec(1..=MAX_DEPENDENCY_DEPTH, n);
 
         level_strategies.prop_flat_map(move |levels| {
             // Sort nodes by level to determine valid dependency targets
@@ -104,9 +101,8 @@ fn cyclic_graph_strategy() -> impl Strategy<Value = (Vec<TaskId>, Vec<Vec<usize>
         // (i.e., node `from` will depend on node `to` where from < to)
         // This creates a cycle: to -> ... -> from -> to
         // We use 0..(n-1) for `from` to ensure (from+1)..n is never empty.
-        let back_edge_strategy = (0..(n - 1)).prop_flat_map(move |from| {
-            ((from + 1)..n).prop_map(move |to| (from, to))
-        });
+        let back_edge_strategy =
+            (0..(n - 1)).prop_flat_map(move |from| ((from + 1)..n).prop_map(move |to| (from, to)));
 
         (Just(n), edge_strategies, back_edge_strategy).prop_map(|(n, edges, back_edge)| {
             let ids: Vec<TaskId> = (0..n).map(|_| TaskId::new()).collect();
@@ -121,10 +117,7 @@ fn cyclic_graph_strategy() -> impl Strategy<Value = (Vec<TaskId>, Vec<Vec<usize>
 
 /// Build a DependencyGraph from task IDs and edge indices.
 /// Returns Ok(graph) if all tasks were added successfully, or Err with the error.
-fn build_graph(
-    ids: &[TaskId],
-    edges: &[Vec<usize>],
-) -> Result<DependencyGraph, TaskError> {
+fn build_graph(ids: &[TaskId], edges: &[Vec<usize>]) -> Result<DependencyGraph, TaskError> {
     let mut graph = DependencyGraph::new();
     let known: HashSet<TaskId> = ids.iter().copied().collect();
 

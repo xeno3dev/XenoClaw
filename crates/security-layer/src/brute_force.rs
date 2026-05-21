@@ -114,8 +114,9 @@ impl BruteForceProtection {
         record.attempts.push(now);
 
         // Remove attempts outside the failure window
-        let window_start = now - chrono::Duration::from_std(self.config.failure_window)
-            .unwrap_or(chrono::Duration::seconds(600));
+        let window_start = now
+            - chrono::Duration::from_std(self.config.failure_window)
+                .unwrap_or(chrono::Duration::seconds(600));
         record.attempts.retain(|t| *t >= window_start);
 
         // Check if threshold is exceeded

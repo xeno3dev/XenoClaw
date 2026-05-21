@@ -33,7 +33,11 @@ pub struct ApiError {
 
 impl ApiError {
     /// Create a new API error with a generated request ID.
-    pub fn new(status: StatusCode, error_code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn new(
+        status: StatusCode,
+        error_code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             status,
             error_code: error_code.into(),
@@ -139,10 +143,9 @@ impl IntoResponse for ApiError {
 
         // Add Retry-After header for 429 responses
         if let Some(retry_after) = self.retry_after {
-            response.headers_mut().insert(
-                "Retry-After",
-                retry_after.to_string().parse().unwrap(),
-            );
+            response
+                .headers_mut()
+                .insert("Retry-After", retry_after.to_string().parse().unwrap());
         }
 
         response
@@ -167,7 +170,10 @@ impl ApiError {
                 request_id,
             ),
             SecurityError::InsufficientPermissions { required_role } => Self::forbidden(
-                format!("Insufficient permissions. Required role: {:?}", required_role),
+                format!(
+                    "Insufficient permissions. Required role: {:?}",
+                    required_role
+                ),
                 request_id,
             ),
             SecurityError::RateLimitExceeded { retry_after } => {
@@ -179,14 +185,12 @@ impl ApiError {
                 "Session has expired. Please re-authenticate.",
                 request_id,
             ),
-            SecurityError::SandboxViolation { .. } => Self::forbidden(
-                "Operation denied by security policy.",
-                request_id,
-            ),
-            SecurityError::NetworkBlocked { .. } => Self::forbidden(
-                "Network access denied by security policy.",
-                request_id,
-            ),
+            SecurityError::SandboxViolation { .. } => {
+                Self::forbidden("Operation denied by security policy.", request_id)
+            }
+            SecurityError::NetworkBlocked { .. } => {
+                Self::forbidden("Network access denied by security policy.", request_id)
+            }
         }
     }
 }

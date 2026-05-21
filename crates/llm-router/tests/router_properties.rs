@@ -120,6 +120,7 @@ fn platform_config_with_providers(providers: Vec<ProviderConfig>) -> PlatformCon
         messaging: MessagingConfig::default(),
         monitoring: MonitoringConfig::default(),
         plugins: PluginConfig::default(),
+        mcp: McpConfig::default(),
     }
 }
 
@@ -131,9 +132,9 @@ fn valid_provider_configs_strategy() -> impl Strategy<Value = Vec<ProviderConfig
             let priorities_vec: Vec<u8> = priorities.into_iter().collect();
             proptest::collection::vec(
                 (
-                    "[a-z][a-z0-9-]{2,20}",  // name
-                    "[a-z][a-z0-9-]{2,20}",  // model
-                    5u32..=120,              // timeout
+                    "[a-z][a-z0-9-]{2,20}", // name
+                    "[a-z][a-z0-9-]{2,20}", // model
+                    5u32..=120,             // timeout
                 ),
                 n,
             )

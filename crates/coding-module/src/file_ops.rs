@@ -96,9 +96,8 @@ impl FileOperations {
         let canonical = self.validate(path, AccessType::Read)?;
         self.check_file_size(&canonical)?;
 
-        std::fs::read_to_string(&canonical).map_err(|e| {
-            format!("Failed to read file '{}': {}", path.display(), e)
-        })
+        std::fs::read_to_string(&canonical)
+            .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))
     }
 
     /// Create a new file with the given content.
@@ -116,13 +115,16 @@ impl FileOperations {
         // Create parent directories if they don't exist
         if let Some(parent) = validated_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                format!("Failed to create parent directories for '{}': {}", path.display(), e)
+                format!(
+                    "Failed to create parent directories for '{}': {}",
+                    path.display(),
+                    e
+                )
             })?;
         }
 
-        std::fs::write(&validated_path, content).map_err(|e| {
-            format!("Failed to create file '{}': {}", path.display(), e)
-        })?;
+        std::fs::write(&validated_path, content)
+            .map_err(|e| format!("Failed to create file '{}': {}", path.display(), e))?;
 
         info!(path = %validated_path.display(), "File created");
         Ok(())
@@ -187,9 +189,8 @@ impl FileOperations {
         let canonical = self.validate(path, AccessType::Write)?;
         self.check_file_size(&canonical)?;
 
-        std::fs::write(&canonical, content).map_err(|e| {
-            format!("Failed to write file '{}': {}", path.display(), e)
-        })?;
+        std::fs::write(&canonical, content)
+            .map_err(|e| format!("Failed to write file '{}': {}", path.display(), e))?;
 
         info!(path = %canonical.display(), "File written");
         Ok(())
@@ -199,18 +200,12 @@ impl FileOperations {
     ///
     /// Finds `old_str` in the file and replaces it with `new_str`.
     /// Rejects the operation if `old_str` is not found in the file.
-    pub fn edit_file(
-        &self,
-        path: &Path,
-        old_str: &str,
-        new_str: &str,
-    ) -> Result<String, String> {
+    pub fn edit_file(&self, path: &Path, old_str: &str, new_str: &str) -> Result<String, String> {
         let canonical = self.validate(path, AccessType::Write)?;
         self.check_file_size(&canonical)?;
 
-        let content = std::fs::read_to_string(&canonical).map_err(|e| {
-            format!("Failed to read file '{}': {}", path.display(), e)
-        })?;
+        let content = std::fs::read_to_string(&canonical)
+            .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
 
         if !content.contains(old_str) {
             return Err(format!(
@@ -224,9 +219,8 @@ impl FileOperations {
         // Check the resulting content size
         self.check_content_size(&new_content)?;
 
-        std::fs::write(&canonical, &new_content).map_err(|e| {
-            format!("Failed to write edited file '{}': {}", path.display(), e)
-        })?;
+        std::fs::write(&canonical, &new_content)
+            .map_err(|e| format!("Failed to write edited file '{}': {}", path.display(), e))?;
 
         info!(path = %canonical.display(), "File edited");
         Ok(new_content)
@@ -236,9 +230,8 @@ impl FileOperations {
     pub fn delete_file(&self, path: &Path) -> Result<(), String> {
         let canonical = self.validate(path, AccessType::Write)?;
 
-        std::fs::remove_file(&canonical).map_err(|e| {
-            format!("Failed to delete file '{}': {}", path.display(), e)
-        })?;
+        std::fs::remove_file(&canonical)
+            .map_err(|e| format!("Failed to delete file '{}': {}", path.display(), e))?;
 
         info!(path = %canonical.display(), "File deleted");
         Ok(())

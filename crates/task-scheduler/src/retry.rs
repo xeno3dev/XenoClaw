@@ -171,7 +171,9 @@ pub async fn execute_with_retry(
 fn log_attempt_summary(task_name: &str, task_id: &TaskId, runs: &[TaskRun]) {
     let mut summary = format!(
         "Task '{}' ({}) retry summary ({} attempts):",
-        task_name, task_id, runs.len()
+        task_name,
+        task_id,
+        runs.len()
     );
 
     for run in runs {
@@ -192,7 +194,7 @@ fn log_attempt_summary(task_name: &str, task_id: &TaskId, runs: &[TaskRun]) {
             .unwrap_or_default();
 
         summary.push_str(&format!(
-            "\n  Attempt {}: {}{}{}", 
+            "\n  Attempt {}: {}{}{}",
             run.attempt, status_str, duration_str, error_str
         ));
     }
@@ -434,7 +436,9 @@ mod tests {
         // Task should be marked as Failed
         let tasks_guard = tasks.read().await;
         let task_entry = tasks_guard.get(&task.id).unwrap();
-        assert!(matches!(&task_entry.status, TaskStatus::Failed { last_error } if last_error == "permanent failure"));
+        assert!(
+            matches!(&task_entry.status, TaskStatus::Failed { last_error } if last_error == "permanent failure")
+        );
     }
 
     #[tokio::test]
@@ -442,7 +446,7 @@ mod tests {
         // Task with 100ms timeout, executor sleeps 500ms
         let policy = make_retry_policy(0, 0, 0); // no retries
         let mut task = make_test_task_with_policy(policy, 1); // 1 second timeout
-        // Override to use a very short timeout for testing
+                                                              // Override to use a very short timeout for testing
         task.timeout_seconds = 1;
         let tasks = Arc::new(RwLock::new(HashMap::new()));
         tasks.write().await.insert(task.id, task.clone());

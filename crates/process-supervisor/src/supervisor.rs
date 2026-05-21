@@ -25,17 +25,27 @@ use crate::types::{
 /// The supervisor calls this function to start or restart the agent.
 /// It should return `Ok(())` if the agent started successfully, or
 /// an error string if it failed.
-pub type AgentStartFn = Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> + Send + Sync>;
+pub type AgentStartFn = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// Callback type for checking agent health.
 ///
 /// Should return `true` if the agent is responsive, `false` otherwise.
-pub type AgentHealthCheckFn = Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>> + Send + Sync>;
+pub type AgentHealthCheckFn = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>> + Send + Sync,
+>;
 
 /// Callback type for restoring session state on restart.
 ///
 /// Called after a successful agent restart to restore previous state.
-pub type StateRestoreFn = Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> + Send + Sync>;
+pub type StateRestoreFn = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// The Process Supervisor manages the agent's lifecycle, health monitoring,
 /// and automatic recovery.
@@ -254,7 +264,9 @@ impl ProcessSupervisor {
                 self.health_monitor.mark_alive().await;
 
                 // Record the restart event
-                self.stats.record_restart(reason.clone(), true, duration_ms).await;
+                self.stats
+                    .record_restart(reason.clone(), true, duration_ms)
+                    .await;
 
                 // Attempt state restoration
                 self.restore_state().await;
@@ -525,7 +537,9 @@ mod tests {
     async fn test_start_supervisor() {
         let supervisor = create_test_supervisor();
         supervisor.set_agent_start_fn(make_start_fn()).await;
-        supervisor.set_health_check_fn(make_healthy_check_fn()).await;
+        supervisor
+            .set_health_check_fn(make_healthy_check_fn())
+            .await;
         supervisor.set_state_restore_fn(make_restore_fn()).await;
 
         let result = supervisor.start().await;
@@ -575,7 +589,9 @@ mod tests {
     async fn test_health_check_healthy() {
         let supervisor = create_test_supervisor();
         supervisor.set_agent_start_fn(make_start_fn()).await;
-        supervisor.set_health_check_fn(make_healthy_check_fn()).await;
+        supervisor
+            .set_health_check_fn(make_healthy_check_fn())
+            .await;
 
         supervisor.start().await.unwrap();
 
@@ -589,7 +605,9 @@ mod tests {
     async fn test_manual_restart() {
         let supervisor = create_test_supervisor();
         supervisor.set_agent_start_fn(make_start_fn()).await;
-        supervisor.set_health_check_fn(make_healthy_check_fn()).await;
+        supervisor
+            .set_health_check_fn(make_healthy_check_fn())
+            .await;
         supervisor.set_state_restore_fn(make_restore_fn()).await;
 
         supervisor.start().await.unwrap();
@@ -622,10 +640,7 @@ mod tests {
         let stats = supervisor.stats().await;
         assert_eq!(stats.restart_count, 1); // Initial start counts
         assert!(stats.last_restart.is_some());
-        assert_eq!(
-            stats.last_restart_reason.as_deref(),
-            Some("initial start")
-        );
+        assert_eq!(stats.last_restart_reason.as_deref(), Some("initial start"));
         assert_eq!(stats.restart_history.len(), 1);
 
         supervisor.stop().await.unwrap();
@@ -671,7 +686,9 @@ mod tests {
         };
         let supervisor = ProcessSupervisor::new(config);
         supervisor.set_agent_start_fn(make_start_fn()).await;
-        supervisor.set_health_check_fn(make_healthy_check_fn()).await;
+        supervisor
+            .set_health_check_fn(make_healthy_check_fn())
+            .await;
         supervisor.set_state_restore_fn(make_restore_fn()).await;
 
         supervisor.start().await.unwrap();
@@ -688,9 +705,9 @@ mod tests {
 
         // Check that the last restart reason mentions termination
         let history = &stats.restart_history;
-        let has_termination_restart = history.iter().any(|e| {
-            matches!(e.reason, RestartReason::UnexpectedTermination)
-        });
+        let has_termination_restart = history
+            .iter()
+            .any(|e| matches!(e.reason, RestartReason::UnexpectedTermination));
         assert!(has_termination_restart);
 
         supervisor.stop().await.unwrap();
@@ -713,7 +730,9 @@ mod tests {
 
         let supervisor = create_test_supervisor();
         supervisor.set_agent_start_fn(make_start_fn()).await;
-        supervisor.set_health_check_fn(make_healthy_check_fn()).await;
+        supervisor
+            .set_health_check_fn(make_healthy_check_fn())
+            .await;
         supervisor.set_state_restore_fn(restore_fn).await;
 
         supervisor.start().await.unwrap();
@@ -730,15 +749,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_failure_recorded() {
-        let fail_start_fn: AgentStartFn = Arc::new(|| {
-            Box::pin(async { Err("simulated failure".to_string()) })
-        });
+        let fail_start_fn: AgentStartFn =
+            Arc::new(|| Box::pin(async { Err("simulated failure".to_string()) }));
 
         let supervisor = create_test_supervisor();
         supervisor.set_agent_start_fn(fail_start_fn).await;
 
         let result = supervisor.start().await;
-        assert!(matches!(result, Err(SupervisorError::AgentStartFailed { .. })));
+        assert!(matches!(
+            result,
+            Err(SupervisorError::AgentStartFailed { .. })
+        ));
         assert!(!supervisor.is_running().await);
     }
 
@@ -754,7 +775,9 @@ mod tests {
         };
         let supervisor = ProcessSupervisor::new(config);
         supervisor.set_agent_start_fn(make_start_fn()).await;
-        supervisor.set_health_check_fn(make_healthy_check_fn()).await;
+        supervisor
+            .set_health_check_fn(make_healthy_check_fn())
+            .await;
         supervisor.set_state_restore_fn(make_restore_fn()).await;
 
         supervisor.start().await.unwrap(); // restart #1

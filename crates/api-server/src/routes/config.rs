@@ -51,10 +51,7 @@ async fn update_config(
 ) -> Result<Json<UpdateConfigResponse>, ApiError> {
     // Validate that settings is a non-empty object
     let obj = body.settings.as_object().ok_or_else(|| {
-        ApiError::bad_request(
-            "Settings must be a JSON object.",
-            req_id.0.clone(),
-        )
+        ApiError::bad_request("Settings must be a JSON object.", req_id.0.clone())
     })?;
 
     if obj.is_empty() {

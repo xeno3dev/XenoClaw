@@ -272,8 +272,14 @@ mod tests {
         let short_result = auth.authenticate("short", &[]);
         let wrong_result = auth.authenticate(&"x".repeat(48), &[]);
 
-        assert!(matches!(short_result, Err(SecurityError::InvalidCredentials)));
-        assert!(matches!(wrong_result, Err(SecurityError::InvalidCredentials)));
+        assert!(matches!(
+            short_result,
+            Err(SecurityError::InvalidCredentials)
+        ));
+        assert!(matches!(
+            wrong_result,
+            Err(SecurityError::InvalidCredentials)
+        ));
     }
 
     #[test]

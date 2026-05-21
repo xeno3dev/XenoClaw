@@ -147,7 +147,10 @@ impl MessagingBot for TelegramBot {
 
                 // Authorization check
                 if !config.allowed_chat_ids.contains(&chat_id.0) {
-                    warn!(chat_id = chat_id.0, "Rejected message from unauthorized chat");
+                    warn!(
+                        chat_id = chat_id.0,
+                        "Rejected message from unauthorized chat"
+                    );
                     let _ = bot
                         .send_message(
                             chat_id,
@@ -247,10 +250,7 @@ impl MessagingBot for TelegramBot {
         target: &MessageTarget,
         content: MessageContent,
     ) -> Result<(), MessagingError> {
-        let chat_id_str = target
-            .channel_id
-            .as_deref()
-            .unwrap_or(&target.user_id);
+        let chat_id_str = target.channel_id.as_deref().unwrap_or(&target.user_id);
 
         let chat_id_parsed: i64 = chat_id_str
             .parse()
@@ -529,8 +529,7 @@ mod tests {
 
     #[test]
     fn test_config_deserialization_with_custom_timeout() {
-        let json =
-            r#"{"bot_token": "test-token", "allowed_chat_ids": [123, 456], "response_timeout_secs": 15}"#;
+        let json = r#"{"bot_token": "test-token", "allowed_chat_ids": [123, 456], "response_timeout_secs": 15}"#;
         let config: TelegramConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.response_timeout_secs, 15);
         assert_eq!(config.allowed_chat_ids, vec![123, 456]);
@@ -606,7 +605,10 @@ mod tests {
     #[test]
     fn test_management_command_parse_mode() {
         let cmd = ManagementCommand::parse("!mode coding");
-        assert_eq!(cmd, Some(ManagementCommand::Mode(Some("coding".to_string()))));
+        assert_eq!(
+            cmd,
+            Some(ManagementCommand::Mode(Some("coding".to_string())))
+        );
     }
 
     #[test]

@@ -119,12 +119,11 @@ pub async fn get_history(
                 details: format!("Failed to deserialize tool_results: {}", e),
             })?;
 
-        let timestamp: DateTime<Utc> =
-            DateTime::parse_from_rfc3339(&timestamp_str)
-                .map(|dt| dt.with_timezone(&Utc))
-                .map_err(|e| StoreError::CorruptedData {
-                    details: format!("Invalid timestamp: {}", e),
-                })?;
+        let timestamp: DateTime<Utc> = DateTime::parse_from_rfc3339(&timestamp_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| StoreError::CorruptedData {
+                details: format!("Invalid timestamp: {}", e),
+            })?;
 
         messages.push(Message {
             id: MessageId(id),
@@ -212,7 +211,12 @@ mod tests {
     }
 
     /// Helper: create a test message.
-    fn make_message(session_id: SessionId, role: MessageRole, content: &str, ts: DateTime<Utc>) -> Message {
+    fn make_message(
+        session_id: SessionId,
+        role: MessageRole,
+        content: &str,
+        ts: DateTime<Utc>,
+    ) -> Message {
         Message {
             id: MessageId::new(),
             session_id,

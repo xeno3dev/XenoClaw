@@ -66,7 +66,9 @@ impl WebhookRegistry {
         if let TaskTrigger::Webhook { path, method } = trigger {
             // Check for duplicate registrations
             let webhooks = self.webhooks.read().await;
-            let duplicate = webhooks.iter().any(|w| w.path == *path && w.method == *method);
+            let duplicate = webhooks
+                .iter()
+                .any(|w| w.path == *path && w.method == *method);
             if duplicate {
                 return Err(WebhookError::PathAlreadyRegistered {
                     path: path.clone(),
@@ -184,7 +186,11 @@ mod tests {
 
         let result = registry.register(task_id, &trigger).await;
         assert!(result.is_ok());
-        assert!(registry.is_registered("/hooks/deploy", HttpMethod::Post).await);
+        assert!(
+            registry
+                .is_registered("/hooks/deploy", HttpMethod::Post)
+                .await
+        );
     }
 
     #[tokio::test]
@@ -280,10 +286,18 @@ mod tests {
             method: HttpMethod::Post,
         };
         registry.register(task_id, &trigger).await.unwrap();
-        assert!(registry.is_registered("/hooks/test", HttpMethod::Post).await);
+        assert!(
+            registry
+                .is_registered("/hooks/test", HttpMethod::Post)
+                .await
+        );
 
         registry.unregister(&task_id).await;
-        assert!(!registry.is_registered("/hooks/test", HttpMethod::Post).await);
+        assert!(
+            !registry
+                .is_registered("/hooks/test", HttpMethod::Post)
+                .await
+        );
     }
 
     #[tokio::test]

@@ -18,8 +18,8 @@ pub mod undo_history;
 
 pub use diff_renderer::{DiffRenderer, RenderError};
 pub use diff_tracker::{
-    ChangeTracker, DiffHunk, DiffLine, FileChange, SessionChangeSummary, UnifiedDiff,
-    generate_unified_diff, is_binary_content,
+    generate_unified_diff, is_binary_content, ChangeTracker, DiffHunk, DiffLine, FileChange,
+    SessionChangeSummary, UnifiedDiff,
 };
 pub use git_ops::{
     CloneResult, CommitResult, DiffResult as GitDiffResult, GitAuth, GitError, GitOperations,
@@ -28,6 +28,8 @@ pub use git_ops::{
 pub use lsp_client::{
     Diagnostic, DiagnosticSeverity, Location, LspClientManager, LspError, TextEdit, TextRange,
 };
-pub use shell_executor::{CommandOutput, OutputChunk, ProcessInfo, ShellError, ShellExecutor, ShellExecutorConfig};
+pub use shell_executor::{
+    CommandOutput, OutputChunk, ProcessInfo, ShellError, ShellExecutor, ShellExecutorConfig,
+};
 pub use shell_tool::ShellCommandTool;
 pub use undo_history::{TrackedFileOperations, UndoEntry, UndoHistory, UndoResult};

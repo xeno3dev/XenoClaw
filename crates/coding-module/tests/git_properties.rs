@@ -54,7 +54,9 @@ fn file_path_strategy() -> impl Strategy<Value = String> {
         Just("Cargo.toml".to_string()),
         Just("src/lib.rs".to_string()),
         Just("tests/integration_test.rs".to_string()),
-        Just("a_very_long_filename_that_would_exceed_limits_if_not_handled_properly.rs".to_string()),
+        Just(
+            "a_very_long_filename_that_would_exceed_limits_if_not_handled_properly.rs".to_string()
+        ),
     ]
 }
 

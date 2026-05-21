@@ -172,9 +172,7 @@ pub fn update_system_metrics(cpu_percent: f64, memory_bytes: f64) {
     SYSTEM_CPU_USAGE_PERCENT
         .with_label_values(&[])
         .set(cpu_percent);
-    SYSTEM_MEMORY_BYTES
-        .with_label_values(&[])
-        .set(memory_bytes);
+    SYSTEM_MEMORY_BYTES.with_label_values(&[]).set(memory_bytes);
 }
 
 /// Record a completed or failed agent task.

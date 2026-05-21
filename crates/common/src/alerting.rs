@@ -216,15 +216,14 @@ pub fn evaluate_single_rule(rule: &AlertRule) -> Option<TriggeredAlert> {
             }
         }
         AlertCondition::CpuAbove(threshold) => {
-            let cpu = metrics::SYSTEM_CPU_USAGE_PERCENT.with_label_values(&[]).get();
+            let cpu = metrics::SYSTEM_CPU_USAGE_PERCENT
+                .with_label_values(&[])
+                .get();
             if cpu > *threshold {
                 Some(TriggeredAlert {
                     rule_name: rule.name.clone(),
                     severity: rule.severity,
-                    message: format!(
-                        "CPU usage {:.1}% exceeds threshold {:.1}%",
-                        cpu, threshold
-                    ),
+                    message: format!("CPU usage {:.1}% exceeds threshold {:.1}%", cpu, threshold),
                     current_value: cpu,
                     triggered_at: now,
                 })

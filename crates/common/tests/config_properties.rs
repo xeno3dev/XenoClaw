@@ -322,16 +322,26 @@ fn get_validation_errors(toml_content: &str) -> Option<Vec<ValidationError>> {
 #[derive(Debug, Clone)]
 enum InvalidSettingKind {
     /// Invalid security setting (goes in [security] section).
-    Security { toml_fragment: String, expected_setting: String },
+    Security {
+        toml_fragment: String,
+        expected_setting: String,
+    },
     /// Invalid monitoring setting (goes in [monitoring] section).
-    Monitoring { toml_fragment: String, expected_setting: String },
+    Monitoring {
+        toml_fragment: String,
+        expected_setting: String,
+    },
 }
 
 impl InvalidSettingKind {
     fn expected_setting(&self) -> &str {
         match self {
-            InvalidSettingKind::Security { expected_setting, .. } => expected_setting,
-            InvalidSettingKind::Monitoring { expected_setting, .. } => expected_setting,
+            InvalidSettingKind::Security {
+                expected_setting, ..
+            } => expected_setting,
+            InvalidSettingKind::Monitoring {
+                expected_setting, ..
+            } => expected_setting,
         }
     }
 }

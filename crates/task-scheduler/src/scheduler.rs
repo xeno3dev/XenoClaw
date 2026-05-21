@@ -187,12 +187,15 @@ impl Scheduler {
             }
             TaskTrigger::TimeCondition { expression } => {
                 let condition = TimeCondition::parse(expression)?;
-                self.time_condition_tasks.write().await.push(TimeConditionState {
-                    task_id,
-                    condition,
-                    last_fired: None,
-                    min_interval_secs: 60, // Don't re-fire within 60s
-                });
+                self.time_condition_tasks
+                    .write()
+                    .await
+                    .push(TimeConditionState {
+                        task_id,
+                        condition,
+                        last_fired: None,
+                        min_interval_secs: 60, // Don't re-fire within 60s
+                    });
             }
             TaskTrigger::TaskCompletion { .. } => {
                 // Task completion triggers are handled by the dependency system.
@@ -263,11 +266,7 @@ impl Scheduler {
     /// This marks the task as completed in the dependency graph and triggers
     /// any dependent tasks that are now unblocked. Used when task completion
     /// is reported externally (e.g., by the agent core after executing a task).
-    pub async fn notify_task_completed(
-        &self,
-        task_id: TaskId,
-        executor: Arc<dyn TaskExecutor>,
-    ) {
+    pub async fn notify_task_completed(&self, task_id: TaskId, executor: Arc<dyn TaskExecutor>) {
         let unblocked = {
             let mut graph = self.dependency_graph.write().await;
             graph.mark_completed(task_id)
@@ -341,11 +340,12 @@ impl Scheduler {
     /// File system and webhook events are handled reactively via channels.
     pub async fn start(&mut self, executor: Arc<dyn TaskExecutor>) -> Result<(), TaskError> {
         // Start the file watcher
-        self.file_watcher.start().await.map_err(|e| {
-            TaskError::InvalidCronExpression {
+        self.file_watcher
+            .start()
+            .await
+            .map_err(|e| TaskError::InvalidCronExpression {
                 expression: format!("file watcher start failed: {}", e),
-            }
-        })?;
+            })?;
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         self.shutdown_tx = Some(shutdown_tx);
@@ -483,8 +483,13 @@ impl Scheduler {
             if should_fire {
                 state.last_fired = Some(now);
                 Self::handle_triggered_task_with_deps(
-                    state.task_id, tasks, history, executor, Some(dep_graph),
-                ).await;
+                    state.task_id,
+                    tasks,
+                    history,
+                    executor,
+                    Some(dep_graph),
+                )
+                .await;
             }
         }
     }
@@ -512,8 +517,13 @@ impl Scheduler {
             if state.condition.evaluate(now) {
                 state.last_fired = Some(now);
                 Self::handle_triggered_task_with_deps(
-                    state.task_id, tasks, history, executor, Some(dep_graph),
-                ).await;
+                    state.task_id,
+                    tasks,
+                    history,
+                    executor,
+                    Some(dep_graph),
+                )
+                .await;
             }
         }
     }
@@ -870,9 +880,7 @@ mod tests {
         scheduler.create_task(task_a).await.unwrap();
 
         // Create task B depending on A
-        let mut task_b = make_test_task(TaskTrigger::TaskCompletion {
-            task_id: task_a_id,
-        });
+        let mut task_b = make_test_task(TaskTrigger::TaskCompletion { task_id: task_a_id });
         task_b.dependencies = vec![task_a_id];
         let task_b_id = task_b.id;
         let result = scheduler.create_task(task_b).await;
@@ -909,7 +917,7 @@ mod tests {
 
         // Now try to create a task D that depends on C, where D's ID
         // is also a dependency of A. But A has no deps...
-        // 
+        //
         // The only way to get a cycle in the scheduler is:
         // Add task with dep on something that transitively depends on it.
         // Since the task is NEW, it can't be a transitive dep of anything yet.
@@ -951,9 +959,7 @@ mod tests {
         scheduler.create_task(task_a).await.unwrap();
 
         // Create task B depending on A
-        let mut task_b = make_test_task(TaskTrigger::TaskCompletion {
-            task_id: task_a_id,
-        });
+        let mut task_b = make_test_task(TaskTrigger::TaskCompletion { task_id: task_a_id });
         task_b.dependencies = vec![task_a_id];
         let task_b_id = task_b.id;
         scheduler.create_task(task_b).await.unwrap();

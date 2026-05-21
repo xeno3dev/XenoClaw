@@ -54,7 +54,12 @@ fn arb_user_id() -> impl Strategy<Value = UserId> {
 /// Generate a set of identity mappings: Vec<(Platform, platform_user_id, UserId, Role)>.
 fn arb_mappings() -> impl Strategy<Value = Vec<(Platform, String, UserId, Role)>> {
     proptest::collection::vec(
-        (arb_platform(), arb_platform_user_id(), arb_user_id(), arb_role()),
+        (
+            arb_platform(),
+            arb_platform_user_id(),
+            arb_user_id(),
+            arb_role(),
+        ),
         0..=20,
     )
 }

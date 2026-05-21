@@ -85,8 +85,7 @@ impl KnowledgeStore {
         let id = KnowledgeId::new();
         let now = Utc::now().to_rfc3339();
         let tags_json = serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string());
-        let metadata_json =
-            serde_json::to_string(metadata).unwrap_or_else(|_| "{}".to_string());
+        let metadata_json = serde_json::to_string(metadata).unwrap_or_else(|_| "{}".to_string());
 
         sqlx::query(
             "INSERT INTO knowledge (id, title, content, tags, metadata, embedding, created_at, updated_at) \
@@ -253,7 +252,12 @@ mod tests {
         metadata.insert("source".to_string(), "manual".to_string());
 
         let id = store
-            .store_knowledge("Rust Ownership", "Rust uses ownership for memory safety.", &tags, &metadata)
+            .store_knowledge(
+                "Rust Ownership",
+                "Rust uses ownership for memory safety.",
+                &tags,
+                &metadata,
+            )
             .await
             .unwrap();
 
@@ -264,7 +268,10 @@ mod tests {
         assert_eq!(results[0].title, "Rust Ownership");
         assert_eq!(results[0].content, "Rust uses ownership for memory safety.");
         assert_eq!(results[0].tags, tags);
-        assert_eq!(results[0].metadata.get("source"), Some(&"manual".to_string()));
+        assert_eq!(
+            results[0].metadata.get("source"),
+            Some(&"manual".to_string())
+        );
     }
 
     #[tokio::test]
@@ -276,7 +283,9 @@ mod tests {
             .store_knowledge("Too Large", &large_content, &[], &HashMap::new())
             .await;
 
-        assert!(matches!(result, Err(StoreError::ContentTooLarge { max: 10_000, actual }) if actual == MAX_CONTENT_SIZE + 1));
+        assert!(
+            matches!(result, Err(StoreError::ContentTooLarge { max: 10_000, actual }) if actual == MAX_CONTENT_SIZE + 1)
+        );
     }
 
     #[tokio::test]
@@ -405,11 +414,21 @@ mod tests {
         let (store, _tmp) = setup_store().await;
 
         store
-            .store_knowledge("Rust Ownership", "Memory safety concept", &[], &HashMap::new())
+            .store_knowledge(
+                "Rust Ownership",
+                "Memory safety concept",
+                &[],
+                &HashMap::new(),
+            )
             .await
             .unwrap();
         store
-            .store_knowledge("Python Basics", "Dynamic typing language", &[], &HashMap::new())
+            .store_knowledge(
+                "Python Basics",
+                "Dynamic typing language",
+                &[],
+                &HashMap::new(),
+            )
             .await
             .unwrap();
 
@@ -423,7 +442,12 @@ mod tests {
         let (store, _tmp) = setup_store().await;
 
         store
-            .store_knowledge("Guide", "Learn about borrow checker in Rust", &[], &HashMap::new())
+            .store_knowledge(
+                "Guide",
+                "Learn about borrow checker in Rust",
+                &[],
+                &HashMap::new(),
+            )
             .await
             .unwrap();
 
@@ -453,7 +477,12 @@ mod tests {
 
         for i in 0..10 {
             store
-                .store_knowledge(&format!("Rust Topic {}", i), "Rust content", &[], &HashMap::new())
+                .store_knowledge(
+                    &format!("Rust Topic {}", i),
+                    "Rust content",
+                    &[],
+                    &HashMap::new(),
+                )
                 .await
                 .unwrap();
         }
@@ -474,7 +503,12 @@ mod tests {
 
         // Entry with "Rust" in title
         store
-            .store_knowledge("Rust Ownership", "Memory safety concept", &[], &HashMap::new())
+            .store_knowledge(
+                "Rust Ownership",
+                "Memory safety concept",
+                &[],
+                &HashMap::new(),
+            )
             .await
             .unwrap();
 
@@ -523,7 +557,10 @@ mod tests {
         let results = store.search_knowledge("Secret", 10).await.unwrap();
         assert!(results.is_empty());
 
-        let results = store.search_knowledge("permanently deleted", 10).await.unwrap();
+        let results = store
+            .search_knowledge("permanently deleted", 10)
+            .await
+            .unwrap();
         assert!(results.is_empty());
 
         let results = store.search_knowledge("secret", 10).await.unwrap();

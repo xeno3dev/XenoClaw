@@ -208,13 +208,14 @@ impl ChangeTracker {
         let canonical = path.to_path_buf();
 
         // Update file state: store original only on first modification
-        let state = self.file_states.entry(canonical.clone()).or_insert_with(|| {
-            FileState {
+        let state = self
+            .file_states
+            .entry(canonical.clone())
+            .or_insert_with(|| FileState {
                 original_content: before_content.map(|s| s.to_string()),
                 current_content: None,
                 is_binary,
-            }
-        });
+            });
 
         // Always update the current content and binary flag
         state.current_content = after_content.map(|s| s.to_string());
@@ -472,13 +473,7 @@ mod tests {
     fn test_simple_addition() {
         let old = "line1\nline2\nline3\n";
         let new = "line1\nline2\nnew_line\nline3\n";
-        let diff = generate_unified_diff(
-            Path::new("a.txt"),
-            Path::new("a.txt"),
-            old,
-            new,
-            3,
-        );
+        let diff = generate_unified_diff(Path::new("a.txt"), Path::new("a.txt"), old, new, 3);
 
         assert_eq!(diff.lines_added, 1);
         assert_eq!(diff.lines_removed, 0);
@@ -490,13 +485,7 @@ mod tests {
     fn test_simple_removal() {
         let old = "line1\nline2\nline3\nline4\n";
         let new = "line1\nline3\nline4\n";
-        let diff = generate_unified_diff(
-            Path::new("a.txt"),
-            Path::new("a.txt"),
-            old,
-            new,
-            3,
-        );
+        let diff = generate_unified_diff(Path::new("a.txt"), Path::new("a.txt"), old, new, 3);
 
         assert_eq!(diff.lines_added, 0);
         assert_eq!(diff.lines_removed, 1);
@@ -507,13 +496,7 @@ mod tests {
     fn test_modification() {
         let old = "line1\nline2\nline3\n";
         let new = "line1\nmodified\nline3\n";
-        let diff = generate_unified_diff(
-            Path::new("a.txt"),
-            Path::new("a.txt"),
-            old,
-            new,
-            3,
-        );
+        let diff = generate_unified_diff(Path::new("a.txt"), Path::new("a.txt"), old, new, 3);
 
         assert_eq!(diff.lines_added, 1);
         assert_eq!(diff.lines_removed, 1);
@@ -522,13 +505,8 @@ mod tests {
     #[test]
     fn test_no_changes() {
         let content = "line1\nline2\nline3\n";
-        let diff = generate_unified_diff(
-            Path::new("a.txt"),
-            Path::new("a.txt"),
-            content,
-            content,
-            3,
-        );
+        let diff =
+            generate_unified_diff(Path::new("a.txt"), Path::new("a.txt"), content, content, 3);
 
         assert_eq!(diff.lines_added, 0);
         assert_eq!(diff.lines_removed, 0);
@@ -545,36 +523,30 @@ mod tests {
         let old = old_lines.join("\n") + "\n";
         let new = new_lines.join("\n") + "\n";
 
-        let diff = generate_unified_diff(
-            Path::new("a.txt"),
-            Path::new("a.txt"),
-            &old,
-            &new,
-            3,
-        );
+        let diff = generate_unified_diff(Path::new("a.txt"), Path::new("a.txt"), &old, &new, 3);
 
         assert_eq!(diff.hunks.len(), 1);
         let hunk = &diff.hunks[0];
 
         // Should have context lines before and after the change
         // 3 context before + 1 removal + 1 addition + 3 context after = 8 lines
-        let context_count = hunk.lines.iter()
+        let context_count = hunk
+            .lines
+            .iter()
             .filter(|l| matches!(l, DiffLine::Context(_)))
             .count();
-        assert!(context_count >= 3, "Should have at least 3 context lines, got {}", context_count);
+        assert!(
+            context_count >= 3,
+            "Should have at least 3 context lines, got {}",
+            context_count
+        );
     }
 
     #[test]
     fn test_diff_display_format() {
         let old = "hello\nworld\n";
         let new = "hello\nearth\n";
-        let diff = generate_unified_diff(
-            Path::new("test.txt"),
-            Path::new("test.txt"),
-            old,
-            new,
-            3,
-        );
+        let diff = generate_unified_diff(Path::new("test.txt"), Path::new("test.txt"), old, new, 3);
 
         let output = diff.to_string();
         assert!(output.contains("--- test.txt"));
@@ -655,7 +627,7 @@ mod tests {
         // Cumulative diff should be "aaa\n" -> "ccc\n"
         let diff = tracker.get_cumulative_diff(path).unwrap();
         assert_eq!(diff.lines_removed, 1); // "aaa" removed
-        assert_eq!(diff.lines_added, 1);   // "ccc" added
+        assert_eq!(diff.lines_added, 1); // "ccc" added
 
         // Verify the original state is preserved
         assert_eq!(tracker.tracked_file_count(), 1);
@@ -666,16 +638,8 @@ mod tests {
     fn test_tracker_multiple_files() {
         let mut tracker = ChangeTracker::new();
 
-        tracker.record_change(
-            Path::new("/tmp/a.txt"),
-            Some("old_a\n"),
-            Some("new_a\n"),
-        );
-        tracker.record_change(
-            Path::new("/tmp/b.txt"),
-            Some("old_b\n"),
-            Some("new_b\n"),
-        );
+        tracker.record_change(Path::new("/tmp/a.txt"), Some("old_a\n"), Some("new_a\n"));
+        tracker.record_change(Path::new("/tmp/b.txt"), Some("old_b\n"), Some("new_b\n"));
 
         assert_eq!(tracker.tracked_file_count(), 2);
         let diffs = tracker.get_all_diffs();
@@ -706,29 +670,25 @@ mod tests {
             Some("line1\nline2\nline3\n"),
         );
         // File b: remove 1 line, add 1 line
-        tracker.record_change(
-            Path::new("/tmp/b.txt"),
-            Some("old\n"),
-            Some("new\n"),
-        );
+        tracker.record_change(Path::new("/tmp/b.txt"), Some("old\n"), Some("new\n"));
 
         let summary = tracker.session_summary();
         assert_eq!(summary.modified_files.len(), 2);
         assert_eq!(summary.total_lines_added, 3); // 2 from a + 1 from b
         assert_eq!(summary.total_lines_removed, 1); // 1 from b
-        assert!(summary.modified_files.contains(&PathBuf::from("/tmp/a.txt")));
-        assert!(summary.modified_files.contains(&PathBuf::from("/tmp/b.txt")));
+        assert!(summary
+            .modified_files
+            .contains(&PathBuf::from("/tmp/a.txt")));
+        assert!(summary
+            .modified_files
+            .contains(&PathBuf::from("/tmp/b.txt")));
     }
 
     #[test]
     fn test_tracker_session_summary_with_binary() {
         let mut tracker = ChangeTracker::new();
 
-        tracker.record_change(
-            Path::new("/tmp/text.txt"),
-            Some("old\n"),
-            Some("new\n"),
-        );
+        tracker.record_change(Path::new("/tmp/text.txt"), Some("old\n"), Some("new\n"));
         tracker.record_change(
             Path::new("/tmp/bin.dat"),
             Some("data\x00here"),
@@ -745,11 +705,7 @@ mod tests {
     #[test]
     fn test_tracker_clear() {
         let mut tracker = ChangeTracker::new();
-        tracker.record_change(
-            Path::new("/tmp/test.txt"),
-            Some("old\n"),
-            Some("new\n"),
-        );
+        tracker.record_change(Path::new("/tmp/test.txt"), Some("old\n"), Some("new\n"));
 
         assert_eq!(tracker.tracked_file_count(), 1);
         tracker.clear();

@@ -33,9 +33,8 @@ fn valid_plugin_name_strategy() -> impl Strategy<Value = String> {
 
 /// Generate a valid semver version string.
 fn valid_version_strategy() -> impl Strategy<Value = String> {
-    (0u8..10, 0u8..20, 0u8..50).prop_map(|(major, minor, patch)| {
-        format!("{}.{}.{}", major, minor, patch)
-    })
+    (0u8..10, 0u8..20, 0u8..50)
+        .prop_map(|(major, minor, patch)| format!("{}.{}.{}", major, minor, patch))
 }
 
 /// Kinds of invalid manifests that should cause load failures.
@@ -81,20 +80,16 @@ api_version = "99.0.0"
                 dir_name
             )
         }
-        InvalidManifestKind::EmptyName => {
-            r#"name = ""
+        InvalidManifestKind::EmptyName => r#"name = ""
 version = "1.0.0"
 api_version = "0.1.0"
 "#
-            .to_string()
-        }
-        InvalidManifestKind::InvalidNameChars => {
-            r#"name = "bad name/with spaces!"
+        .to_string(),
+        InvalidManifestKind::InvalidNameChars => r#"name = "bad name/with spaces!"
 version = "1.0.0"
 api_version = "0.1.0"
 "#
-            .to_string()
-        }
+        .to_string(),
     }
 }
 

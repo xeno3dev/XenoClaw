@@ -265,8 +265,17 @@ pub fn apply_reload(current: &mut PlatformConfig, reloadable: ReloadableConfig) 
     }
 
     // MCP external servers (compare by count and names)
-    let old_server_names: Vec<&str> = current.mcp.servers.iter().map(|s| s.name.as_str()).collect();
-    let new_server_names: Vec<&str> = reloadable.mcp_servers.iter().map(|s| s.name.as_str()).collect();
+    let old_server_names: Vec<&str> = current
+        .mcp
+        .servers
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
+    let new_server_names: Vec<&str> = reloadable
+        .mcp_servers
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
     if old_server_names != new_server_names {
         changes.push(format!(
             "mcp.servers: {:?} -> {:?}",
@@ -394,7 +403,10 @@ log_level = "info"
         let result = reload_config_from_str(toml);
         assert!(result.is_err());
         if let Err(ConfigError::Validation(v)) = result {
-            assert!(v.errors.iter().any(|e| e.setting == "api.rate_limit_per_minute"));
+            assert!(v
+                .errors
+                .iter()
+                .any(|e| e.setting == "api.rate_limit_per_minute"));
         }
     }
 
@@ -419,7 +431,10 @@ log_retention_days = 400
         let result = reload_config_from_str(toml);
         assert!(result.is_err());
         if let Err(ConfigError::Validation(v)) = result {
-            assert!(v.errors.iter().any(|e| e.setting == "monitoring.log_retention_days"));
+            assert!(v
+                .errors
+                .iter()
+                .any(|e| e.setting == "monitoring.log_retention_days"));
         }
     }
 
@@ -516,7 +531,10 @@ log_retention_days = 400
         apply_reload(&mut config, reloadable);
 
         // Verify nothing changed
-        assert_eq!(config.api.rate_limit_per_minute, original.api.rate_limit_per_minute);
+        assert_eq!(
+            config.api.rate_limit_per_minute,
+            original.api.rate_limit_per_minute
+        );
         assert_eq!(config.monitoring.log_level, original.monitoring.log_level);
         assert_eq!(config.plugins.enabled, original.plugins.enabled);
         assert_eq!(config.mcp.server_enabled, original.mcp.server_enabled);
@@ -587,7 +605,10 @@ log_retention_days = 400
                 McpServerConfig {
                     name: "filesystem".to_string(),
                     command: "npx".to_string(),
-                    args: vec!["-y".to_string(), "@modelcontextprotocol/server-filesystem".to_string()],
+                    args: vec![
+                        "-y".to_string(),
+                        "@modelcontextprotocol/server-filesystem".to_string(),
+                    ],
                     env: std::collections::HashMap::new(),
                     disabled: false,
                     auto_approve: vec!["read_file".to_string()],
@@ -595,7 +616,10 @@ log_retention_days = 400
                 McpServerConfig {
                     name: "github".to_string(),
                     command: "npx".to_string(),
-                    args: vec!["-y".to_string(), "@modelcontextprotocol/server-github".to_string()],
+                    args: vec![
+                        "-y".to_string(),
+                        "@modelcontextprotocol/server-github".to_string(),
+                    ],
                     env: std::collections::HashMap::new(),
                     disabled: false,
                     auto_approve: vec![],
@@ -609,7 +633,10 @@ log_retention_days = 400
         assert_eq!(config.mcp.servers.len(), 2);
         assert_eq!(config.mcp.servers[0].name, "filesystem");
         assert_eq!(config.mcp.servers[1].name, "github");
-        assert_eq!(config.mcp.servers[0].auto_approve, vec!["read_file".to_string()]);
+        assert_eq!(
+            config.mcp.servers[0].auto_approve,
+            vec!["read_file".to_string()]
+        );
     }
 
     #[test]

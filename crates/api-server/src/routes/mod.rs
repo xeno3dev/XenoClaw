@@ -32,9 +32,7 @@ use crate::state::AppState;
 /// Build the complete API router with all routes and middleware.
 pub fn build_routes(state: AppState) -> Router {
     // Health check and auth login are unauthenticated
-    let health_routes = Router::new()
-        .merge(health::routes())
-        .merge(auth::routes());
+    let health_routes = Router::new().merge(health::routes()).merge(auth::routes());
 
     // WebSocket routes handle their own authentication via query parameters
     // (browsers cannot set custom headers on WebSocket upgrade requests)
@@ -49,7 +47,10 @@ pub fn build_routes(state: AppState) -> Router {
         .merge(config::routes())
         .merge(memory::routes())
         .merge(plugins::routes())
-        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
 
     Router::new()
         .merge(health_routes)

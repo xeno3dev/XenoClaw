@@ -374,12 +374,7 @@ mod tests {
         let logger = AuditLogger::new(AuditLoggerConfig::default());
 
         logger
-            .log_sandbox_breach(
-                Some(test_ip()),
-                Some("user-123"),
-                "/etc/passwd",
-                "read",
-            )
+            .log_sandbox_breach(Some(test_ip()), Some("user-123"), "/etc/passwd", "read")
             .await;
 
         let events = logger.get_events().await;
@@ -437,9 +432,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_buffer_eviction() {
-        let config = AuditLoggerConfig {
-            max_buffer_size: 3,
-        };
+        let config = AuditLoggerConfig { max_buffer_size: 3 };
         let logger = AuditLogger::new(config);
 
         // Log 5 events — only the last 3 should remain
@@ -546,11 +539,7 @@ mod tests {
             let logger_clone = logger.clone();
             let handle = tokio::spawn(async move {
                 logger_clone
-                    .log_auth_attempt(
-                        test_ip(),
-                        &format!("user_{}", i),
-                        AuditOutcome::Success,
-                    )
+                    .log_auth_attempt(test_ip(), &format!("user_{}", i), AuditOutcome::Success)
                     .await;
             });
             handles.push(handle);

@@ -170,7 +170,9 @@ impl StructuredLogger {
     /// 2. Open or create the current log file
     /// 3. Run retention cleanup for old log files
     pub fn new(config: LogConfig) -> Result<Self, io::Error> {
-        config.validate().map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        config
+            .validate()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
         // Attempt to create the log directory
         let fs_available = fs::create_dir_all(&config.log_dir).is_ok();
@@ -418,10 +420,7 @@ impl StructuredLogger {
 
             // Only process .log files
             if path.extension().and_then(|e| e.to_str()) != Some("log")
-                && !path
-                    .to_str()
-                    .map(|s| s.contains(".log."))
-                    .unwrap_or(false)
+                && !path.to_str().map(|s| s.contains(".log.")).unwrap_or(false)
             {
                 continue;
             }
@@ -492,7 +491,10 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert!(parsed["timestamp"].is_string());
-        assert_eq!(parsed["correlation_id"], "550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(
+            parsed["correlation_id"],
+            "550e8400-e29b-41d4-a716-446655440000"
+        );
         assert_eq!(parsed["level"], "INFO");
         assert_eq!(parsed["component"], "agent-core");
         assert_eq!(parsed["message"], "Processing request");

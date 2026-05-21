@@ -196,10 +196,13 @@ impl LlmProvider for AnthropicProvider {
         }
 
         let anthropic_response: AnthropicResponse =
-            response.json().await.map_err(|e| LlmError::InvalidResponse {
-                provider: self.name.clone(),
-                reason: format!("Failed to parse response: {e}"),
-            })?;
+            response
+                .json()
+                .await
+                .map_err(|e| LlmError::InvalidResponse {
+                    provider: self.name.clone(),
+                    reason: format!("Failed to parse response: {e}"),
+                })?;
 
         let mut content = String::new();
         let mut tool_calls = Vec::new();
@@ -209,11 +212,7 @@ impl LlmProvider for AnthropicProvider {
                 ContentBlock::Text { text } => {
                     content.push_str(&text);
                 }
-                ContentBlock::ToolUse {
-                    id,
-                    name,
-                    input,
-                } => {
+                ContentBlock::ToolUse { id, name, input } => {
                     tool_calls.push(LlmToolCall {
                         id,
                         name,
@@ -469,12 +468,24 @@ mod tests {
 
     #[test]
     fn test_timeout_clamping() {
-        let provider =
-            AnthropicProvider::new("test", "http://localhost", "key", "claude-sonnet-4-20250514", 3, None);
+        let provider = AnthropicProvider::new(
+            "test",
+            "http://localhost",
+            "key",
+            "claude-sonnet-4-20250514",
+            3,
+            None,
+        );
         assert_eq!(provider.timeout, Duration::from_secs(5));
 
-        let provider =
-            AnthropicProvider::new("test", "http://localhost", "key", "claude-sonnet-4-20250514", 200, None);
+        let provider = AnthropicProvider::new(
+            "test",
+            "http://localhost",
+            "key",
+            "claude-sonnet-4-20250514",
+            200,
+            None,
+        );
         assert_eq!(provider.timeout, Duration::from_secs(120));
     }
 

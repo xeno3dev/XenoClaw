@@ -80,9 +80,8 @@ use super::reload::{apply_reload, reload_config};
 #[cfg(unix)]
 pub fn spawn_reload_handler(config: Arc<RwLock<PlatformConfig>>, config_path: PathBuf) {
     tokio::spawn(async move {
-        let mut signal =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-                .expect("failed to register SIGHUP handler");
+        let mut signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+            .expect("failed to register SIGHUP handler");
 
         info!(
             config_path = %config_path.display(),

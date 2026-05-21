@@ -52,7 +52,10 @@ pub enum MessageContent {
     /// Plain text message.
     Text(String),
     /// Image with optional caption.
-    Image { data: Vec<u8>, caption: Option<String> },
+    Image {
+        data: Vec<u8>,
+        caption: Option<String>,
+    },
     /// Text message with an attached image (e.g., diff image).
     TextWithImage { text: String, image: Vec<u8> },
 }
@@ -126,7 +129,10 @@ impl ManagementCommand {
             }
             Some("schedule") => {
                 let rest = if parts.len() > 1 {
-                    trimmed[1..].trim_start_matches("schedule").trim().to_string()
+                    trimmed[1..]
+                        .trim_start_matches("schedule")
+                        .trim()
+                        .to_string()
                 } else {
                     String::new()
                 };

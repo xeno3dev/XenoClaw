@@ -179,7 +179,9 @@ async fn list_sessions(State(state): State<AppState>) -> Json<SessionListRespons
         })
         .collect();
 
-    Json(SessionListResponse { sessions: summaries })
+    Json(SessionListResponse {
+        sessions: summaries,
+    })
 }
 
 /// GET /api/v1/sessions/:id — Get session details.
@@ -242,5 +244,8 @@ async fn close_session(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/sessions", post(create_session).get(list_sessions))
-        .route("/api/v1/sessions/{id}", get(get_session).delete(close_session))
+        .route(
+            "/api/v1/sessions/{id}",
+            get(get_session).delete(close_session),
+        )
 }

@@ -70,22 +70,18 @@ impl MessageHandler for AgentMessageHandler {
         match command {
             ManagementCommand::Status => Ok("Agent status: running".to_string()),
             ManagementCommand::Tasks => Ok("No scheduled tasks".to_string()),
-            ManagementCommand::Mode(mode) => {
-                Ok(format!(
-                    "Mode: {}",
-                    mode.unwrap_or_else(|| "general".to_string())
-                ))
-            }
+            ManagementCommand::Mode(mode) => Ok(format!(
+                "Mode: {}",
+                mode.unwrap_or_else(|| "general".to_string())
+            )),
             ManagementCommand::Schedule(schedule) => {
                 Ok(format!("Schedule acknowledged: {}", schedule))
             }
-            ManagementCommand::Config(key, value) => {
-                match (key, value) {
-                    (Some(k), Some(v)) => Ok(format!("Config set: {} = {}", k, v)),
-                    (Some(k), None) => Ok(format!("Config get: {}", k)),
-                    _ => Ok("Config: use !config <key> [value]".to_string()),
-                }
-            }
+            ManagementCommand::Config(key, value) => match (key, value) {
+                (Some(k), Some(v)) => Ok(format!("Config set: {} = {}", k, v)),
+                (Some(k), None) => Ok(format!("Config get: {}", k)),
+                _ => Ok("Config: use !config <key> [value]".to_string()),
+            },
         }
     }
 }
@@ -117,9 +113,7 @@ mod tests {
         assert!(response.contains("Received: hello"));
 
         // Session should now exist
-        let session = router
-            .get_session(crate::Platform::Telegram, "user1")
-            .await;
+        let session = router.get_session(crate::Platform::Telegram, "user1").await;
         assert!(session.is_some());
     }
 

@@ -7,7 +7,7 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 use common::{Message, MessageId, MessageRole, SessionId, ToolCall, ToolResult};
-use memory_store::{init_database, get_history, store_message};
+use memory_store::{get_history, init_database, store_message};
 use proptest::prelude::*;
 use sqlx::sqlite::SqlitePool;
 use tempfile::TempDir;
@@ -34,9 +34,9 @@ fn arb_content() -> impl Strategy<Value = String> {
 /// Generate an arbitrary ToolCall.
 fn arb_tool_call() -> impl Strategy<Value = ToolCall> {
     (
-        "[a-z_]{3,15}",       // id
-        "[a-z_]{3,20}",       // name
-        "[a-zA-Z0-9]{1,30}",  // argument value
+        "[a-z_]{3,15}",      // id
+        "[a-z_]{3,20}",      // name
+        "[a-zA-Z0-9]{1,30}", // argument value
     )
         .prop_map(|(id, name, arg_val)| ToolCall {
             id: format!("call_{}", id),
@@ -58,7 +58,7 @@ fn arb_tool_result() -> impl Strategy<Value = ToolResult> {
     (
         "[a-z_]{3,15}",       // tool_call_id
         "[a-zA-Z0-9 ]{1,50}", // output
-        any::<bool>(),         // is_error
+        any::<bool>(),        // is_error
     )
         .prop_map(|(id, output, is_error)| ToolResult {
             tool_call_id: format!("call_{}", id),
@@ -84,9 +84,7 @@ fn arb_token_count() -> impl Strategy<Value = u32> {
 /// issues with RFC3339 round-tripping through SQLite text storage).
 fn arb_timestamp() -> impl Strategy<Value = DateTime<Utc>> {
     // Generate timestamps between 2020-01-01 and 2030-01-01 at second precision
-    (1577836800i64..1893456000i64).prop_map(|secs| {
-        Utc.timestamp_opt(secs, 0).unwrap()
-    })
+    (1577836800i64..1893456000i64).prop_map(|secs| Utc.timestamp_opt(secs, 0).unwrap())
 }
 
 /// Generate a complete arbitrary Message for a given session.
@@ -100,8 +98,8 @@ fn arb_message(session_id: SessionId) -> impl Strategy<Value = Message> {
         arb_timestamp(),
         arb_token_count(),
     )
-        .prop_map(move |(role, content, tool_calls, tool_results, timestamp, token_count)| {
-            Message {
+        .prop_map(
+            move |(role, content, tool_calls, tool_results, timestamp, token_count)| Message {
                 id: MessageId::new(),
                 session_id,
                 role,
@@ -110,8 +108,8 @@ fn arb_message(session_id: SessionId) -> impl Strategy<Value = Message> {
                 tool_results,
                 timestamp,
                 token_count,
-            }
-        })
+            },
+        )
 }
 
 // ============================================================================

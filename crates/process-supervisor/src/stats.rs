@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
-use crate::types::{RestartEvent, RestartReason, SupervisorStats, HealthStatus};
+use crate::types::{HealthStatus, RestartEvent, RestartReason, SupervisorStats};
 
 /// Tracks supervisor statistics including uptime and restart history.
 ///

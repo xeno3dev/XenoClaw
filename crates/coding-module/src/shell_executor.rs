@@ -170,10 +170,14 @@ impl ShellExecutor {
     ///
     /// Returns Ok(()) if the command is permitted, or an error if denied.
     pub fn validate(&self, command: &str) -> Result<(), ShellError> {
-        validate_command(command, &self.config.command_allowlist, &self.config.command_blocklist)
-            .map_err(|_| ShellError::CommandDenied {
-                command: command.to_string(),
-            })
+        validate_command(
+            command,
+            &self.config.command_allowlist,
+            &self.config.command_blocklist,
+        )
+        .map_err(|_| ShellError::CommandDenied {
+            command: command.to_string(),
+        })
     }
 
     /// Execute a shell command, capturing stdout, stderr, and exit code.
@@ -260,12 +264,14 @@ impl ShellExecutor {
         info!(command = %command, pid = pid, "Shell process spawned");
 
         // 4. Read output with timeout enforcement
-        let stdout_pipe = child.stdout.take().ok_or_else(|| ShellError::IoError(
-            "Failed to capture stdout".to_string(),
-        ))?;
-        let stderr_pipe = child.stderr.take().ok_or_else(|| ShellError::IoError(
-            "Failed to capture stderr".to_string(),
-        ))?;
+        let stdout_pipe = child
+            .stdout
+            .take()
+            .ok_or_else(|| ShellError::IoError("Failed to capture stdout".to_string()))?;
+        let stderr_pipe = child
+            .stderr
+            .take()
+            .ok_or_else(|| ShellError::IoError("Failed to capture stderr".to_string()))?;
 
         let mut stdout_reader = BufReader::new(stdout_pipe);
         let mut stderr_reader = BufReader::new(stderr_pipe);
@@ -314,7 +320,10 @@ impl ShellExecutor {
         match result {
             Ok((stdout_buf, stderr_buf)) => {
                 // Wait for the process to exit
-                let status = child.wait().await.map_err(|e| ShellError::IoError(e.to_string()))?;
+                let status = child
+                    .wait()
+                    .await
+                    .map_err(|e| ShellError::IoError(e.to_string()))?;
                 let elapsed = start.elapsed();
 
                 info!(
@@ -661,9 +670,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_captures_exit_code() {
         let executor = ShellExecutor::new(allowed_config());
-        let result = executor
-            .execute("false", &[], None, None, None)
-            .await;
+        let result = executor.execute("false", &[], None, None, None).await;
 
         let output = result.unwrap();
         assert_eq!(output.exit_code, Some(1));
@@ -684,7 +691,11 @@ mod tests {
             .await;
 
         assert!(matches!(result, Err(ShellError::Timeout { .. })));
-        if let Err(ShellError::Timeout { command, elapsed_seconds }) = result {
+        if let Err(ShellError::Timeout {
+            command,
+            elapsed_seconds,
+        }) = result
+        {
             assert_eq!(command, "sleep");
             assert!(elapsed_seconds >= 1);
         }
@@ -755,7 +766,13 @@ mod tests {
     async fn test_execute_denied_command() {
         let executor = ShellExecutor::new(allowed_config());
         let result = executor
-            .execute("rm", &["-rf".to_string(), "/".to_string()], None, None, None)
+            .execute(
+                "rm",
+                &["-rf".to_string(), "/".to_string()],
+                None,
+                None,
+                None,
+            )
             .await;
 
         assert!(matches!(result, Err(ShellError::CommandDenied { .. })));
@@ -835,13 +852,7 @@ mod tests {
         let executor = ShellExecutor::new(allowed_config());
 
         let mut rx = executor
-            .execute_streaming(
-                "echo",
-                &["streaming test".to_string()],
-                None,
-                None,
-                None,
-            )
+            .execute_streaming("echo", &["streaming test".to_string()], None, None, None)
             .await
             .unwrap();
 
