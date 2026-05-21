@@ -70,9 +70,23 @@ chown xenoclaw:xenoclaw "$DATA_DIR" "$LOG_DIR" /tmp/xenoclaw
 
 # ─── Step 4: Install the binary ───────────────────────────────────────────────
 
+# Stop the service before replacing the binary.  On Debian/systemd, cp(1) will
+# fail with ETXTBSY if the kernel has the old inode mapped for execution.
+# Using `install -m 755` (atomic rename) sidesteps that, but stopping first
+# is the belt-and-suspenders fix that also prevents a brief gap where the
+# service auto-restarts against a half-written binary.
+SERVICE_WAS_ACTIVE=false
+if systemctl is-active --quiet xenoclaw-agent 2>/dev/null; then
+    info "Stopping xenoclaw-agent service before binary update..."
+    systemctl stop xenoclaw-agent
+    SERVICE_WAS_ACTIVE=true
+fi
+
 info "Installing binary to $INSTALL_DIR/bin/xenoclaw..."
-cp target/release/xenoclaw "$INSTALL_DIR/bin/"
-chmod 755 "$INSTALL_DIR/bin/xenoclaw"
+install -m 755 target/release/xenoclaw "$INSTALL_DIR/bin/xenoclaw"
+
+# Ensure xenoclaw is accessible on PATH without manual PATH edits.
+ln -sf "$INSTALL_DIR/bin/xenoclaw" /usr/local/bin/xenoclaw
 
 # ─── Step 5: Install config ───────────────────────────────────────────────────
 
@@ -110,7 +124,14 @@ cp deploy/xenoclaw-agent.service "$SERVICE_FILE"
 systemctl daemon-reload
 systemctl enable xenoclaw-agent
 
-info "Systemd service installed and enabled (will start on boot)."
+# Restart (or start) the service now that the new binary is in place.
+if [[ "$SERVICE_WAS_ACTIVE" == "true" ]]; then
+    info "Restarting xenoclaw-agent with the new binary..."
+    systemctl start xenoclaw-agent
+    info "xenoclaw-agent restarted."
+else
+    info "Systemd service installed and enabled (will start on boot)."
+fi
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 
