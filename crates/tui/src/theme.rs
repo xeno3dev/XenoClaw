@@ -18,18 +18,23 @@ pub const RULE_FG: Color = Color::Rgb(75, 75, 80);
 pub const GREEN: Color = Color::Rgb(80, 220, 100);
 /// Amber — warnings, callouts.
 pub const AMBER: Color = Color::Rgb(255, 176, 0);
-/// Charcoal background.
-pub const BG: Color = Color::Rgb(18, 18, 22);
+/// Charcoal background — ANSI 256-color #233 (#121212).
+/// Using Indexed instead of Rgb so the background renders reliably on SSH
+/// sessions and web terminals that don't forward 24-bit color support.
+pub const BG: Color = Color::Indexed(233);
 
 /// Returns true if backgrounds should be painted.
 ///
-/// Disabled when:
-/// - `NO_COLOR` env var is set
-/// - `TERM=dumb` — terminal has no color support
-/// - Running over SSH (`SSH_CONNECTION` or `SSH_TTY` set)
+/// Disabled only for truly incapable terminals:
+/// - `NO_COLOR` env var set — universal opt-out standard
+/// - `TERM=dumb` — no color support at all
 ///
-/// FG colors are still emitted. Users can override with `XENOCLAW_FORCE_BG=1`.
+/// SSH sessions are NOT suppressed: BG uses ANSI 256-color which passes
+/// through every SSH layer cleanly.
 pub fn bg_enabled() -> bool {
+    if std::env::var("XENOCLAW_FORCE_BG").as_deref() == Ok("0") {
+        return false;
+    }
     if std::env::var_os("XENOCLAW_FORCE_BG").is_some() {
         return true;
     }
@@ -40,9 +45,6 @@ pub fn bg_enabled() -> bool {
         if term == "dumb" || term.is_empty() {
             return false;
         }
-    }
-    if std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some() {
-        return false;
     }
     true
 }

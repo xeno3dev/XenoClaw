@@ -96,12 +96,10 @@ const AMBER: Color = Color::Rgb {
     b: 0,
 };
 
-/// Charcoal background. Near-black with a slight warm tint so red pops.
-const BG: Color = Color::Rgb {
-    r: 18,
-    g: 18,
-    b: 22,
-};
+/// Charcoal background — ANSI 256-color #233 (#121212).
+/// Using AnsiValue instead of Rgb so the background renders reliably on SSH
+/// sessions and web terminals that don't forward 24-bit color support.
+const BG: Color = Color::AnsiValue(233);
 
 const TOTAL_STEPS: u8 = 8;
 const RULE: &str = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
@@ -428,15 +426,17 @@ const COMPACT_BANNER: &str = "[ X E N O C L A W ]";
 
 /// Returns true if backgrounds should be painted.
 ///
-/// Disabled when:
-/// - `NO_COLOR` env var is set (any value) — universal opt-out standard
-/// - `TERM=dumb` — terminal has no color support
-/// - Running over SSH (`SSH_CONNECTION` or `SSH_TTY` set) — bg sequences are
-///   commonly stripped by intermediate layers (mosh, screen without bce, etc.)
+/// Disabled only for truly incapable terminals:
+/// - `NO_COLOR` env var set — universal opt-out standard
+/// - `TERM=dumb` — no color support at all
 ///
-/// FG colors are still emitted in all cases — only the heavy BG fills are
-/// suppressed. Users can override with `XENOCLAW_FORCE_BG=1`.
+/// SSH sessions are NOT suppressed: BG now uses ANSI 256-color which passes
+/// through every SSH layer cleanly. Override with `XENOCLAW_FORCE_BG=0` to
+/// disable explicitly, or `XENOCLAW_FORCE_BG=1` to force-enable.
 fn bg_enabled() -> bool {
+    if std::env::var("XENOCLAW_FORCE_BG").as_deref() == Ok("0") {
+        return false;
+    }
     if std::env::var_os("XENOCLAW_FORCE_BG").is_some() {
         return true;
     }
@@ -447,9 +447,6 @@ fn bg_enabled() -> bool {
         if term == "dumb" || term.is_empty() {
             return false;
         }
-    }
-    if std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some() {
-        return false;
     }
     true
 }
