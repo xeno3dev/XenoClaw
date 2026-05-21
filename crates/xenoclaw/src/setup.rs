@@ -6,13 +6,13 @@
 //!
 //! The wizard adapts to terminal capabilities to look correct everywhere:
 //!
-//! - **True-color terminals (kitty, alacritty, wezterm, modern xterm)**: full
-//!   24-bit RGB palette with charcoal BG, red primary, white highlights.
-//! - **SSH / dumb terminals**: BG fills are skipped because background-color
-//!   sequences are commonly stripped over SSH (PuTTY, mosh, screen, tmux
-//!   without truecolor); we paint FG colors only and let the terminal's own
-//!   background show through. Detected via `SSH_CONNECTION`, `SSH_TTY`,
-//!   `TERM=dumb`, and `NO_COLOR`.
+//! - **True-color terminals** (`COLORTERM=truecolor|24bit`): 24-bit RGB palette
+//!   for exact brand colors (red #FF3838, charcoal #121212, etc.).
+//! - **256-color terminals** (SSH, web consoles, tmux, PuTTY): all colors fall
+//!   back to the nearest ANSI 256-color indexed equivalents using `\x1b[38;5;Nm`
+//!   sequences, which every xterm-compatible terminal handles reliably.
+//! - **Dumb terminals** (`TERM=dumb`, `NO_COLOR`): BG fills are skipped; FG
+//!   colors still use 256-color; text remains legible on any background.
 //! - **Narrow terminals (< 80 cols)**: the big ASCII banner is replaced with
 //!   a compact `[ XENOCLAW ]` block so nothing wraps.
 //!
@@ -20,6 +20,7 @@
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::Result;
 use crossterm::{
@@ -37,68 +38,117 @@ use security_layer::auth::ApiKeyAuthenticator;
 
 // ─── Color Palette — Xeno Brand (X3NO: black, red, charcoal accents) ─────────
 //
-// All colors use explicit RGB to prevent terminal theme remapping (Kitty,
-// Alacritty, etc. honor true-color literals; ANSI 16 colors get re-themed).
-// Background detection happens at runtime — see `bg_enabled()`.
+// Colors are selected at runtime based on terminal color depth:
+//   - Truecolor (COLORTERM=truecolor|24bit): exact 24-bit RGB values
+//   - 256-color fallback (SSH, web consoles, tmux without truecolor):
+//     nearest ANSI 256-color indexed equivalents
+//
+// All fallbacks use Color::AnsiValue which emits \x1b[38;5;Nm — supported by
+// every xterm-compatible terminal, reliably forwarded over SSH.
+
+static TRUECOLOR: OnceLock<bool> = OnceLock::new();
+
+fn truecolor() -> bool {
+    *TRUECOLOR.get_or_init(|| {
+        matches!(
+            std::env::var("COLORTERM").as_deref(),
+            Ok("truecolor") | Ok("24bit")
+        )
+    })
+}
 
 /// Primary brand red — headers, ► cursor, active selections, "XENOCLAW" banner.
-const RED: Color = Color::Rgb {
-    r: 255,
-    g: 56,
-    b: 56,
-};
+/// Fallback: AnsiValue(196) = #ff0000
+fn red() -> Color {
+    if truecolor() {
+        Color::Rgb { r: 255, g: 56, b: 56 }
+    } else {
+        Color::AnsiValue(196)
+    }
+}
+
 /// Bright crimson for emphasis (commit boxes, key reveals).
-const RED_BRIGHT: Color = Color::Rgb {
-    r: 255,
-    g: 96,
-    b: 96,
-};
+/// Fallback: AnsiValue(203) = #ff5f5f
+fn red_bright() -> Color {
+    if truecolor() {
+        Color::Rgb { r: 255, g: 96, b: 96 }
+    } else {
+        Color::AnsiValue(203)
+    }
+}
+
 /// Deep blood-red for backgrounds of error/warning callouts.
-const RED_DEEP: Color = Color::Rgb {
-    r: 120,
-    g: 20,
-    b: 20,
-};
+/// Fallback: AnsiValue(88) = #870000
+fn red_deep() -> Color {
+    if truecolor() {
+        Color::Rgb { r: 120, g: 20, b: 20 }
+    } else {
+        Color::AnsiValue(88)
+    }
+}
+
 /// Pure white — body text, values, key contents (the "pop" color).
-const WHITE: Color = Color::Rgb {
-    r: 240,
-    g: 240,
-    b: 240,
-};
+/// Fallback: AnsiValue(255) = #eeeeee
+fn white() -> Color {
+    if truecolor() {
+        Color::Rgb { r: 240, g: 240, b: 240 }
+    } else {
+        Color::AnsiValue(255)
+    }
+}
+
 /// Soft white-grey — secondary labels, hints.
-const TEXT: Color = Color::Rgb {
-    r: 200,
-    g: 200,
-    b: 200,
-};
+/// Fallback: AnsiValue(251) = #c6c6c6
+fn text() -> Color {
+    if truecolor() {
+        Color::Rgb { r: 200, g: 200, b: 200 }
+    } else {
+        Color::AnsiValue(251)
+    }
+}
+
 /// Medium grey — inactive menu items, dim text.
-const DIM: Color = Color::Rgb {
-    r: 130,
-    g: 130,
-    b: 135,
-};
+/// Fallback: AnsiValue(244) = #808080
+fn dim() -> Color {
+    if truecolor() {
+        Color::Rgb { r: 130, g: 130, b: 135 }
+    } else {
+        Color::AnsiValue(244)
+    }
+}
+
 /// Dark grey — horizontal rules, borders.
-const RULE_FG: Color = Color::Rgb {
-    r: 75,
-    g: 75,
-    b: 80,
-};
+/// Fallback: AnsiValue(239) = #4e4e4e
+fn rule_fg() -> Color {
+    if truecolor() {
+        Color::Rgb { r: 75, g: 75, b: 80 }
+    } else {
+        Color::AnsiValue(239)
+    }
+}
+
 /// Success green — ✓ checkmarks ONLY (sparingly, for visual confirmation).
-const GREEN: Color = Color::Rgb {
-    r: 80,
-    g: 220,
-    b: 100,
-};
+/// Fallback: AnsiValue(83) = #5fff5f
+fn green() -> Color {
+    if truecolor() {
+        Color::Rgb { r: 80, g: 220, b: 100 }
+    } else {
+        Color::AnsiValue(83)
+    }
+}
+
 /// Amber — warnings, "save this now" callouts.
-const AMBER: Color = Color::Rgb {
-    r: 255,
-    g: 176,
-    b: 0,
-};
+/// Fallback: AnsiValue(214) = #ffaf00
+fn amber() -> Color {
+    if truecolor() {
+        Color::Rgb { r: 255, g: 176, b: 0 }
+    } else {
+        Color::AnsiValue(214)
+    }
+}
 
 /// Charcoal background — ANSI 256-color #233 (#121212).
-/// Using AnsiValue instead of Rgb so the background renders reliably on SSH
-/// sessions and web terminals that don't forward 24-bit color support.
+/// Always uses AnsiValue so it renders reliably on SSH and web consoles.
 const BG: Color = Color::AnsiValue(233);
 
 const TOTAL_STEPS: u8 = 8;
@@ -464,24 +514,24 @@ fn bg(stdout: &mut io::Stdout, color: Color) -> io::Result<()> {
 fn print_header(stdout: &mut io::Stdout, step: u8) -> io::Result<()> {
     bg(stdout, BG)?;
     stdout
-        .queue(SetForegroundColor(RED))?
+        .queue(SetForegroundColor(red()))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("XENOCLAW"))?
         .queue(SetAttribute(Attribute::Reset))?;
     bg(stdout, BG)?;
     stdout
-        .queue(SetForegroundColor(DIM))?
+        .queue(SetForegroundColor(dim()))?
         .queue(Print(" │ "))?
-        .queue(SetForegroundColor(WHITE))?
+        .queue(SetForegroundColor(white()))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("Init"))?
         .queue(SetAttribute(Attribute::Reset))?;
     bg(stdout, BG)?;
     stdout
-        .queue(SetForegroundColor(DIM))?
+        .queue(SetForegroundColor(dim()))?
         .queue(Print(format!("  {step} of {TOTAL_STEPS}")))?
         .queue(Print("\r\n"))?
-        .queue(SetForegroundColor(RULE_FG))?
+        .queue(SetForegroundColor(rule_fg()))?
         .queue(Print(RULE))?
         .queue(Print("\r\n\r\n"))?;
     stdout.flush()
@@ -504,7 +554,7 @@ fn print_banner(stdout: &mut io::Stdout) -> io::Result<()> {
     if cols >= max_banner_width {
         // Full banner — 6 rows of red blocks.
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(SetAttribute(Attribute::Bold))?;
         for line in BANNER_LINES {
             stdout.queue(Print(line))?;
@@ -515,7 +565,7 @@ fn print_banner(stdout: &mut io::Stdout) -> io::Result<()> {
     } else {
         // Compact banner for narrow terminals.
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("  {COMPACT_BANNER}\r\n")))?
             .queue(SetAttribute(Attribute::Reset))?;
@@ -524,9 +574,9 @@ fn print_banner(stdout: &mut io::Stdout) -> io::Result<()> {
 
     stdout
         .queue(Print("\r\n"))?
-        .queue(SetForegroundColor(TEXT))?
+        .queue(SetForegroundColor(text()))?
         .queue(Print("                       Agent Runtime\r\n"))?
-        .queue(SetForegroundColor(RULE_FG))?
+        .queue(SetForegroundColor(rule_fg()))?
         .queue(Print(format!(" {RULE}\r\n")))?;
     stdout.flush()
 }
@@ -538,7 +588,7 @@ fn print_footer(stdout: &mut io::Stdout, hint: &str) -> io::Result<()> {
 
     stdout
         .queue(cursor::MoveTo(0, rows.saturating_sub(1)))?
-        .queue(SetForegroundColor(DIM))?;
+        .queue(SetForegroundColor(dim()))?;
     bg(stdout, BG)?;
     stdout.queue(Print(hint))?;
 
@@ -588,7 +638,7 @@ fn clear_screen(stdout: &mut io::Stdout) -> io::Result<()> {
 fn print_success(stdout: &mut io::Stdout, msg: &str) -> io::Result<()> {
     bg(stdout, BG)?;
     stdout
-        .queue(SetForegroundColor(GREEN))?
+        .queue(SetForegroundColor(green()))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print(format!("  ✓ {msg}")))?
         .queue(SetAttribute(Attribute::Reset))?;
@@ -600,7 +650,7 @@ fn print_success(stdout: &mut io::Stdout, msg: &str) -> io::Result<()> {
 fn print_error(stdout: &mut io::Stdout, msg: &str) -> io::Result<()> {
     bg(stdout, BG)?;
     stdout
-        .queue(SetForegroundColor(RED_BRIGHT))?
+        .queue(SetForegroundColor(red_bright()))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print(format!("  ✗ {msg}")))?
         .queue(SetAttribute(Attribute::Reset))?;
@@ -824,22 +874,22 @@ fn render_welcome(stdout: &mut io::Stdout) -> io::Result<()> {
     for (glyph, name, tail) in features {
         bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("  {glyph}  ")))?
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(Print(*name))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print(format!("  — {tail}\r\n")))?;
     }
 
     stdout.queue(Print("\r\n"))?;
     bg(stdout, BG)?;
     stdout
-        .queue(SetForegroundColor(TEXT))?
+        .queue(SetForegroundColor(text()))?
         .queue(SetAttribute(Attribute::Italic))?
         .queue(Print(
             "  Self-hosted. Your infrastructure. Your data. Your rules.\r\n",
@@ -893,7 +943,7 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
 
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Select your LLM provider\r\n\r\n"))?
             .queue(SetAttribute(Attribute::Reset))?;
@@ -912,18 +962,18 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
             if i == selected {
                 bg(&mut stdout, BG)?;
                 stdout
-                    .queue(SetForegroundColor(RED))?
+                    .queue(SetForegroundColor(red()))?
                     .queue(SetAttribute(Attribute::Bold))?
                     .queue(Print(format!("   > [{num:>2}]  ")))?
-                    .queue(SetForegroundColor(WHITE))?
+                    .queue(SetForegroundColor(white()))?
                     .queue(Print(format!("{:<20} ", p.name)))?
-                    .queue(SetForegroundColor(TEXT))?
+                    .queue(SetForegroundColor(text()))?
                     .queue(Print(format!("{}\r\n", p.default_model)))?
                     .queue(SetAttribute(Attribute::Reset))?;
                 bg(&mut stdout, BG)?;
             } else {
                 bg(&mut stdout, BG)?;
-                stdout.queue(SetForegroundColor(DIM))?.queue(Print(format!(
+                stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
                     "     [{num:>2}]  {:<20} {}\r\n",
                     p.name, p.default_model
                 )))?;
@@ -932,7 +982,7 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
 
         if end < PROVIDERS.len() {
             bg(&mut stdout, BG)?;
-            stdout.queue(SetForegroundColor(DIM))?.queue(Print(format!(
+            stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
                 "\r\n     … and {} more (scroll down)\r\n",
                 PROVIDERS.len() - end
             )))?;
@@ -1020,31 +1070,31 @@ async fn step_cli_provider(state: &mut WizardState) -> Result<StepOutcome> {
 
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("   {}\r\n", p.name)))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
-        stdout.queue(SetForegroundColor(DIM))?.queue(Print(
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
             "   No API key or base URL required — uses a local CLI.\r\n\r\n",
         ))?;
         bg(&mut stdout, BG)?;
 
         // Requirement callout
         stdout
-            .queue(SetForegroundColor(AMBER))?
+            .queue(SetForegroundColor(amber()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Requires: "))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(Print(format!("{cli_name}  ")))?
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print(format!("({cli_check_cmd})\r\n")))?;
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print(format!("   {cli_hint}\r\n\r\n")))?;
         bg(&mut stdout, BG)?;
 
@@ -1113,10 +1163,10 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
 
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Provider: ".to_string()))?
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(Print(format!("{}\r\n\r\n", p.name)))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
@@ -1132,19 +1182,19 @@ async fn step_provider_details(state: &mut WizardState) -> Result<StepOutcome> {
             if i == field {
                 bg(&mut stdout, BG)?;
                 stdout
-                    .queue(SetForegroundColor(RED))?
+                    .queue(SetForegroundColor(red()))?
                     .queue(SetAttribute(Attribute::Bold))?
                     .queue(Print(format!("   > {:<10} ", labels[i])))?
-                    .queue(SetForegroundColor(DIM))?
+                    .queue(SetForegroundColor(dim()))?
                     .queue(Print("│ "))?
-                    .queue(SetForegroundColor(WHITE))?
+                    .queue(SetForegroundColor(white()))?
                     .queue(Print(format!("{display}\r\n")))?
                     .queue(SetAttribute(Attribute::Reset))?;
                 bg(&mut stdout, BG)?;
             } else {
                 bg(&mut stdout, BG)?;
                 stdout
-                    .queue(SetForegroundColor(DIM))?
+                    .queue(SetForegroundColor(dim()))?
                     .queue(Print(format!("     {:<10} │ {display}\r\n", labels[i])))?;
             }
         }
@@ -1199,21 +1249,21 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
 
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Workspace directory\r\n"))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
-        stdout.queue(SetForegroundColor(DIM))?.queue(Print(
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
             "   Contains SOUL.md, IDENTITY.md, memory/, skills/, etc.\r\n\r\n",
         ))?;
         bg(&mut stdout, BG)?;
 
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   > "))?
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(Print(format!("{}\r\n\r\n", input.display())))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
@@ -1222,32 +1272,32 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
         if path.exists() && path.is_dir() {
             let count = std::fs::read_dir(path).map(|d| d.count()).unwrap_or(0);
             stdout
-                .queue(SetForegroundColor(GREEN))?
+                .queue(SetForegroundColor(green()))?
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print("   \u{2713} ".to_string()))?
-                .queue(SetForegroundColor(TEXT))?
+                .queue(SetForegroundColor(text()))?
                 .queue(Print(format!("Found  ({count} entries)\r\n")))?
                 .queue(SetAttribute(Attribute::Reset))?;
             bg(&mut stdout, BG)?;
         } else {
             stdout
-                .queue(SetForegroundColor(AMBER))?
+                .queue(SetForegroundColor(amber()))?
                 .queue(Print("   ◆ Does not exist yet.\r\n"))?
-                .queue(SetForegroundColor(WHITE))?
+                .queue(SetForegroundColor(white()))?
                 .queue(Print("     ["))?
-                .queue(SetForegroundColor(RED))?
+                .queue(SetForegroundColor(red()))?
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print("C"))?
                 .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetForegroundColor(WHITE))?;
+                .queue(SetForegroundColor(white()))?;
             bg(&mut stdout, BG)?;
             stdout
                 .queue(Print("] Create stub workspace    ["))?
-                .queue(SetForegroundColor(RED))?
+                .queue(SetForegroundColor(red()))?
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print("S"))?
                 .queue(SetAttribute(Attribute::Reset))?
-                .queue(SetForegroundColor(WHITE))?;
+                .queue(SetForegroundColor(white()))?;
             bg(&mut stdout, BG)?;
             stdout.queue(Print("] Skip for now\r\n"))?;
         }
@@ -1308,7 +1358,7 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
 
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Server Bindings\r\n\r\n"))?
             .queue(SetAttribute(Attribute::Reset))?;
@@ -1322,11 +1372,11 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
 
         // Auth toggle
         let auth_str = if require_auth { "Yes" } else { "No" };
-        let auth_color = if require_auth { GREEN } else { AMBER };
+        let auth_color = if require_auth { green() } else { amber() };
         if field == 3 {
             bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(RED))?
+                .queue(SetForegroundColor(red()))?
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print("   > Require authentication?  "))?
                 .queue(SetForegroundColor(auth_color))?
@@ -1336,7 +1386,7 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
         } else {
             bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(DIM))?
+                .queue(SetForegroundColor(dim()))?
                 .queue(Print("     Require authentication?  "))?
                 .queue(SetForegroundColor(auth_color))?
                 .queue(Print(format!("[{auth_str}]\r\n")))?;
@@ -1442,19 +1492,19 @@ fn render_field(
     if active {
         bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("   > {label:<14} ")))?
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print("│ "))?
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(Print(format!("{}\r\n", input.display())))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(stdout, BG)?;
     } else {
         bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print(format!("     {label:<14} │ {}\r\n", input.value())))?;
     }
     Ok(())
@@ -1481,13 +1531,13 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
         // API Key section
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   API Key  "))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print("(programmatic access)\r\n\r\n"))?;
         bg(&mut stdout, BG)?;
 
@@ -1500,25 +1550,25 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
         // Inner layout: 1 (space) + warn_w + dim_pad + 1 (trailing space before │) = box_w
         let dim_pad = box_w.saturating_sub(2 + warn_w);
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(Print(format!("   ┌{border}┐\r\n")))?
             .queue(Print("   │ "))?
-            .queue(SetForegroundColor(AMBER))?
+            .queue(SetForegroundColor(amber()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(warn_text))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetForegroundColor(DIM))?;
+            .queue(SetForegroundColor(dim()))?;
         bg(&mut stdout, BG)?;
         stdout
             .queue(Print(format!(
                 "{:<dim_pad$}",
                 " — will not be shown again.",
             )))?
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(Print(" │\r\n"))?
             .queue(Print(format!("   │{}│\r\n", " ".repeat(box_w))))?
             .queue(Print("   │  "))?
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!(
                 "{:<width$}",
@@ -1526,25 +1576,25 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
                 width = box_w - 2
             )))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetForegroundColor(RED))?;
+            .queue(SetForegroundColor(red()))?;
         bg(&mut stdout, BG)?;
         stdout
             .queue(Print("│\r\n"))?
             .queue(Print(format!("   │{}│\r\n", " ".repeat(box_w))))?
             .queue(Print(format!("   └{border}┘\r\n")))?
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print("   [R] Regenerate key\r\n\r\n"))?;
         bg(&mut stdout, BG)?;
 
         // Web UI login section
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Web UI Login  "))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print("(username + password)\r\n\r\n"))?;
         bg(&mut stdout, BG)?;
 
@@ -1554,12 +1604,12 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
         if field == 2 {
             bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(RED))?
+                .queue(SetForegroundColor(red()))?
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print(format!("   > {:<14} ", "Password")))?
-                .queue(SetForegroundColor(DIM))?
+                .queue(SetForegroundColor(dim()))?
                 .queue(Print("│ "))?
-                .queue(SetForegroundColor(WHITE))?
+                .queue(SetForegroundColor(white()))?
                 .queue(Print(format!("{}\r\n", password_input.display())))?
                 .queue(SetAttribute(Attribute::Reset))?;
             bg(&mut stdout, BG)?;
@@ -1571,14 +1621,14 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
             };
             bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(DIM))?
+                .queue(SetForegroundColor(dim()))?
                 .queue(Print(format!("     {:<14} │ {masked}\r\n", "Password")))?;
         }
 
         stdout.queue(Print("\r\n"))?;
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print(
                 "   Both API key and password auth work for the web UI.\r\n",
             ))?
@@ -1698,12 +1748,12 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
 
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Shell Sandbox\r\n"))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
-        stdout.queue(SetForegroundColor(DIM))?.queue(Print(
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
             "   Space toggles, Enter edits text, Tab cycles unit\r\n\r\n",
         ))?;
         bg(&mut stdout, BG)?;
@@ -1771,18 +1821,18 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             };
             bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(RED))?
+                .queue(SetForegroundColor(red()))?
                 .queue(SetAttribute(Attribute::Bold))?
                 .queue(Print("   > Timeout: "))?
-                .queue(SetForegroundColor(WHITE))?
+                .queue(SetForegroundColor(white()))?
                 .queue(Print(format!("{display}  ")))?
-                .queue(SetForegroundColor(DIM))?
+                .queue(SetForegroundColor(dim()))?
                 .queue(Print(format!("{unit_label}  [Tab to change unit]\r\n")))?
                 .queue(SetAttribute(Attribute::Reset))?;
             bg(&mut stdout, BG)?;
         } else {
             bg(&mut stdout, BG)?;
-            stdout.queue(SetForegroundColor(DIM))?.queue(Print(format!(
+            stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
                 "     Timeout: {}  {unit_label}\r\n",
                 timeout_input.value()
             )))?;
@@ -1905,7 +1955,7 @@ fn render_toggle_row(
     if active {
         bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("   > {label}\r\n")))?
             .queue(SetAttribute(Attribute::Reset))?;
@@ -1913,12 +1963,12 @@ fn render_toggle_row(
     } else if enabled {
         bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(TEXT))?
+            .queue(SetForegroundColor(text()))?
             .queue(Print(format!("     {label}\r\n")))?;
     } else {
         bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print(format!("     {label}\r\n")))?;
     }
     Ok(())
@@ -1934,14 +1984,14 @@ fn render_text_row(
     if active {
         bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!("   > {label}\r\n")))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(stdout, BG)?;
         if editing {
             stdout
-                .queue(SetForegroundColor(WHITE))?
+                .queue(SetForegroundColor(white()))?
                 .queue(Print(format!("     {}\r\n", input.display())))?;
         } else {
             let val = if input.value().is_empty() {
@@ -1950,13 +2000,13 @@ fn render_text_row(
                 input.value()
             };
             stdout
-                .queue(SetForegroundColor(WHITE))?
+                .queue(SetForegroundColor(white()))?
                 .queue(Print(format!("     {val}\r\n")))?;
         }
     } else {
         bg(stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print(format!("     {label}\r\n")))?;
         let val = if input.value().is_empty() {
             "(none)"
@@ -2012,7 +2062,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
 
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Review your configuration\r\n\r\n"))?
             .queue(SetAttribute(Attribute::Reset))?;
@@ -2053,26 +2103,26 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
         for (label, value) in rows {
             bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(DIM))?
+                .queue(SetForegroundColor(dim()))?
                 .queue(Print(format!("   {label:<11} ")))?
-                .queue(SetForegroundColor(RULE_FG))?
+                .queue(SetForegroundColor(rule_fg()))?
                 .queue(Print("│ "))?
-                .queue(SetForegroundColor(WHITE))?
+                .queue(SetForegroundColor(white()))?
                 .queue(Print(format!("{value}\r\n")))?;
         }
 
         bg(&mut stdout, BG)?;
         stdout
             .queue(Print("\r\n"))?
-            .queue(SetForegroundColor(RULE_FG))?
+            .queue(SetForegroundColor(rule_fg()))?
             .queue(Print(format!("   {RULE}\r\n\r\n")))?
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   Write config.toml?  "))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
         stdout
-            .queue(SetForegroundColor(DIM))?
+            .queue(SetForegroundColor(dim()))?
             .queue(Print(format!("→ {}\r\n", config_path.display())))?;
         bg(&mut stdout, BG)?;
         stdout.flush()?;
@@ -2091,7 +2141,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
                         print_error(&mut stdout, &format!("Failed to write config: {e}"))?;
                         bg(&mut stdout, BG)?;
                         stdout
-                            .queue(SetForegroundColor(DIM))?
+                            .queue(SetForegroundColor(dim()))?
                             .queue(Print("   Press any key to try again…\r\n"))?;
                         stdout.flush()?;
                         event::read()?;
@@ -2141,18 +2191,18 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
         for (label, value) in summary {
             bg(&mut stdout, BG)?;
             stdout
-                .queue(SetForegroundColor(DIM))?
+                .queue(SetForegroundColor(dim()))?
                 .queue(Print(format!("   {label:<11} ")))?
-                .queue(SetForegroundColor(RULE_FG))?
+                .queue(SetForegroundColor(rule_fg()))?
                 .queue(Print("│ "))?
-                .queue(SetForegroundColor(WHITE))?
+                .queue(SetForegroundColor(white()))?
                 .queue(Print(format!("{value}\r\n")))?;
         }
 
         bg(&mut stdout, BG)?;
         stdout
             .queue(Print("\r\n"))?
-            .queue(SetForegroundColor(RULE_FG))?
+            .queue(SetForegroundColor(rule_fg()))?
             .queue(Print(format!("   {RULE}\r\n\r\n")))?;
         bg(&mut stdout, BG)?;
 
@@ -2163,22 +2213,22 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
         let warn2_w = UnicodeWidthStr::width(warn2_text);
         let dim_pad2 = box_w.saturating_sub(2 + warn2_w);
         stdout
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(Print(format!("   ┌{border}┐\r\n")))?
             .queue(Print("   │ "))?
-            .queue(SetForegroundColor(AMBER))?
+            .queue(SetForegroundColor(amber()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(warn2_text))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetForegroundColor(DIM))?;
+            .queue(SetForegroundColor(dim()))?;
         bg(&mut stdout, BG)?;
         stdout
             .queue(Print(format!("{:<dim_pad2$}", " (shown once)")))?
-            .queue(SetForegroundColor(RED))?
+            .queue(SetForegroundColor(red()))?
             .queue(Print(" │\r\n"))?
             .queue(Print(format!("   │{}│\r\n", " ".repeat(box_w))))?
             .queue(Print("   │  "))?
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print(format!(
                 "{:<width$}",
@@ -2186,7 +2236,7 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
                 width = box_w - 2
             )))?
             .queue(SetAttribute(Attribute::Reset))?
-            .queue(SetForegroundColor(RED))?;
+            .queue(SetForegroundColor(red()))?;
         bg(&mut stdout, BG)?;
         stdout
             .queue(Print("│\r\n"))?
@@ -2195,7 +2245,7 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
         bg(&mut stdout, BG)?;
 
         stdout
-            .queue(SetForegroundColor(WHITE))?
+            .queue(SetForegroundColor(white()))?
             .queue(SetAttribute(Attribute::Bold))?
             .queue(Print("   What's next?\r\n\r\n"))?
             .queue(SetAttribute(Attribute::Reset))?;
@@ -2209,19 +2259,19 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
             if i as u8 == selected {
                 bg(&mut stdout, BG)?;
                 stdout
-                    .queue(SetForegroundColor(RED))?
+                    .queue(SetForegroundColor(red()))?
                     .queue(SetAttribute(Attribute::Bold))?
                     .queue(Print(format!("   > [{}]  ", i + 1)))?
-                    .queue(SetForegroundColor(WHITE))?
+                    .queue(SetForegroundColor(white()))?
                     .queue(Print(format!("{cmd:<18} ")))?
-                    .queue(SetForegroundColor(TEXT))?
+                    .queue(SetForegroundColor(text()))?
                     .queue(Print(format!("{desc}\r\n")))?
                     .queue(SetAttribute(Attribute::Reset))?;
                 bg(&mut stdout, BG)?;
             } else {
                 bg(&mut stdout, BG)?;
                 stdout
-                    .queue(SetForegroundColor(DIM))?
+                    .queue(SetForegroundColor(dim()))?
                     .queue(Print(format!("     [{}]  {cmd:<18} {desc}\r\n", i + 1)))?;
             }
         }
@@ -2299,10 +2349,10 @@ fn render_confirm_quit(stdout: &mut io::Stdout) -> io::Result<()> {
     bg(stdout, BG)?;
     stdout.queue(Print("\r\n\r\n"))?;
     if bg_enabled() {
-        stdout.queue(SetBackgroundColor(RED_DEEP))?;
+        stdout.queue(SetBackgroundColor(red_deep()))?;
     }
     stdout
-        .queue(SetForegroundColor(WHITE))?
+        .queue(SetForegroundColor(white()))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("   Quit setup?   "))?
         .queue(SetAttribute(Attribute::Reset))?;
@@ -2310,23 +2360,23 @@ fn render_confirm_quit(stdout: &mut io::Stdout) -> io::Result<()> {
         stdout.queue(SetBackgroundColor(BG))?;
     }
     stdout
-        .queue(SetForegroundColor(TEXT))?
+        .queue(SetForegroundColor(text()))?
         .queue(Print("  Config has not been written.\r\n\r\n"))?
-        .queue(SetForegroundColor(DIM))?
+        .queue(SetForegroundColor(dim()))?
         .queue(Print("   ["))?
-        .queue(SetForegroundColor(RED))?
+        .queue(SetForegroundColor(red()))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("Enter"))?
         .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetForegroundColor(DIM))?;
+        .queue(SetForegroundColor(dim()))?;
     bg(stdout, BG)?;
     stdout
         .queue(Print("] Quit    ["))?
-        .queue(SetForegroundColor(WHITE))?
+        .queue(SetForegroundColor(white()))?
         .queue(SetAttribute(Attribute::Bold))?
         .queue(Print("Esc"))?
         .queue(SetAttribute(Attribute::Reset))?
-        .queue(SetForegroundColor(DIM))?;
+        .queue(SetForegroundColor(dim()))?;
     bg(stdout, BG)?;
     stdout.queue(Print("] Cancel\r\n"))?;
     stdout.flush()
