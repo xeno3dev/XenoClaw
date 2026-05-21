@@ -5,6 +5,4 @@ api_version = "0.1.0"
 description = "Example plugin that registers a simple greeting tool"
 author = "XenoClaw"
 
-[permissions]
-tools = ["hello_greet"]
-events = ["message_received"]
+permissions = ["filesystem", "memory"]
