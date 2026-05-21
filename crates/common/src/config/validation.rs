@@ -135,7 +135,10 @@ fn validate_llm(config: &PlatformConfig, errors: &mut Vec<ValidationError>) {
 
         let is_cli_provider = matches!(
             provider.provider_type,
-            ProviderType::ClaudeCode | ProviderType::CopilotCli
+            ProviderType::ClaudeCode
+                | ProviderType::CopilotCli
+                | ProviderType::GeminiCli
+                | ProviderType::CodexCli
         );
 
         if !is_cli_provider && provider.base_url.trim().is_empty() {
@@ -155,7 +158,11 @@ fn validate_llm(config: &PlatformConfig, errors: &mut Vec<ValidationError>) {
         // API key is required for non-Ollama, non-CLI providers
         let needs_api_key = !matches!(
             provider.provider_type,
-            ProviderType::Ollama | ProviderType::ClaudeCode | ProviderType::CopilotCli
+            ProviderType::Ollama
+                | ProviderType::ClaudeCode
+                | ProviderType::CopilotCli
+                | ProviderType::GeminiCli
+                | ProviderType::CodexCli
         );
         if needs_api_key && provider.api_key.is_none() {
             errors.push(ValidationError {

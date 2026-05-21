@@ -178,12 +178,21 @@ pub enum ProviderType {
     /// Use an API provider (Anthropic, OpenAI) for the LLM backend instead, and
     /// connect Claude Code to XenoClaw via MCP for tool access.
     ClaudeCode,
-    /// GitHub Copilot CLI (uses `github-copilot` command — requires Copilot subscription)
+    /// GitHub Copilot CLI (uses `gh copilot` — requires Copilot subscription)
     ///
     /// **Deprecated**: CLI providers cannot participate in the tool execution loop.
-    /// Use an API provider (Anthropic, OpenAI) for the LLM backend instead, and
-    /// connect Copilot to XenoClaw via MCP for tool access.
+    /// Use an API provider for the LLM backend and connect Copilot via MCP instead.
     CopilotCli,
+    /// Google Gemini CLI (uses `gemini` command — requires Google account sign-in)
+    ///
+    /// **Deprecated**: CLI providers cannot participate in the tool execution loop.
+    /// Use an API provider for the LLM backend and connect Gemini CLI via MCP instead.
+    GeminiCli,
+    /// OpenAI Codex CLI (uses `codex` command — requires OpenAI account / API key)
+    ///
+    /// **Deprecated**: CLI providers cannot participate in the tool execution loop.
+    /// Use an API provider for the LLM backend and connect Codex CLI via MCP instead.
+    CodexCli,
 }
 
 impl fmt::Display for ProviderType {
@@ -194,6 +203,8 @@ impl fmt::Display for ProviderType {
             ProviderType::Ollama => write!(f, "ollama"),
             ProviderType::ClaudeCode => write!(f, "claude_code"),
             ProviderType::CopilotCli => write!(f, "copilot_cli"),
+            ProviderType::GeminiCli => write!(f, "gemini_cli"),
+            ProviderType::CodexCli => write!(f, "codex_cli"),
         }
     }
 }
@@ -212,6 +223,8 @@ impl FromStr for ProviderType {
             "copilot_cli" | "copilotcli" | "copilot" | "github_copilot" => {
                 Ok(ProviderType::CopilotCli)
             }
+            "gemini_cli" | "geminicli" | "gemini_cli_provider" => Ok(ProviderType::GeminiCli),
+            "codex_cli" | "codexcli" | "openai_codex" => Ok(ProviderType::CodexCli),
             _ => Err(format!("unknown provider type: {s}")),
         }
     }
