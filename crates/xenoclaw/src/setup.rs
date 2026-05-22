@@ -2000,6 +2000,36 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
     }
 }
 
+/// Pick a web UI directory to bake into the generated config.
+///
+/// `common::config::default_web_dir()` falls back to the literal `./web/dist`
+/// when `XENOCLAW_WEB_DIR` isn't set — which is true when the wizard is run
+/// interactively from a shell, even though the systemd unit later sets the
+/// env var. Writing that relative path into the TOML clobbers the install
+/// script's correct value and breaks `web.dir` lookup at service start.
+///
+/// Prefer, in order:
+///   1. `$XENOCLAW_WEB_DIR` if set
+///   2. `/opt/xenoclaw/web` if it exists (the install.sh layout)
+///   3. `./web/dist` canonicalized if it exists (dev checkout)
+///   4. `/opt/xenoclaw/web` as the most useful default for VPS users
+fn resolve_wizard_web_dir() -> PathBuf {
+    if let Some(env) = std::env::var_os("XENOCLAW_WEB_DIR") {
+        return PathBuf::from(env);
+    }
+    let installed = PathBuf::from("/opt/xenoclaw/web");
+    if installed.exists() {
+        return installed;
+    }
+    let dev = PathBuf::from("./web/dist");
+    if dev.exists() {
+        if let Ok(abs) = std::fs::canonicalize(&dev) {
+            return abs;
+        }
+    }
+    installed
+}
+
 /// Hash a password using bcrypt.
 fn hash_password(password: &str) -> String {
     bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap_or_else(|_| {
@@ -2954,7 +2984,7 @@ port = {port}
         model = state.model,
         host = state.host,
         port = state.port,
-        web_dir = common::config::default_web_dir().display(),
+        web_dir = resolve_wizard_web_dir().display(),
         data_dir = data_dir.display(),
         log_dir = log_dir.display(),
         admin_username = state.admin_username,
