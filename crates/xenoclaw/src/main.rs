@@ -119,8 +119,23 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Returns ~/.xenoclaw/config.toml
+/// Returns the config path to use when `--config` is not given.
+///
+/// Preference order:
+///   1. $XENOCLAW_CONFIG_PATH (set by the systemd service unit).
+///   2. /etc/xenoclaw/config.toml when it exists — system install path that
+///      install.sh writes to. Without this, `xenoclaw -s` would default to
+///      ~/.xenoclaw/config.toml and silently diverge from the file the
+///      systemd service actually reads, leaving login broken.
+///   3. ~/.xenoclaw/config.toml — local dev / unprivileged use.
 fn default_config_path() -> PathBuf {
+    if let Some(p) = std::env::var_os("XENOCLAW_CONFIG_PATH") {
+        return PathBuf::from(p);
+    }
+    let system = PathBuf::from("/etc/xenoclaw/config.toml");
+    if system.exists() {
+        return system;
+    }
     xenoclaw_home().join("config.toml")
 }
 
@@ -266,6 +281,28 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     } else {
         Vec::new()
     };
+
+    // Loud warning when no login method is configured — every web/API login
+    // attempt will return 401 ("Invalid …") until creds are set. This is the
+    // failure mode you'd hit if install.sh dropped the example config but the
+    // wizard wrote creds to a different file (e.g. ~/.xenoclaw/config.toml).
+    let pw_set = !config.security.admin_password_hash.is_empty();
+    let key_set = !config.security.admin_key_hash.is_empty();
+    if !pw_set && !key_set {
+        tracing::warn!(
+            config_path = %config_path.display(),
+            "No admin credentials in config: admin_password_hash and admin_key_hash are both empty. \
+             Web UI and API logins will be rejected. Run `xenoclaw -s --config {}` to configure.",
+            config_path.display()
+        );
+    } else {
+        info!(
+            password_login = pw_set,
+            api_key_login = key_set,
+            admin_username = %config.security.admin_username,
+            "Admin credentials loaded"
+        );
+    }
     let rate_limit_config = RateLimitConfig {
         default_limit: config.api.rate_limit_per_minute,
         ..RateLimitConfig::default()

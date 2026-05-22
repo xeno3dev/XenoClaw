@@ -798,6 +798,31 @@ enum StepOutcome {
 
 /// Run the first-run setup wizard.
 pub async fn run_wizard(config_path: &Path) -> Result<()> {
+    // Warn loudly when the wizard is about to write to a path the installed
+    // systemd service will not read. The default with the systemd unit is
+    // /etc/xenoclaw/config.toml — if a user runs `xenoclaw -s` unprivileged,
+    // the wizard would silently update ~/.xenoclaw/config.toml instead, and
+    // every login would keep failing with "Invalid …" until they noticed.
+    let system_config = Path::new("/etc/xenoclaw/config.toml");
+    if system_config.exists() && config_path != system_config {
+        eprintln!(
+            "Warning: a system install at {} exists, but this wizard would write to {}.\n\
+             The xenoclaw-agent service reads the system config, so updates here will be ignored.\n\
+             Re-run with `sudo xenoclaw -s --config /etc/xenoclaw/config.toml` to update the system\n\
+             config, or pass --config <path> to confirm you really mean to write somewhere else.\n",
+            system_config.display(),
+            config_path.display(),
+        );
+        eprint!("Continue writing to {}? [y/N] ", config_path.display());
+        use std::io::BufRead;
+        let stdin = std::io::stdin();
+        let mut answer = String::new();
+        stdin.lock().read_line(&mut answer)?;
+        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            return Ok(());
+        }
+    }
+
     // Terminal size check — accept down to 60×20, but the experience is better at 80×24+.
     let (cols, rows) = terminal::size()?;
     if cols < 60 || rows < 20 {
