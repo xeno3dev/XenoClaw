@@ -68,8 +68,10 @@ async fn login(
     let password_auth = PasswordAuthenticator::new();
     match password_auth.verify_password(&body.password, &state.admin_password_hash) {
         Ok(()) => {
-            // Generate a session token
+            // Generate a session token and persist it so the auth middleware
+            // can validate it on subsequent requests.
             let token = state.authenticator.generate_key(64);
+            state.login_tokens.write().await.insert(token.clone());
             Ok(Json(LoginResponse { token }))
         }
         Err(_) => Err((

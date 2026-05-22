@@ -4,7 +4,7 @@
 //! API key authenticator), WebSocket state, session tracking, and platform
 //! version information.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -17,7 +17,7 @@ use security_layer::rate_limit::{RateLimitConfig, RateLimiter};
 
 use common::config::SessionSource;
 use common::models::{AgentMode, ApiKey};
-use common::types::SessionId;
+use common::types::{ApiKeyId, SessionId};
 
 use crate::routes::ws::WsState;
 
@@ -39,6 +39,9 @@ pub struct SessionInfo {
 /// In-memory session store, periodically persisted to SQLite.
 pub type SessionStore = Arc<RwLock<HashMap<SessionId, SessionInfo>>>;
 
+/// Tokens issued by the password-login endpoint, valid until server restart.
+pub type LoginTokenStore = Arc<RwLock<HashSet<String>>>;
+
 /// Shared application state available to all route handlers.
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -58,6 +61,11 @@ pub struct AppState {
     pub admin_password_hash: String,
     /// In-memory session store for active sessions.
     pub sessions: SessionStore,
+    /// Tokens issued by the /auth/login endpoint (password-based login).
+    pub login_tokens: LoginTokenStore,
+    /// A stable ApiKeyId used to represent admin password-login sessions in the
+    /// auth middleware (needed for the AuthenticatedKey extension).
+    pub admin_session_key_id: ApiKeyId,
     /// Optional SQLite pool for session persistence.
     pub db_pool: Option<SqlitePool>,
 }
@@ -74,6 +82,8 @@ impl AppState {
             admin_username: "admin".to_string(),
             admin_password_hash: String::new(),
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            login_tokens: Arc::new(RwLock::new(HashSet::new())),
+            admin_session_key_id: ApiKeyId::new(),
             db_pool: None,
         }
     }
@@ -94,6 +104,8 @@ impl AppState {
             admin_username,
             admin_password_hash,
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            login_tokens: Arc::new(RwLock::new(HashSet::new())),
+            admin_session_key_id: ApiKeyId::new(),
             db_pool: None,
         }
     }
