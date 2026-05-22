@@ -310,12 +310,28 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     });
     supervisor.set_state_restore_fn(restore_fn).await;
 
+    // Serve the frontend from the API port so relative /api/v1/* URLs resolve on the same origin.
+    let router = if config.web.enabled && config.web.dir.exists() {
+        let web_dir = config.web.dir.clone();
+        let index = web_dir.join("index.html");
+        info!(dir = %web_dir.display(), "Web UI served from API port");
+        router.fallback_service(ServeDir::new(&web_dir).fallback(ServeFile::new(index)))
+    } else {
+        if config.web.enabled {
+            tracing::warn!(
+                dir = %config.web.dir.display(),
+                "Web UI dir not found — run 'npm run build' in web/ or set XENOCLAW_WEB_DIR"
+            );
+        }
+        router
+    };
+
     // Spawn subsystems
     let bind_addr = format!("{}:{}", config.api.host, config.api.port);
     let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
         .context(format!("Failed to bind to {bind_addr}"))?;
-    info!(address = %bind_addr, "API server listening");
+    info!(address = %bind_addr, "API + Web UI server listening");
 
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, router).await {
@@ -323,29 +339,25 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         }
     });
 
-    // Frontend static file server — only start if enabled and the dir exists.
-    if config.web.enabled {
+    // Optional mirror: also serve static files on [web] port when it differs from the API port.
+    if config.web.enabled && config.web.dir.exists() && config.web.port != config.api.port {
         let web_dir = config.web.dir.clone();
-        if web_dir.exists() {
-            let web_bind = format!("{}:{}", config.web.host, config.web.port);
-            match tokio::net::TcpListener::bind(&web_bind).await {
-                Ok(web_listener) => {
-                    info!(address = %web_bind, dir = %web_dir.display(), "Web UI server listening");
-                    let index = web_dir.join("index.html");
-                    let web_router = axum::Router::new()
-                        .fallback_service(ServeDir::new(&web_dir).fallback(ServeFile::new(index)));
-                    tokio::spawn(async move {
-                        if let Err(e) = axum::serve(web_listener, web_router).await {
-                            error!(error = %e, "Web UI server error");
-                        }
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!(address = %web_bind, error = %e, "Failed to bind web UI server");
-                }
+        let web_bind = format!("{}:{}", config.web.host, config.web.port);
+        match tokio::net::TcpListener::bind(&web_bind).await {
+            Ok(web_listener) => {
+                info!(address = %web_bind, "Static-only Web UI mirror listening");
+                let index = web_dir.join("index.html");
+                let web_router = axum::Router::new()
+                    .fallback_service(ServeDir::new(&web_dir).fallback(ServeFile::new(index)));
+                tokio::spawn(async move {
+                    if let Err(e) = axum::serve(web_listener, web_router).await {
+                        error!(error = %e, "Web UI mirror server error");
+                    }
+                });
             }
-        } else {
-            tracing::warn!(dir = %web_dir.display(), "Web UI dir not found — run 'npm run build' in web/ or set XENOCLAW_WEB_DIR");
+            Err(e) => {
+                tracing::warn!(address = %web_bind, error = %e, "Failed to bind static Web UI mirror");
+            }
         }
     }
 
