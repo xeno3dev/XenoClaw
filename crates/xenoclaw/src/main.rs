@@ -5,6 +5,7 @@
 //! - `setup`: Run the first-run configuration wizard
 //! - `reset-key`: Generate a new admin API key
 
+mod admin;
 mod cli_health;
 mod mcp_client;
 mod mcp_server;
@@ -64,8 +65,28 @@ enum Command {
     Serve,
     /// Run the first-run setup wizard
     Setup,
-    /// Generate and display a new admin API key
+    /// Generate and display a new admin API key (does not modify config)
     ResetKey,
+    /// Set the admin password directly in the config (bypasses the TUI wizard)
+    Passwd {
+        /// Username to set alongside the new password (optional).
+        #[arg(long)]
+        user: Option<String>,
+        /// Password to set. If omitted, prompts twice on the TTY.
+        #[arg(long)]
+        password: Option<String>,
+    },
+    /// Rotate the admin API key in the config and print the new raw key.
+    SetApiKey,
+    /// Show the admin identity the running service would use.
+    ShowAdmin,
+    /// Locally verify whether a username/password would pass the API's bcrypt check.
+    VerifyLogin {
+        #[arg(long)]
+        user: String,
+        #[arg(long)]
+        password: String,
+    },
     /// Run as an MCP server over stdio (for Claude Code / Copilot integration)
     Mcp,
     /// Open an interactive chat session with a running XenoClaw agent.
@@ -109,6 +130,14 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Command::ResetKey => reset_key(),
+        Command::Passwd { user, password } => {
+            admin::set_password(&config_path, user.as_deref(), password.as_deref())
+        }
+        Command::SetApiKey => admin::set_api_key(&config_path),
+        Command::ShowAdmin => admin::show_admin(&config_path),
+        Command::VerifyLogin { user, password } => {
+            admin::verify_login(&config_path, &user, &password)
+        }
         Command::Mcp => run_mcp_server(config_path).await,
         Command::Tui {
             inline,
