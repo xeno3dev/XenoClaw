@@ -1,0 +1,127 @@
+.label { text-align: center; margin-bottom: 16px; }
+
+.title {
+  font-size: clamp(26px, 4vw, 38px);
+  font-weight: 700;
+  color: var(--white);
+  text-align: center;
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
+}
+
+.sub {
+  font-size: 17px;
+  color: var(--dim);
+  text-align: center;
+  max-width: 500px;
+  margin: 0 auto 56px;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+
+.step {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+.step:last-child { border-bottom: none; }
+.step:hover { background: var(--bg2); }
+
+.stepNum {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rule);
+  font-family: var(--font-mono);
+  padding: 24px;
+  min-width: 72px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  padding-top: 26px;
+}
+
+.stepBody {
+  padding: 20px 28px 24px;
+  flex: 1;
+  min-width: 0;
+}
+
+.stepTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--white);
+  margin: 0 0 12px;
+}
+
+.code {
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* Deploy section */
+.deploy { margin-top: 32px; }
+
+.deployTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.deployGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .deployGrid { grid-template-columns: 1fr; }
+}
+
+.deployCard {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.deployCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+}
+
+.deployCardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.deployCode {
+  padding: 16px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre;
+  overflow-x: auto;
+}

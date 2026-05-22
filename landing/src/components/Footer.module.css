@@ -1,0 +1,61 @@
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 40px 0;
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.logoMark {
+  font-size: 18px;
+  color: var(--red);
+}
+
+.logoText {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--white);
+}
+
+.license {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rule);
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.links {
+  display: flex;
+  gap: 24px;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.links a:hover { color: var(--white); }
+
+.copy {
+  font-size: 13px;
+  color: var(--rule);
+  width: 100%;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .inner { flex-direction: column; align-items: flex-start; }
+  .copy { text-align: left; }
+}
