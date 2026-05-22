@@ -58,7 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithApiKey = useCallback(async (apiKey: string): Promise<boolean> => {
     try {
-      // Validate the API key by hitting a protected endpoint
+      // Validate by hitting a protected endpoint. /status sits behind the auth
+      // middleware, so a 401 here means the key is bad.
       const res = await fetch('/api/v1/status', {
         headers: { 'Authorization': `Bearer ${apiKey}` },
       });
@@ -75,13 +76,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ token: null, username: null, isAuthenticated: false });
   }, []);
 
-  // Verify stored token is still valid on mount
+  // Verify stored token is still valid on mount. /api/v1/status is behind the
+  // auth middleware, unlike /health which is unauthenticated — so this actually
+  // detects stale or revoked tokens (e.g. after a server restart wipes the
+  // in-memory login_tokens set).
   useEffect(() => {
     if (state.token) {
-      fetch('/api/v1/health', {
+      fetch('/api/v1/status', {
         headers: { 'Authorization': `Bearer ${state.token}` },
       }).then(res => {
-        if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
           logout();
         }
       }).catch(() => {

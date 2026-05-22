@@ -419,6 +419,12 @@ struct WizardState {
     allow_pipes: bool,
     tool_timeout: String,
     timeout_unit: TimeoutUnit,
+    /// Max file size (MB) for the coding agent's file ops. Default 10.
+    max_file_size_mb: String,
+    /// Max concurrent shell processes. Default 5.
+    max_concurrent_shells: String,
+    /// Number of file operations to keep in the undo history. Default 50.
+    undo_history_size: String,
     /// CLI providers only: false when the CLI is not installed/logged-in
     /// and the user chose to skip — disables "Start server" on the done screen.
     cli_provider_ready: bool,
@@ -475,6 +481,9 @@ impl Default for WizardState {
             allow_pipes: false,
             tool_timeout: "30".to_string(),
             timeout_unit: TimeoutUnit::Seconds,
+            max_file_size_mb: "10".to_string(),
+            max_concurrent_shells: "5".to_string(),
+            undo_history_size: "50".to_string(),
             cli_provider_ready: true,
             mcp_registered: false,
         }
@@ -1983,6 +1992,9 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
     let mut custom_input = TextInput::new(&state.custom_commands);
     let mut exclude_input = TextInput::new(&state.excluded_commands);
     let mut timeout_input = TextInput::new(&state.tool_timeout);
+    let mut max_file_size_input = TextInput::new(&state.max_file_size_mb);
+    let mut max_concurrent_shells_input = TextInput::new(&state.max_concurrent_shells);
+    let mut undo_history_input = TextInput::new(&state.undo_history_size);
     let mut editing: Option<usize> = None;
 
     loop {
@@ -1992,7 +2004,10 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
         let row_custom = cmd_count + 2;
         let row_exclude = cmd_count + 3;
         let row_timeout = cmd_count + 4;
-        let total_rows = cmd_count + 5;
+        let row_max_file_size = cmd_count + 5;
+        let row_max_concurrent_shells = cmd_count + 6;
+        let row_undo_history = cmd_count + 7;
+        let total_rows = cmd_count + 8;
 
         let unit_label = match state.timeout_unit {
             TimeoutUnit::Seconds => "seconds",
@@ -2096,6 +2111,43 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             )))?;
         }
 
+        stdout.queue(Print("\r\n"))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print("   Coding limits\r\n"))?;
+        bg(&mut stdout, BG)?;
+
+        // Max file size (MB) — for the coding agent's file read/write ops
+        render_numeric_row(
+            &mut stdout,
+            selected == row_max_file_size,
+            editing == Some(row_max_file_size),
+            "Max file size",
+            &max_file_size_input,
+            "MB",
+        )?;
+
+        // Max concurrent shells — caps how many shell commands run at once
+        render_numeric_row(
+            &mut stdout,
+            selected == row_max_concurrent_shells,
+            editing == Some(row_max_concurrent_shells),
+            "Max concurrent shells",
+            &max_concurrent_shells_input,
+            "processes",
+        )?;
+
+        // Undo history size — how many file ops can be reverted
+        render_numeric_row(
+            &mut stdout,
+            selected == row_undo_history,
+            editing == Some(row_undo_history),
+            "Undo history",
+            &undo_history_input,
+            "entries",
+        )?;
+
         stdout.flush()?;
         let footer = if editing.is_some() {
             "  [←→] Cursor  [Enter/Tab] Done  [Esc] Cancel"
@@ -2111,10 +2163,20 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                     &mut custom_input
                 } else if edit_row == row_exclude {
                     &mut exclude_input
-                } else {
+                } else if edit_row == row_timeout {
                     &mut timeout_input
+                } else if edit_row == row_max_file_size {
+                    &mut max_file_size_input
+                } else if edit_row == row_max_concurrent_shells {
+                    &mut max_concurrent_shells_input
+                } else {
+                    &mut undo_history_input
                 };
                 let is_timeout = edit_row == row_timeout;
+                let is_numeric = is_timeout
+                    || edit_row == row_max_file_size
+                    || edit_row == row_max_concurrent_shells
+                    || edit_row == row_undo_history;
 
                 match key.code {
                     KeyCode::Left => input.move_left(),
@@ -2140,7 +2202,7 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                         editing = None;
                     }
                     KeyCode::Char(c) => {
-                        if is_timeout {
+                        if is_numeric {
                             if c.is_ascii_digit() {
                                 input.insert(c);
                             }
@@ -2174,13 +2236,22 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                     }
                 }
                 KeyCode::Enter => {
-                    if selected == row_custom || selected == row_exclude || selected == row_timeout
+                    if selected == row_custom
+                        || selected == row_exclude
+                        || selected == row_timeout
+                        || selected == row_max_file_size
+                        || selected == row_max_concurrent_shells
+                        || selected == row_undo_history
                     {
                         editing = Some(selected);
                     } else {
                         state.custom_commands = custom_input.value().to_string();
                         state.excluded_commands = exclude_input.value().to_string();
                         state.tool_timeout = timeout_input.value().to_string();
+                        state.max_file_size_mb = max_file_size_input.value().to_string();
+                        state.max_concurrent_shells =
+                            max_concurrent_shells_input.value().to_string();
+                        state.undo_history_size = undo_history_input.value().to_string();
                         return Ok(StepOutcome::Next);
                     }
                 }
@@ -2199,6 +2270,43 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             }
         }
     }
+}
+
+/// Render a numeric field with a trailing unit label. Active when selected;
+/// goes white-on-active and shows a cursor block while editing.
+fn render_numeric_row(
+    stdout: &mut io::Stdout,
+    active: bool,
+    editing: bool,
+    label: &str,
+    input: &TextInput,
+    unit: &str,
+) -> io::Result<()> {
+    if active || editing {
+        let display = if editing {
+            input.display()
+        } else {
+            input.value().to_string()
+        };
+        bg(stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(red()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!("   > {label}: ")))?
+            .queue(SetForegroundColor(white()))?
+            .queue(Print(format!("{display}  ")))?
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(format!("{unit}\r\n")))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
+    } else {
+        bg(stdout, BG)?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
+            "     {label}: {}  {unit}\r\n",
+            input.value()
+        )))?;
+    }
+    Ok(())
 }
 
 /// Render a checkbox-style toggle row. Active → red arrow + white text.
@@ -2356,6 +2464,15 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
             ("Web UI", format!("{}:{}", state.host, state.web_port)),
             ("Auth", auth_str.to_string()),
             ("Sandbox", sandbox_str.clone()),
+            (
+                "Coding",
+                format!(
+                    "file ≤ {} MB, ≤ {} shells, undo {}",
+                    state.max_file_size_mb,
+                    state.max_concurrent_shells,
+                    state.undo_history_size,
+                ),
+            ),
         ];
 
         for (label, value) in rows {
@@ -2841,6 +2958,9 @@ port = {port}
             }
         }
         let blocklist = blocklist_items.join(", ");
+        let max_file_size_mb: u32 = state.max_file_size_mb.parse().unwrap_or(10);
+        let max_concurrent_shells: u8 = state.max_concurrent_shells.parse().unwrap_or(5);
+        let undo_history_size: usize = state.undo_history_size.parse().unwrap_or(50);
         format!(
             r#"
 [coding]
@@ -2848,15 +2968,18 @@ workspace_dirs       = ["{workspace}"]
 repository_dirs      = ["{workspace}"]
 command_allowlist    = [{allowlist}]
 command_blocklist    = [{blocklist}]
-max_file_size_mb     = 10
-max_concurrent_shells = 5
+max_file_size_mb     = {max_file_size_mb}
+max_concurrent_shells = {max_concurrent_shells}
 shell_timeout_seconds = {timeout}
-undo_history_size    = 50
+undo_history_size    = {undo_history_size}
 "#,
             workspace = state.workspace_dir,
             allowlist = command_allowlist,
             blocklist = blocklist,
             timeout = timeout,
+            max_file_size_mb = max_file_size_mb,
+            max_concurrent_shells = max_concurrent_shells,
+            undo_history_size = undo_history_size,
         )
     };
 
