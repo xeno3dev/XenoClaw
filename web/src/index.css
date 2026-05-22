@@ -1,13 +1,28 @@
-/* CSS Custom Properties for theming */
+/* CSS Custom Properties — XenoClaw brand palette (mirrors TUI/setup theme) */
 :root {
-  --color-bg: #0f0f1a;
-  --color-surface: #1a1a2e;
-  --color-border: #2a2a4a;
-  --color-hover: #2a2a4a;
-  --color-active: #3a3a5a;
-  --color-primary: #6c63ff;
-  --color-text: #e0e0e0;
-  --color-text-secondary: #a0a0b0;
+  /* Backgrounds */
+  --color-bg: #121212;       /* TUI BG — charcoal */
+  --color-surface: #1c1c1c;  /* slightly raised surface */
+  --color-hover: #252525;    /* hover state */
+  --color-active: #2a1212;   /* active/selected — dark red tint (TUI RED_DEEP) */
+
+  /* Borders */
+  --color-border: #4b4b50;   /* TUI RULE_FG */
+
+  /* Brand */
+  --color-primary: #ff3838;        /* TUI RED */
+  --color-primary-bright: #ff6060; /* TUI RED_BRIGHT */
+  --color-primary-deep: #781414;   /* TUI RED_DEEP */
+
+  /* Text */
+  --color-text: #f0f0f0;           /* TUI WHITE */
+  --color-text-secondary: #c8c8c8; /* TUI TEXT */
+  --color-dim: #828287;            /* TUI DIM */
+
+  /* Semantic */
+  --color-success: #50dc64; /* TUI GREEN */
+  --color-warning: #ffb000; /* TUI AMBER */
+  --color-error: #ff3838;   /* TUI RED */
 }
 
 /* Reset */

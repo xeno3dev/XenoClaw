@@ -20,10 +20,10 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(255, 56, 56, 0.1);
+  border: 1px solid rgba(255, 56, 56, 0.3);
   border-radius: 8px;
-  color: #fca5a5;
+  color: var(--color-primary-bright);
   font-size: 0.875rem;
 }
 
@@ -116,18 +116,18 @@
 }
 
 .status_idle {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
+  background: rgba(80, 220, 100, 0.15);
+  color: var(--color-success);
 }
 
 .status_working {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  background: rgba(255, 176, 0, 0.15);
+  color: var(--color-warning);
 }
 
 .status_error {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background: rgba(255, 56, 56, 0.15);
+  color: var(--color-error);
 }
 
 /* Resource Usage */
@@ -200,18 +200,18 @@
 }
 
 .dotHealthy {
-  background: #4ade80;
-  box-shadow: 0 0 4px rgba(74, 222, 128, 0.4);
+  background: var(--color-success);
+  box-shadow: 0 0 4px rgba(80, 220, 100, 0.4);
 }
 
 .dotDegraded {
-  background: #f59e0b;
-  box-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+  background: var(--color-warning);
+  box-shadow: 0 0 4px rgba(255, 176, 0, 0.4);
 }
 
 .dotUnavailable {
-  background: #ef4444;
-  box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+  background: var(--color-error);
+  box-shadow: 0 0 4px rgba(255, 56, 56, 0.4);
 }
 
 .serviceName {
@@ -283,18 +283,18 @@
 }
 
 .taskStatus_active {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
+  background: rgba(80, 220, 100, 0.15);
+  color: var(--color-success);
 }
 
 .taskStatus_paused {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  background: rgba(255, 176, 0, 0.15);
+  color: var(--color-warning);
 }
 
 .taskStatus_failed {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background: rgba(255, 56, 56, 0.15);
+  color: var(--color-error);
 }
 
 /* Recent Activity */
@@ -330,19 +330,19 @@
 }
 
 .activity_task_completed {
-  background: #4ade80;
+  background: var(--color-success);
 }
 
 .activity_task_failed {
-  background: #ef4444;
+  background: var(--color-error);
 }
 
 .activity_status_change {
-  background: #60a5fa;
+  background: var(--color-warning);
 }
 
 .activity_error {
-  background: #f87171;
+  background: var(--color-error);
 }
 
 .activity_info {
