@@ -264,6 +264,10 @@ pub struct SecurityConfig {
     /// Bcrypt hash of the admin password. Empty = password login disabled.
     #[serde(default)]
     pub admin_password_hash: String,
+
+    /// SHA-256 hash of the admin API key. Empty = API key login disabled.
+    #[serde(default)]
+    pub admin_key_hash: String,
 }
 
 impl Default for SecurityConfig {
@@ -277,6 +281,7 @@ impl Default for SecurityConfig {
             lockout_minutes: default_lockout_minutes(),
             admin_username: default_admin_username(),
             admin_password_hash: String::new(),
+            admin_key_hash: String::new(),
         }
     }
 }

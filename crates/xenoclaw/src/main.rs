@@ -26,7 +26,9 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use agent_core::{AgentCore, AgentCoreConfig, AgentStatus, EventBus, ToolRegistry};
 use api_server::{build_router, AppState};
+use chrono::Utc;
 use common::config::{load_config, signal::spawn_reload_handler, ConfigError};
+use common::{models::ApiKey, types::ApiKeyId};
 use llm_router::LlmRouter;
 use plugin_system::PluginManager;
 use process_supervisor::{
@@ -251,8 +253,19 @@ async fn serve(config_path: PathBuf) -> Result<()> {
 
     let agent_core = Arc::new(AgentCore::new(llm_router, tool_registry, agent_config));
 
-    // API state
-    let api_keys = Vec::new(); // Loaded from config/DB in production
+    // API state — bootstrap the admin API key from config if one was generated.
+    let api_keys = if !config.security.admin_key_hash.is_empty() {
+        vec![ApiKey {
+            id: ApiKeyId::new(),
+            key_hash: config.security.admin_key_hash.clone(),
+            name: "admin".to_string(),
+            rate_limit: config.api.rate_limit_per_minute,
+            created_at: Utc::now(),
+            last_used: None,
+        }]
+    } else {
+        Vec::new()
+    };
     let rate_limit_config = RateLimitConfig {
         default_limit: config.api.rate_limit_per_minute,
         ..RateLimitConfig::default()

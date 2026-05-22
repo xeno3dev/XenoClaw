@@ -2783,6 +2783,7 @@ max_failed_attempts     = 5
 lockout_minutes         = 15
 admin_username          = "{admin_username}"
 admin_password_hash     = "{admin_password_hash}"
+admin_key_hash          = "{admin_key_hash}"
 
 [security.resource_limits]
 max_memory_mb    = 512
@@ -2817,6 +2818,7 @@ port = {port}
         log_dir = log_dir.display(),
         admin_username = state.admin_username,
         admin_password_hash = state.admin_password_hash,
+        admin_key_hash = state.admin_key_hash,
     );
 
     let coding_section = {
