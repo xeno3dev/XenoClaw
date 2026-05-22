@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import { useWebSocket, type ConnectionStatus, type WebSocketMessage } from '../hooks/useWebSocket';
 import styles from './Chat.module.css';
 
@@ -22,14 +23,12 @@ interface ChatMessage {
 // Session ID — in a real app this would come from auth/routing
 const SESSION_ID = 'default-session';
 
-// Auth token — in a real app this would come from auth context
-const AUTH_TOKEN = localStorage.getItem('xenoclaw_token') || 'dev-token';
-
 /**
  * Chat page — real-time chat interface with WebSocket streaming.
  * Implements Requirements 7.1, 7.4, 7.5, 16.4
  */
 export function Chat() {
+  const { token } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
@@ -174,7 +173,7 @@ export function Chat() {
   }, []);
 
   const { status, send } = useWebSocket({
-    token: AUTH_TOKEN,
+    token: token ?? '',
     endpoint: `/api/v1/ws/chat/${SESSION_ID}`,
     onMessage: handleWsMessage,
   });

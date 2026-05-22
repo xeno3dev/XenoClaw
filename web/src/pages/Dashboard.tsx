@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import { useInterval } from '../hooks/useInterval';
 import { useWebSocket } from '../hooks/useWebSocket';
 import type {
@@ -72,6 +73,7 @@ function statusDotClass(status: ServiceStatus): string {
  * Data is refreshed every ≤5 seconds via REST polling and WebSocket events.
  */
 export function Dashboard() {
+  const { apiFetch, token } = useAuth();
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTask[]>([]);
@@ -81,7 +83,7 @@ export function Dashboard() {
   /** Fetch status data from the REST API */
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/status`);
+      const res = await apiFetch(`${API_BASE}/status`);
       if (!res.ok) {
         throw new Error(`Status API returned ${res.status}`);
       }
@@ -93,12 +95,12 @@ export function Dashboard() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch status');
     }
-  }, []);
+  }, [apiFetch]);
 
   /** Fetch scheduled tasks from the REST API */
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/tasks`);
+      const res = await apiFetch(`${API_BASE}/tasks`);
       if (!res.ok) {
         throw new Error(`Tasks API returned ${res.status}`);
       }
@@ -107,7 +109,7 @@ export function Dashboard() {
     } catch {
       // Non-critical — status fetch error already shown
     }
-  }, []);
+  }, [apiFetch]);
 
   /** Combined fetch for polling */
   const pollData = useCallback(() => {
@@ -144,9 +146,10 @@ export function Dashboard() {
     }
   }, []);
 
-  // Connect to the events WebSocket for real-time updates
+  // Connect to the events WebSocket for real-time updates. The server
+  // expects the same Bearer token via the ?token= query param.
   useWebSocket({
-    token: '', // Auth handled by cookie/session in production
+    token: token ?? '',
     endpoint: '/api/v1/ws/events',
     onMessage: handleWsMessage,
     autoConnect: true,

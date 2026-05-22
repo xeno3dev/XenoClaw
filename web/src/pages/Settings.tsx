@@ -9,20 +9,15 @@ interface ConfigData {
 }
 
 export function Settings() {
-  const { token } = useAuth();
+  const { apiFetch } = useAuth();
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [agentMode, setAgentMode] = useState<'general' | 'coding'>('general');
 
-  const headers = useCallback(() => ({
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }), [token]);
-
   const fetchConfig = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/config`, { headers: headers() });
+      const res = await apiFetch(`${API_BASE}/config`);
       if (!res.ok) throw new Error(`Failed to fetch config (${res.status})`);
       const data = await res.json() as ConfigData;
       setConfig(data);
@@ -37,7 +32,7 @@ export function Settings() {
     } finally {
       setLoading(false);
     }
-  }, [headers]);
+  }, [apiFetch]);
 
   useEffect(() => {
     void fetchConfig();

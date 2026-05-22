@@ -16,7 +16,7 @@ interface Task {
 }
 
 export function Tasks() {
-  const { token } = useAuth();
+  const { apiFetch } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,14 +28,9 @@ export function Tasks() {
   const [formExpression, setFormExpression] = useState('');
   const [formCommand, setFormCommand] = useState('');
 
-  const headers = useCallback(() => ({
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }), [token]);
-
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/tasks`, { headers: headers() });
+      const res = await apiFetch(`${API_BASE}/tasks`);
       if (!res.ok) throw new Error(`Failed to fetch tasks (${res.status})`);
       const data = await res.json() as { tasks: Task[] };
       setTasks(data.tasks ?? []);
@@ -45,7 +40,7 @@ export function Tasks() {
     } finally {
       setLoading(false);
     }
-  }, [headers]);
+  }, [apiFetch]);
 
   useEffect(() => {
     void fetchTasks();
@@ -56,9 +51,9 @@ export function Tasks() {
     if (!formName.trim() || !formExpression.trim() || !formCommand.trim()) return;
 
     try {
-      const res = await fetch(`${API_BASE}/tasks`, {
+      const res = await apiFetch(`${API_BASE}/tasks`, {
         method: 'POST',
-        headers: headers(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: formName.trim(),
           trigger_type: formTrigger,
@@ -75,20 +70,17 @@ export function Tasks() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create task');
     }
-  }, [headers, fetchTasks, formName, formTrigger, formExpression, formCommand]);
+  }, [apiFetch, fetchTasks, formName, formTrigger, formExpression, formCommand]);
 
   const deleteTask = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`${API_BASE}/tasks/${id}`, {
-        method: 'DELETE',
-        headers: headers(),
-      });
+      const res = await apiFetch(`${API_BASE}/tasks/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`Failed to delete task (${res.status})`);
       setTasks((prev) => prev.filter((t) => t.id !== id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete task');
     }
-  }, [headers]);
+  }, [apiFetch]);
 
   function formatNextRun(iso: string | null): string {
     if (!iso) return 'Not scheduled';
