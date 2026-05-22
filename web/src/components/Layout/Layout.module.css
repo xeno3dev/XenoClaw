@@ -169,6 +169,11 @@
   padding: 1rem;
   margin-top: 56px; /* account for mobile header */
   min-width: 0;
+  /* Flex column so full-height pages (Chat) can stretch to the available
+     space via `flex: 1` instead of guessing viewport math. */
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 56px);
 }
 
 /* Desktop layout: >= 768px */
@@ -192,6 +197,7 @@
   .main {
     margin-top: 0;
     padding: 1.75rem 2rem;
+    min-height: 100vh;
   }
 }
 

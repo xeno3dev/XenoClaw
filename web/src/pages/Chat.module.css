@@ -3,8 +3,11 @@
 .container {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 56px); /* account for mobile header */
-  max-height: calc(100vh - 56px);
+  /* Fill the Layout's main flex column (which already accounts for the
+     mobile header + responsive padding). Children with flex:1 + min-height:0
+     are what give the message list its scroll region. */
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -317,11 +320,6 @@
 
 /* Desktop layout: >= 768px */
 @media (min-width: 768px) {
-  .container {
-    height: 100vh;
-    max-height: 100vh;
-  }
-
   .message {
     max-width: 65%;
   }

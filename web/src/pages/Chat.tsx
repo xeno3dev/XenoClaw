@@ -174,7 +174,7 @@ export function Chat() {
 
   const { status, send } = useWebSocket({
     token: token ?? '',
-    endpoint: `/api/v1/ws/chat/${SESSION_ID}`,
+    endpoint: '/api/v1/ws/chat',
     onMessage: handleWsMessage,
   });
 

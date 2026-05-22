@@ -80,17 +80,50 @@ export function Dashboard() {
   const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  /** Fetch status data from the REST API */
+  /** Fetch status data from the REST API.
+   *
+   * The current backend returns a flat AgentStatus-shaped payload
+   * ({status, mode, current_task, uptime_seconds}). The full
+   * {agent, health, recentActivity} envelope this dashboard was
+   * designed around is aspirational — those fields don't exist yet
+   * server-side. Parse defensively so the page renders what the
+   * server actually provides and degrades gracefully on the rest.
+   */
   const fetchStatus = useCallback(async () => {
     try {
       const res = await apiFetch(`${API_BASE}/status`);
       if (!res.ok) {
         throw new Error(`Status API returned ${res.status}`);
       }
-      const data = (await res.json()) as StatusResponse;
-      setAgentStatus(data.agent);
-      setSystemHealth(data.health);
-      setRecentActivity(data.recentActivity.slice(0, 50));
+      const data = (await res.json()) as Partial<StatusResponse> & {
+        // Flat fallback shape the backend currently returns.
+        status?: string;
+        mode?: string;
+        current_task?: string | null;
+        uptime_seconds?: number;
+      };
+
+      // Prefer the richer envelope when present; fall back to the
+      // flat fields the live server actually emits.
+      const flatAgent: AgentStatus | null =
+        data.agent ??
+        (data.status !== undefined
+          ? {
+              status: (data.status as AgentStatus['status']) ?? 'idle',
+              currentTask: data.current_task ?? null,
+              uptimeSeconds: data.uptime_seconds ?? 0,
+              mode: ((data.mode ?? 'general').charAt(0).toUpperCase() +
+                (data.mode ?? 'general').slice(1)) as AgentStatus['mode'],
+              // Resource usage not yet reported — leave blank until
+              // backend adds it; cards render a placeholder.
+              cpuPercent: 0,
+              memoryPercent: 0,
+            }
+          : null);
+
+      setAgentStatus(flatAgent);
+      setSystemHealth(data.health ?? null);
+      setRecentActivity(Array.isArray(data.recentActivity) ? data.recentActivity.slice(0, 50) : []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch status');
@@ -105,7 +138,7 @@ export function Dashboard() {
         throw new Error(`Tasks API returned ${res.status}`);
       }
       const data = (await res.json()) as TasksResponse;
-      setScheduledTasks(data.tasks);
+      setScheduledTasks(Array.isArray(data.tasks) ? data.tasks : []);
     } catch {
       // Non-critical — status fetch error already shown
     }
