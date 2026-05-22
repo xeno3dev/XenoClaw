@@ -24,6 +24,7 @@ RestartSec=5
 Environment=XENOCLAW_CONFIG_PATH=/etc/xenoclaw/config.toml
 Environment=XENOCLAW_DATA_DIR=/var/lib/xenoclaw
 Environment=XENOCLAW_LOG_DIR=/var/log/xenoclaw
+Environment=XENOCLAW_WEB_DIR=/opt/xenoclaw/web
 Environment=RUST_LOG=info
 
 # Logging

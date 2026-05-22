@@ -2794,6 +2794,7 @@ max_processes    = 10
 [web]
 host = "{host}"
 port = {web_port}
+dir  = "{web_dir}"
 
 [api]
 host = "{host}"
@@ -2811,6 +2812,7 @@ port = {port}
         host = state.host,
         port = state.port,
         web_port = state.web_port,
+        web_dir = common::config::default_web_dir().display(),
         data_dir = data_dir.display(),
         log_dir = log_dir.display(),
         admin_username = state.admin_username,

@@ -41,6 +41,7 @@ async-trait = { workspace = true }
 sqlx = { workspace = true }
 
 # Binary-only deps
+tower-http = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 crossterm = { version = "0.28", features = ["event-stream"] }
 thiserror = { workspace = true }

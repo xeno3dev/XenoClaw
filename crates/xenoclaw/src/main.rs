@@ -22,6 +22,8 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use uuid::Uuid;
 
+use tower_http::services::{ServeDir, ServeFile};
+
 use agent_core::{AgentCore, AgentCoreConfig, AgentStatus, EventBus, ToolRegistry};
 use api_server::{build_router, AppState};
 use common::config::{load_config, signal::spawn_reload_handler, ConfigError};
@@ -320,6 +322,32 @@ async fn serve(config_path: PathBuf) -> Result<()> {
             error!(error = %e, "API server error");
         }
     });
+
+    // Frontend static file server — only start if enabled and the dir exists.
+    if config.web.enabled {
+        let web_dir = config.web.dir.clone();
+        if web_dir.exists() {
+            let web_bind = format!("{}:{}", config.web.host, config.web.port);
+            match tokio::net::TcpListener::bind(&web_bind).await {
+                Ok(web_listener) => {
+                    info!(address = %web_bind, dir = %web_dir.display(), "Web UI server listening");
+                    let index = web_dir.join("index.html");
+                    let web_router = axum::Router::new()
+                        .fallback_service(ServeDir::new(&web_dir).fallback(ServeFile::new(index)));
+                    tokio::spawn(async move {
+                        if let Err(e) = axum::serve(web_listener, web_router).await {
+                            error!(error = %e, "Web UI server error");
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(address = %web_bind, error = %e, "Failed to bind web UI server");
+                }
+            }
+        } else {
+            tracing::warn!(dir = %web_dir.display(), "Web UI dir not found — run 'npm run build' in web/ or set XENOCLAW_WEB_DIR");
+        }
+    }
 
     tokio::spawn(async move {
         let results = plugin_manager.initialize().await;

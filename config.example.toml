@@ -111,6 +111,7 @@ max_dependency_depth  = 10
 enabled  = true
 host     = "0.0.0.0"
 port     = 8080
+dir      = "/opt/xenoclaw/web"   # Directory containing built web UI files
 # tls_cert = "/path/to/cert.pem"
 # tls_key  = "/path/to/key.pem"
 

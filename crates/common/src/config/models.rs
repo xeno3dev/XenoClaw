@@ -484,6 +484,11 @@ pub struct WebConfig {
     #[serde(default = "default_web_port")]
     pub port: u16,
 
+    /// Directory containing the built web UI static files.
+    /// Defaults to $XENOCLAW_WEB_DIR env var, then ./web/dist.
+    #[serde(default = "default_web_dir")]
+    pub dir: PathBuf,
+
     /// Path to TLS certificate file (optional).
     #[serde(default)]
     pub tls_cert: Option<PathBuf>,
@@ -499,10 +504,17 @@ impl Default for WebConfig {
             enabled: true,
             host: default_host(),
             port: default_web_port(),
+            dir: default_web_dir(),
             tls_cert: None,
             tls_key: None,
         }
     }
+}
+
+pub fn default_web_dir() -> PathBuf {
+    std::env::var_os("XENOCLAW_WEB_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("./web/dist"))
 }
 
 fn default_true() -> bool {
