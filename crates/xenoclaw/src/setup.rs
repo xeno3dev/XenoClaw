@@ -2794,7 +2794,7 @@ max_processes    = 10
 
 [web]
 host = "{host}"
-port = {web_port}
+port = {port}
 dir  = "{web_dir}"
 
 [api]
@@ -2812,7 +2812,6 @@ port = {port}
         model = state.model,
         host = state.host,
         port = state.port,
-        web_port = state.web_port,
         web_dir = common::config::default_web_dir().display(),
         data_dir = data_dir.display(),
         log_dir = log_dir.display(),

@@ -352,28 +352,6 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         }
     });
 
-    // Optional mirror: also serve static files on [web] port when it differs from the API port.
-    if config.web.enabled && config.web.dir.exists() && config.web.port != config.api.port {
-        let web_dir = config.web.dir.clone();
-        let web_bind = format!("{}:{}", config.web.host, config.web.port);
-        match tokio::net::TcpListener::bind(&web_bind).await {
-            Ok(web_listener) => {
-                info!(address = %web_bind, "Static-only Web UI mirror listening");
-                let index = web_dir.join("index.html");
-                let web_router = axum::Router::new()
-                    .fallback_service(ServeDir::new(&web_dir).fallback(ServeFile::new(index)));
-                tokio::spawn(async move {
-                    if let Err(e) = axum::serve(web_listener, web_router).await {
-                        error!(error = %e, "Web UI mirror server error");
-                    }
-                });
-            }
-            Err(e) => {
-                tracing::warn!(address = %web_bind, error = %e, "Failed to bind static Web UI mirror");
-            }
-        }
-    }
-
     tokio::spawn(async move {
         let results = plugin_manager.initialize().await;
         for r in &results {
