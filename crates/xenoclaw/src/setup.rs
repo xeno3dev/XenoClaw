@@ -2817,7 +2817,7 @@ port = {port}
         admin_password_hash = state.admin_password_hash,
     );
 
-    let coding_section = if !all_cmds.is_empty() {
+    let coding_section = {
         let mut blocklist_items: Vec<String> = vec!["\"rm -rf\"".to_string(), "\"dd\"".to_string()];
         if !state.allow_pipes {
             blocklist_items.extend([
@@ -2855,8 +2855,6 @@ undo_history_size    = 50
             blocklist = blocklist,
             timeout = timeout,
         )
-    } else {
-        String::new()
     };
 
     let full_content = format!("{toml_content}{coding_section}");
