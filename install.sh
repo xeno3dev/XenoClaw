@@ -154,49 +154,7 @@ else
     info "Systemd service installed and enabled (will start on boot)."
 fi
 
-# ─── Step 8: Install nginx site config ───────────────────────────────────────
-#
-# The Docker nginx.conf uses container hostnames (agent:9090, web:80) that do
-# not exist on a bare-metal/VPS host — always install the VPS site config so
-# nginx proxies to localhost:9090 correctly.
-
-NGINX_SITES_AVAILABLE="/etc/nginx/sites-available"
-NGINX_SITES_ENABLED="/etc/nginx/sites-enabled"
-NGINX_SITE_CONF="$NGINX_SITES_AVAILABLE/xenoclaw"
-
-if command -v nginx &>/dev/null; then
-    mkdir -p "$NGINX_SITES_AVAILABLE" "$NGINX_SITES_ENABLED"
-
-    info "Installing nginx site config to $NGINX_SITE_CONF..."
-    cp deploy/nginx-site.conf "$NGINX_SITE_CONF"
-
-    # Enable the site (idempotent)
-    if [[ ! -L "$NGINX_SITES_ENABLED/xenoclaw" ]]; then
-        ln -s "$NGINX_SITE_CONF" "$NGINX_SITES_ENABLED/xenoclaw"
-        info "Nginx site enabled."
-    else
-        info "Nginx site already enabled."
-    fi
-
-    # Disable the default site if present (it conflicts on port 80)
-    if [[ -L "$NGINX_SITES_ENABLED/default" ]]; then
-        info "Disabling default nginx site to avoid port 80 conflict..."
-        rm -f "$NGINX_SITES_ENABLED/default"
-    fi
-
-    # Test and reload nginx
-    if nginx -t 2>/dev/null; then
-        systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
-        info "Nginx reloaded with XenoClaw site config."
-    else
-        warn "Nginx config test failed — skipping reload. Run 'nginx -t' to diagnose."
-    fi
-else
-    warn "nginx not found — skipping web server setup."
-    warn "Install nginx and copy deploy/nginx-site.conf to /etc/nginx/sites-available/xenoclaw"
-fi
-
-# ─── Step 9: Create coding workspace directory ────────────────────────────────
+# ─── Step 8: Create coding workspace directory ────────────────────────────────
 
 WORKSPACE_DIR="$DATA_DIR/workspace"
 if [[ ! -d "$WORKSPACE_DIR" ]]; then
@@ -210,13 +168,13 @@ fi
 echo ""
 info "Installation complete!"
 echo ""
-echo "  Binary:   $INSTALL_DIR/bin/xenoclaw"
-echo "  Config:   $CONFIG_DIR/config.toml"
-echo "  Data:     $DATA_DIR/"
-echo "  Workspace:$WORKSPACE_DIR/"
-echo "  Logs:     $LOG_DIR/"
-echo "  Web UI:   $WEB_DIR/"
-echo "  Service:  xenoclaw-agent.service"
+echo "  Binary:    $INSTALL_DIR/bin/xenoclaw"
+echo "  Config:    $CONFIG_DIR/config.toml"
+echo "  Data:      $DATA_DIR/"
+echo "  Workspace: $WORKSPACE_DIR/"
+echo "  Logs:      $LOG_DIR/"
+echo "  Web UI:    $WEB_DIR/"
+echo "  Service:   xenoclaw-agent.service"
 echo ""
 echo "Next steps:"
 echo "  1. Edit $CONFIG_DIR/config.toml (add your LLM provider API key) OR run xenoclaw -s for auto/guided setup."
