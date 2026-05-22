@@ -86,15 +86,15 @@ max_processes    = 10
 # ---------------------------------------------------------------------------
 # Coding Module (comment out entire section to disable coding mode)
 # ---------------------------------------------------------------------------
-# [coding]
-# workspace_dirs       = ["./projects"]
-# repository_dirs      = ["./projects"]
-# command_allowlist    = ["git", "cargo", "python3"]
-# command_blocklist    = ["rm -rf", "dd"]
-# max_file_size_mb     = 10
-# max_concurrent_shells = 5
-# shell_timeout_seconds = 300
-# undo_history_size    = 50
+[coding]
+workspace_dirs        = ["/var/lib/xenoclaw/workspace"]
+repository_dirs       = ["/var/lib/xenoclaw/workspace"]
+command_allowlist     = ["git", "cargo", "python3", "node", "npm", "bash", "sh", "make"]
+command_blocklist     = []
+max_file_size_mb      = 10
+max_concurrent_shells = 5
+shell_timeout_seconds = 300
+undo_history_size     = 50
 
 # ---------------------------------------------------------------------------
 # Task Scheduler
