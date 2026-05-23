@@ -44,6 +44,13 @@ pub trait Tool: Send + Sync {
     fn coding_only(&self) -> bool {
         false
     }
+
+    /// Whether this tool mutates state (writes files, runs commands, commits,
+    /// modifies external systems). Used by Plan mode to filter out anything
+    /// that can change the world — Plan mode only exposes read/analysis tools.
+    fn is_destructive(&self) -> bool {
+        false
+    }
 }
 
 /// Metadata about a registered tool, including its source (built-in or plugin).
@@ -261,11 +268,19 @@ impl ToolRegistry {
 
     /// Get all tool definitions suitable for sending to the LLM.
     ///
-    /// If `include_coding` is false, coding-only tools are excluded.
-    pub fn tool_definitions(&self, include_coding: bool) -> Vec<ToolDefinition> {
+    /// - `include_coding`: when false, coding-only tools are excluded.
+    /// - `plan_only`: when true, destructive (state-mutating) tools are
+    ///   additionally excluded. Used by Plan mode so the agent can read and
+    ///   propose changes but not execute them.
+    pub fn tool_definitions(
+        &self,
+        include_coding: bool,
+        plan_only: bool,
+    ) -> Vec<ToolDefinition> {
         self.tools
             .values()
             .filter(|entry| include_coding || !entry.tool.coding_only())
+            .filter(|entry| !plan_only || !entry.tool.is_destructive())
             .map(|entry| ToolDefinition {
                 name: entry.tool.name().to_string(),
                 description: entry.tool.description().to_string(),
@@ -467,6 +482,36 @@ mod tests {
         }
     }
 
+    /// A coding tool that mutates state — should be hidden in Plan mode.
+    struct DestructiveTool;
+
+    #[async_trait]
+    impl Tool for DestructiveTool {
+        fn name(&self) -> &str {
+            "file_write"
+        }
+
+        fn description(&self) -> &str {
+            "Write a file to the workspace"
+        }
+
+        fn parameters_schema(&self) -> Value {
+            json!({ "type": "object" })
+        }
+
+        async fn execute(&self, _arguments: Value) -> Result<String, String> {
+            Ok("written".to_string())
+        }
+
+        fn coding_only(&self) -> bool {
+            true
+        }
+
+        fn is_destructive(&self) -> bool {
+            true
+        }
+    }
+
     /// A named tool for plugin testing.
     struct NamedTool {
         tool_name: String,
@@ -537,12 +582,28 @@ mod tests {
         registry.register(Arc::new(EchoTool));
         registry.register(Arc::new(CodingTool));
 
-        let general_defs = registry.tool_definitions(false);
+        let general_defs = registry.tool_definitions(false, false);
         assert_eq!(general_defs.len(), 1);
         assert_eq!(general_defs[0].name, "echo");
 
-        let all_defs = registry.tool_definitions(true);
+        let all_defs = registry.tool_definitions(true, false);
         assert_eq!(all_defs.len(), 2);
+    }
+
+    #[test]
+    fn test_plan_mode_excludes_destructive_tools() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(CodingTool)); // file_read, read-only
+        registry.register(Arc::new(DestructiveTool)); // file_write, destructive
+
+        // Code mode (plan_only = false): both coding tools available.
+        let code_defs = registry.tool_definitions(true, false);
+        assert_eq!(code_defs.len(), 2);
+
+        // Plan mode (plan_only = true): destructive tool filtered out.
+        let plan_defs = registry.tool_definitions(true, true);
+        assert_eq!(plan_defs.len(), 1);
+        assert_eq!(plan_defs[0].name, "file_read");
     }
 
     #[tokio::test]

@@ -258,7 +258,11 @@ pub enum Platform {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum AgentMode {
     General,
-    Coding { workspace: PathBuf },
+    Coding {
+        workspace: PathBuf,
+        #[serde(default)]
+        plan_only: bool,
+    },
 }
 
 impl Default for AgentMode {

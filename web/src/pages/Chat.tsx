@@ -3,6 +3,19 @@ import { useAuth } from '../hooks/useAuth';
 import { useWebSocket, type ConnectionStatus, type WebSocketMessage } from '../hooks/useWebSocket';
 import styles from './Chat.module.css';
 
+/** Agent operating modes, mirroring Claude Code / OpenCode. */
+type AgentMode = 'general' | 'plan' | 'code';
+
+const AGENT_MODES: { id: AgentMode; label: string }[] = [
+  { id: 'general', label: 'General' },
+  { id: 'plan', label: 'Plan' },
+  { id: 'code', label: 'Code' },
+];
+
+function isAgentMode(v: unknown): v is AgentMode {
+  return v === 'general' || v === 'plan' || v === 'code';
+}
+
 /** Unique ID generator for messages */
 let messageIdCounter = 0;
 function generateId(): string {
@@ -32,7 +45,7 @@ export function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
-  const [agentMode, setAgentMode] = useState<'general' | 'coding'>('general');
+  const [agentMode, setAgentMode] = useState<AgentMode>('general');
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -43,7 +56,7 @@ export function Chat() {
     apiFetch('/api/v1/status')
       .then((res) => (res.ok ? (res.json() as Promise<{ mode?: string }>) : null))
       .then((data) => {
-        if (data?.mode === 'coding' || data?.mode === 'general') {
+        if (isAgentMode(data?.mode)) {
           setAgentMode(data.mode);
         }
       })
@@ -52,7 +65,7 @@ export function Chat() {
 
   // Switch the agent mode and persist via the config endpoint
   const setMode = useCallback(
-    async (newMode: 'general' | 'coding') => {
+    async (newMode: AgentMode) => {
       if (newMode === agentMode) return;
       setAgentMode(newMode);
       try {
@@ -272,20 +285,23 @@ export function Chat() {
         <h1 className={styles.headerTitle}>Chat</h1>
         <div className={styles.headerRight}>
           <div className={styles.modeToggle} role="group" aria-label="Agent mode">
-            <button
-              className={`${styles.modeBtn} ${agentMode === 'general' ? styles.modeBtnActive : ''}`}
-              onClick={() => void setMode('general')}
-              aria-pressed={agentMode === 'general'}
-            >
-              General
-            </button>
-            <button
-              className={`${styles.modeBtn} ${agentMode === 'coding' ? styles.modeBtnActive : ''}`}
-              onClick={() => void setMode('coding')}
-              aria-pressed={agentMode === 'coding'}
-            >
-              Coding
-            </button>
+            {AGENT_MODES.map((m) => (
+              <button
+                key={m.id}
+                className={`${styles.modeBtn} ${agentMode === m.id ? styles.modeBtnActive : ''}`}
+                onClick={() => void setMode(m.id)}
+                aria-pressed={agentMode === m.id}
+                title={
+                  m.id === 'plan'
+                    ? 'Plan mode: read-only — investigates and proposes, no writes'
+                    : m.id === 'code'
+                      ? 'Code mode: full dev tools including file writes and shell'
+                      : 'General mode: base tools only'
+                }
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
           <div className={styles.headerStatus}>
             <span

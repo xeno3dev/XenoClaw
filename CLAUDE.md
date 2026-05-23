@@ -96,7 +96,7 @@ All endpoints (except `/api/v1/health` and `/api/v1/auth/login`) require `Author
 |--------|------|-------------|
 | GET | /api/v1/status | Agent status, mode, uptime |
 | GET | /api/v1/config | Config subset (version, mode, rate limit) |
-| PUT | /api/v1/config | Update config (currently: mode switch) |
+| PUT | /api/v1/config | Update config (mode, system_prompt, log_level, rate_limit_default) |
 | GET | /api/v1/plugins | List plugins with enabled state |
 | POST | /api/v1/plugins/reload | Reload all plugins |
 | POST | /api/v1/plugins/:name/toggle | Toggle plugin on/off |
@@ -120,12 +120,19 @@ Never call `fetch()` directly from a page that requires login — it won't send 
 
 ## Agent Modes
 
+Three modes, mirroring Claude Code / OpenCode:
+
 | Mode | Tools available |
 |------|----------------|
-| General | Base tools (search, tasks, memory) |
-| Coding | Base + dev tools (file ops, terminal, git, LSP) |
+| General | Base tools only (search, tasks, memory) |
+| Plan | Base + read-only dev tools (file read, git status/diff) — destructive tools filtered out |
+| Code | Base + all dev tools (file write/edit/delete, shell, git commit) |
 
-Switch via `PUT /api/v1/config` with `{"settings": {"mode": "general"|"coding"}}`. The Chat page header and the Settings page both expose this toggle. Mode change is rejected with `AgentBusy` while a message is in-flight (the UI ignores this and reverts optimistically).
+Both Plan and Code are `AgentMode::Coding` under the hood; the difference is the `plan_only` flag. When `plan_only` is true, `ToolRegistry::tool_definitions` filters out any tool whose `is_destructive()` returns true (file_create/write/edit/delete, shell_execute, git_commit, memory_store, task_create).
+
+Switch via `PUT /api/v1/config` with `{"settings": {"mode": "general"|"plan"|"code"}}` (`"coding"` is accepted as a back-compat alias for `"code"`). The Chat page header and the Settings page both expose the three-way toggle. Mode change is rejected with `AgentBusy` while a message is in-flight (the UI ignores this and reverts optimistically).
+
+To mark a new tool as state-mutating, override `fn is_destructive(&self) -> bool { true }` in its `Tool` impl — that's all that's needed for Plan mode to hide it.
 
 ## WebSocket Message Protocol
 
@@ -156,7 +163,7 @@ The following are wired through `PUT /api/v1/config`:
 
 | Setting | Effect | Notes |
 |---------|--------|-------|
-| `mode` | `"general"` or `"coding"` — switches active tool set | Rejected silently while a message is streaming (AgentBusy) |
+| `mode` | `"general"`, `"plan"`, or `"code"` — switches active tool set (`"coding"` = alias for `"code"`) | Rejected silently while a message is streaming (AgentBusy) |
 | `system_prompt` | string or null — replaces the prepended prompt | Takes effect on next message; in-flight requests keep old prompt |
 | `log_level` | tracing EnvFilter string (`"info"`, `"debug,xenoclaw=trace"`, …) | Reloaded via `tracing_subscriber::reload::Handle` |
 | `rate_limit_default` | positive integer — per-key requests per minute | Atomic swap inside `RateLimiter`, takes effect immediately |

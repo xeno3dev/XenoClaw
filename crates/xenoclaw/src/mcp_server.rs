@@ -221,7 +221,9 @@ impl McpServer {
     /// Handle `tools/list` — return all registered tools with their schemas.
     async fn handle_tools_list(&self, id: Value) -> JsonRpcResponse {
         let registry = self.registry.read().await;
-        let definitions = registry.tool_definitions(true);
+        // MCP clients drive their own approval flow, so expose every tool
+        // (include_coding = true, plan_only = false).
+        let definitions = registry.tool_definitions(true, false);
 
         let tools: Vec<Value> = definitions
             .iter()

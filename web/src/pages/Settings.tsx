@@ -4,9 +4,21 @@ import styles from './Settings.module.css';
 
 const API_BASE = '/api/v1';
 
+type AgentMode = 'general' | 'plan' | 'code';
+
+const AGENT_MODES: { id: AgentMode; label: string; hint: string }[] = [
+  { id: 'general', label: 'General', hint: 'General mode: broad assistant capabilities' },
+  { id: 'plan', label: 'Plan', hint: 'Plan mode: read-only — investigates and proposes changes without writing' },
+  { id: 'code', label: 'Code', hint: 'Code mode: full dev tools including file writes, shell, and commits' },
+];
+
+function isAgentMode(v: unknown): v is AgentMode {
+  return v === 'general' || v === 'plan' || v === 'code';
+}
+
 interface ConfigData {
   version: string;
-  mode: 'general' | 'coding' | string;
+  mode: AgentMode | string;
   rate_limit_default: number;
   system_prompt: string | null;
   log_level: string;
@@ -30,7 +42,7 @@ export function Settings() {
   const [messaging, setMessaging] = useState<MessagingStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [agentMode, setAgentMode] = useState<'general' | 'coding'>('general');
+  const [agentMode, setAgentMode] = useState<AgentMode>('general');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [systemPromptDirty, setSystemPromptDirty] = useState(false);
   const [savingPrompt, setSavingPrompt] = useState(false);
@@ -48,7 +60,7 @@ export function Settings() {
       if (!cfgRes.ok) throw new Error(`Failed to fetch config (${cfgRes.status})`);
       const data = await cfgRes.json() as ConfigData;
       setConfig(data);
-      if (data.mode === 'coding' || data.mode === 'general') setAgentMode(data.mode);
+      if (isAgentMode(data.mode)) setAgentMode(data.mode);
       if (!systemPromptDirty) setSystemPrompt(data.system_prompt ?? '');
       setLogLevel(data.log_level ?? 'info');
       if (!rateLimitDirty) setRateLimit(String(data.rate_limit_default ?? ''));
@@ -67,7 +79,7 @@ export function Settings() {
     void fetchConfig();
   }, [fetchConfig]);
 
-  const setMode = useCallback(async (newMode: 'general' | 'coding') => {
+  const setMode = useCallback(async (newMode: AgentMode) => {
     if (newMode === agentMode) return;
     setAgentMode(newMode);
     try {
@@ -171,23 +183,18 @@ export function Settings() {
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Agent Mode</h2>
         <div className={styles.modeToggle}>
-          <button
-            className={`${styles.modeButton} ${agentMode === 'general' ? styles.modeActive : ''}`}
-            onClick={() => void setMode('general')}
-          >
-            General
-          </button>
-          <button
-            className={`${styles.modeButton} ${agentMode === 'coding' ? styles.modeActive : ''}`}
-            onClick={() => void setMode('coding')}
-          >
-            Coding
-          </button>
+          {AGENT_MODES.map((m) => (
+            <button
+              key={m.id}
+              className={`${styles.modeButton} ${agentMode === m.id ? styles.modeActive : ''}`}
+              onClick={() => void setMode(m.id)}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
         <p className={styles.modeHint}>
-          {agentMode === 'general'
-            ? 'General mode: broad assistant capabilities'
-            : 'Coding mode: focused on code generation and editing'}
+          {AGENT_MODES.find((m) => m.id === agentMode)?.hint}
         </p>
       </section>
 

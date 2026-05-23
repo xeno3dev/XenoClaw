@@ -46,7 +46,8 @@ async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
     let mode = if let Some(ref handle) = state.agent_core {
         match handle.0.mode().await {
             AgentMode::General => "general".to_string(),
-            AgentMode::Coding { .. } => "coding".to_string(),
+            AgentMode::Coding { plan_only: true, .. } => "plan".to_string(),
+            AgentMode::Coding { plan_only: false, .. } => "code".to_string(),
         }
     } else {
         "general".to_string()
@@ -93,8 +94,15 @@ async fn update_config(
         if let Some(mode_str) = mode_val.as_str() {
             if let Some(ref handle) = state.agent_core {
                 let new_mode = match mode_str {
-                    "coding" => AgentMode::Coding {
+                    // "plan" and "code" are both Coding mode; plan_only filters
+                    // out destructive tools. "coding" kept as a back-compat alias.
+                    "plan" => AgentMode::Coding {
                         workspace: state.workspace_dir.clone(),
+                        plan_only: true,
+                    },
+                    "code" | "coding" => AgentMode::Coding {
+                        workspace: state.workspace_dir.clone(),
+                        plan_only: false,
                     },
                     _ => AgentMode::General,
                 };

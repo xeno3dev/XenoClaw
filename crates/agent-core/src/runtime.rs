@@ -288,10 +288,14 @@ impl AgentCore {
             content: user_message.content.clone(),
         });
 
-        // Get available tools based on current mode
-        let include_coding = {
+        // Get available tools based on current mode. Plan mode keeps `include_coding`
+        // on but flips `plan_only`, which filters out destructive tools.
+        let (include_coding, plan_only) = {
             let current_mode = mode.read().await;
-            matches!(*current_mode, AgentMode::Coding { .. })
+            match &*current_mode {
+                AgentMode::General => (false, false),
+                AgentMode::Coding { plan_only, .. } => (true, *plan_only),
+            }
         };
 
         let mut all_tool_results: Vec<ToolResult> = Vec::new();
@@ -321,7 +325,7 @@ impl AgentCore {
             // Get tool definitions
             let tools = {
                 let registry = tool_registry.read().await;
-                registry.tool_definitions(include_coding)
+                registry.tool_definitions(include_coding, plan_only)
             };
 
             // Build the completion request
