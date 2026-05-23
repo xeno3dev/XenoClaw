@@ -26,6 +26,7 @@ use uuid::Uuid;
 use tower_http::services::{ServeDir, ServeFile};
 
 use agent_core::{AgentCore, AgentCoreConfig, AgentStatus, EventBus, ToolRegistry};
+use api_server::state::MessagingStatus;
 use api_server::{build_router, AppState};
 use chrono::Utc;
 use common::config::{load_config, signal::spawn_reload_handler, ConfigError};
@@ -341,7 +342,12 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         rate_limit_config,
         config.security.admin_username.clone(),
         config.security.admin_password_hash.clone(),
-    );
+    )
+    .with_messaging_status(MessagingStatus {
+        telegram_configured: config.messaging.telegram.is_some(),
+        discord_configured: config.messaging.discord.is_some(),
+        whatsapp_configured: config.messaging.whatsapp.is_some(),
+    });
     let router = build_router(state);
 
     // Plugin system

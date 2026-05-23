@@ -68,6 +68,19 @@ pub struct AppState {
     pub admin_session_key_id: ApiKeyId,
     /// Optional SQLite pool for session persistence.
     pub db_pool: Option<SqlitePool>,
+    /// Which third-party messaging bridges have credentials configured. Used
+    /// by the Settings UI to render connection status without ever exposing
+    /// the actual bot tokens over the wire.
+    pub messaging_status: MessagingStatus,
+}
+
+/// Public-safe view of which messaging providers are configured.
+/// Never carries the actual tokens or phone number.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MessagingStatus {
+    pub telegram_configured: bool,
+    pub discord_configured: bool,
+    pub whatsapp_configured: bool,
 }
 
 impl AppState {
@@ -85,6 +98,7 @@ impl AppState {
             login_tokens: Arc::new(RwLock::new(HashSet::new())),
             admin_session_key_id: ApiKeyId::new(),
             db_pool: None,
+            messaging_status: MessagingStatus::default(),
         }
     }
 
@@ -107,7 +121,15 @@ impl AppState {
             login_tokens: Arc::new(RwLock::new(HashSet::new())),
             admin_session_key_id: ApiKeyId::new(),
             db_pool: None,
+            messaging_status: MessagingStatus::default(),
         }
+    }
+
+    /// Replace the messaging-provider status (used by the runtime at startup
+    /// after reading the on-disk config). Builder-style for ergonomic chaining.
+    pub fn with_messaging_status(mut self, status: MessagingStatus) -> Self {
+        self.messaging_status = status;
+        self
     }
 
     /// Create a default AppState for testing or development.

@@ -8,23 +8,39 @@ interface ConfigData {
   [section: string]: Record<string, string | number | boolean>;
 }
 
+interface MessagingProviderStatus {
+  configured: boolean;
+}
+
+interface MessagingStatusResponse {
+  telegram: MessagingProviderStatus;
+  discord: MessagingProviderStatus;
+  whatsapp: MessagingProviderStatus;
+}
+
 export function Settings() {
   const { apiFetch } = useAuth();
   const [config, setConfig] = useState<ConfigData | null>(null);
+  const [messaging, setMessaging] = useState<MessagingStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [agentMode, setAgentMode] = useState<'general' | 'coding'>('general');
 
   const fetchConfig = useCallback(async () => {
     try {
-      const res = await apiFetch(`${API_BASE}/config`);
-      if (!res.ok) throw new Error(`Failed to fetch config (${res.status})`);
-      const data = await res.json() as ConfigData;
+      const [cfgRes, msgRes] = await Promise.all([
+        apiFetch(`${API_BASE}/config`),
+        apiFetch(`${API_BASE}/messaging`),
+      ]);
+      if (!cfgRes.ok) throw new Error(`Failed to fetch config (${cfgRes.status})`);
+      const data = await cfgRes.json() as ConfigData;
       setConfig(data);
-      // Try to extract agent mode from config
       const mode = data?.agent?.mode;
       if (mode === 'coding' || mode === 'general') {
         setAgentMode(mode);
+      }
+      if (msgRes.ok) {
+        setMessaging(await msgRes.json() as MessagingStatusResponse);
       }
       setError(null);
     } catch (err) {
@@ -91,8 +107,41 @@ export function Settings() {
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>API Key Management</h2>
         <p className={styles.placeholder}>
-          API key rotation and management will be available in a future update.
+          Rotate the admin API key from the command line:
+          {' '}
+          <code className={styles.code}>sudo xenoclaw set-api-key</code>
+          {' '}
+          — restart the agent after for it to take effect.
         </p>
+      </section>
+
+      {/* Messaging Bridges */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Messaging Bridges</h2>
+        <p className={styles.sectionHint}>
+          Third-party chat integrations. Configure via the setup wizard
+          (<code className={styles.code}>xenoclaw -s</code>) — tokens are never
+          exposed through the web UI.
+        </p>
+        <div className={styles.providerGrid}>
+          {(['telegram', 'discord', 'whatsapp'] as const).map((provider) => {
+            const configured = messaging?.[provider].configured ?? false;
+            return (
+              <div key={provider} className={styles.providerCard}>
+                <span className={styles.providerName}>
+                  {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                </span>
+                <span
+                  className={`${styles.providerBadge} ${
+                    configured ? styles.providerBadgeOn : styles.providerBadgeOff
+                  }`}
+                >
+                  {configured ? 'Configured' : 'Not configured'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       {/* Configuration Display */}

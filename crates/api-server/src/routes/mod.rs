@@ -17,6 +17,7 @@ pub mod config;
 pub mod health;
 pub mod memory;
 pub mod messages;
+pub mod messaging;
 pub mod plugins;
 pub mod sessions;
 pub mod status;
@@ -41,6 +42,7 @@ pub fn build_routes(state: AppState) -> Router {
     // All other routes require authentication via Bearer token
     let authenticated_routes = Router::new()
         .merge(messages::routes())
+        .merge(messaging::routes())
         .merge(status::routes())
         .merge(tasks::routes())
         .merge(sessions::routes())

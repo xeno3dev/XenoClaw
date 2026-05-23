@@ -159,7 +159,7 @@ fn amber() -> Color {
 /// false on Color16 terminals where AnsiValue sequences don't render.
 const BG: Color = Color::AnsiValue(233);
 
-const TOTAL_STEPS: u8 = 8;
+const TOTAL_STEPS: u8 = 9;
 const RULE: &str = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
 // ─── Provider Definitions ────────────────────────────────────────────────────
@@ -425,6 +425,12 @@ struct WizardState {
     max_concurrent_shells: String,
     /// Number of file operations to keep in the undo history. Default 50.
     undo_history_size: String,
+    /// Telegram bot token (BotFather). Empty disables Telegram.
+    telegram_bot_token: String,
+    /// Discord bot token (Developer Portal). Empty disables Discord.
+    discord_bot_token: String,
+    /// WhatsApp phone number (E.164, e.g. +14155552671). Empty disables.
+    whatsapp_phone: String,
     /// CLI providers only: false when the CLI is not installed/logged-in
     /// and the user chose to skip — disables "Start server" on the done screen.
     cli_provider_ready: bool,
@@ -484,6 +490,9 @@ impl Default for WizardState {
             max_file_size_mb: "10".to_string(),
             max_concurrent_shells: "5".to_string(),
             undo_history_size: "50".to_string(),
+            telegram_bot_token: String::new(),
+            discord_bot_token: String::new(),
+            whatsapp_phone: String::new(),
             cli_provider_ready: true,
             mcp_registered: false,
         }
@@ -861,8 +870,9 @@ async fn run_wizard_inner(config_path: &Path) -> Result<()> {
             4 => step_server(&mut state).await?,
             5 => step_api_key(&mut state).await?,
             6 => step_sandbox(&mut state).await?,
-            7 => step_review(&state, config_path).await?,
-            8 => step_done(&state, config_path).await?,
+            7 => step_messaging(&mut state).await?,
+            8 => step_review(&state, config_path).await?,
+            9 => step_done(&state, config_path).await?,
             _ => break,
         };
 
@@ -2000,6 +2010,82 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
     }
 }
 
+/// One-line summary of which messaging bridges are configured, for the
+/// review screen. Shows "none" when all three are blank.
+fn messaging_summary(state: &WizardState) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if !state.telegram_bot_token.is_empty() {
+        parts.push("Telegram");
+    }
+    if !state.discord_bot_token.is_empty() {
+        parts.push("Discord");
+    }
+    if !state.whatsapp_phone.is_empty() {
+        parts.push("WhatsApp");
+    }
+    if parts.is_empty() {
+        "none".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+/// Build the `[messaging]` block(s) for the generated config.
+///
+/// Each provider is emitted only when its field is populated, so a blank
+/// wizard run leaves [messaging] entirely absent and the runtime defaults
+/// (no bridges) apply. The bot tokens are TOML-escaped to handle the
+/// characters real tokens contain (`:`, backslashes from copy-paste, etc.).
+fn build_messaging_section(state: &WizardState) -> String {
+    let any = !state.telegram_bot_token.is_empty()
+        || !state.discord_bot_token.is_empty()
+        || !state.whatsapp_phone.is_empty();
+    if !any {
+        return String::new();
+    }
+
+    let mut out = String::from("\n[messaging]\n");
+    if !state.telegram_bot_token.is_empty() {
+        out.push_str(&format!(
+            "\n[messaging.telegram]\nbot_token = {}\n",
+            toml_basic_string(&state.telegram_bot_token),
+        ));
+    }
+    if !state.discord_bot_token.is_empty() {
+        out.push_str(&format!(
+            "\n[messaging.discord]\nbot_token = {}\n",
+            toml_basic_string(&state.discord_bot_token),
+        ));
+    }
+    if !state.whatsapp_phone.is_empty() {
+        out.push_str(&format!(
+            "\n[messaging.whatsapp]\nphone_number = {}\n",
+            toml_basic_string(&state.whatsapp_phone),
+        ));
+    }
+    out
+}
+
+/// TOML basic-string encoding. Conservative — handles the characters bot
+/// tokens and phone numbers actually contain.
+fn toml_basic_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04X}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// Pick a web UI directory to bake into the generated config.
 ///
 /// `common::config::default_web_dir()` falls back to the literal `./web/dist`
@@ -2439,7 +2525,142 @@ fn render_text_row(
     Ok(())
 }
 
-// ─── Step 7: Review ──────────────────────────────────────────────────────────
+// ─── Step 7: Messaging ───────────────────────────────────────────────────────
+//
+// Optional third-party chat bridges (Telegram, Discord, WhatsApp). All three
+// fields are optional — leaving a field blank disables that provider. The
+// telegram bot token is the BotFather "<id>:<hex>" string; Discord is the
+// Developer Portal bot token; WhatsApp is the E.164 phone number that the
+// xenoclaw process drives via the messaging-bridge stack.
+
+async fn step_messaging(state: &mut WizardState) -> Result<StepOutcome> {
+    let mut telegram_input = TextInput::new(&state.telegram_bot_token);
+    let mut discord_input = TextInput::new(&state.discord_bot_token);
+    let mut whatsapp_input = TextInput::new(&state.whatsapp_phone);
+    let mut field: u8 = 0; // 0=telegram, 1=discord, 2=whatsapp
+
+    loop {
+        let mut stdout = io::stdout();
+        clear_screen(&mut stdout)?;
+        print_header(&mut stdout, 7)?;
+
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(white()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Messaging Bridges\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(
+                "   Optional — leave any field blank to skip that provider.\r\n\r\n",
+            ))?;
+        bg(&mut stdout, BG)?;
+
+        render_field(&mut stdout, field == 0, "Telegram token", &telegram_input)?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(
+                "                  ↳ Get from @BotFather: /newbot, then copy the HTTP API token.\r\n",
+            ))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(Print("\r\n"))?;
+
+        render_field(&mut stdout, field == 1, "Discord token", &discord_input)?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(
+                "                  ↳ Discord Developer Portal → Bot → Reset/Copy Token.\r\n",
+            ))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(Print("\r\n"))?;
+
+        render_field(&mut stdout, field == 2, "WhatsApp phone", &whatsapp_input)?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(
+                "                  ↳ E.164 number the bridge will pair with (e.g. +14155552671).\r\n",
+            ))?;
+        bg(&mut stdout, BG)?;
+
+        stdout.flush()?;
+
+        print_footer(
+            &mut stdout,
+            "  [Tab] Next  [←→] Cursor  [Enter] Confirm  [Esc] Back",
+        )?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Tab => {
+                    field = (field + 1) % 3;
+                }
+                KeyCode::BackTab => {
+                    field = if field == 0 { 2 } else { field - 1 };
+                }
+                KeyCode::Enter => {
+                    state.telegram_bot_token = telegram_input.value().trim().to_string();
+                    state.discord_bot_token = discord_input.value().trim().to_string();
+                    state.whatsapp_phone = whatsapp_input.value().trim().to_string();
+                    return Ok(StepOutcome::Next);
+                }
+                KeyCode::Esc => return Ok(StepOutcome::Back),
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return Ok(StepOutcome::Quit);
+                }
+                KeyCode::Left => match field {
+                    0 => telegram_input.move_left(),
+                    1 => discord_input.move_left(),
+                    2 => whatsapp_input.move_left(),
+                    _ => {}
+                },
+                KeyCode::Right => match field {
+                    0 => telegram_input.move_right(),
+                    1 => discord_input.move_right(),
+                    2 => whatsapp_input.move_right(),
+                    _ => {}
+                },
+                KeyCode::Home => match field {
+                    0 => telegram_input.move_home(),
+                    1 => discord_input.move_home(),
+                    2 => whatsapp_input.move_home(),
+                    _ => {}
+                },
+                KeyCode::End => match field {
+                    0 => telegram_input.move_end(),
+                    1 => discord_input.move_end(),
+                    2 => whatsapp_input.move_end(),
+                    _ => {}
+                },
+                KeyCode::Backspace => match field {
+                    0 => telegram_input.backspace(),
+                    1 => discord_input.backspace(),
+                    2 => whatsapp_input.backspace(),
+                    _ => {}
+                },
+                KeyCode::Delete => match field {
+                    0 => telegram_input.delete(),
+                    1 => discord_input.delete(),
+                    2 => whatsapp_input.delete(),
+                    _ => {}
+                },
+                KeyCode::Char(c) => match field {
+                    0 => telegram_input.insert(c),
+                    1 => discord_input.insert(c),
+                    2 => whatsapp_input.insert(c),
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+}
+
+// ─── Step 8: Review ──────────────────────────────────────────────────────────
 
 async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutcome> {
     let p = &PROVIDERS[state.provider_idx];
@@ -2479,7 +2700,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
     loop {
         let mut stdout = io::stdout();
         clear_screen(&mut stdout)?;
-        print_header(&mut stdout, 7)?;
+        print_header(&mut stdout, 8)?;
 
         bg(&mut stdout, BG)?;
         stdout
@@ -2528,6 +2749,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
                     state.undo_history_size,
                 ),
             ),
+            ("Messaging", messaging_summary(state)),
         ];
 
         for (label, value) in rows {
@@ -2587,7 +2809,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
     }
 }
 
-// ─── Step 8: Done ────────────────────────────────────────────────────────────
+// ─── Step 9: Done ────────────────────────────────────────────────────────────
 
 async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcome> {
     let p = &PROVIDERS[state.provider_idx];
@@ -2596,7 +2818,7 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
     loop {
         let mut stdout = io::stdout();
         clear_screen(&mut stdout)?;
-        print_header(&mut stdout, 8)?;
+        print_header(&mut stdout, 9)?;
 
         print_success(&mut stdout, "Setup complete — agent ready")?;
         stdout.queue(Print("\r\n"))?;
@@ -3038,7 +3260,9 @@ undo_history_size    = {undo_history_size}
         )
     };
 
-    let full_content = format!("{toml_content}{coding_section}");
+    let messaging_section = build_messaging_section(state);
+
+    let full_content = format!("{toml_content}{coding_section}{messaging_section}");
 
     if let Some(parent) = config_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
