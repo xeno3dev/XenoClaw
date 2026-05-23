@@ -15,6 +15,7 @@ use sqlx::sqlite::SqlitePool;
 use tokio::sync::RwLock;
 
 use agent_core::AgentCore;
+use plugin_system::PluginManager;
 use security_layer::auth::ApiKeyAuthenticator;
 use security_layer::rate_limit::{RateLimitConfig, RateLimiter};
 
@@ -32,6 +33,53 @@ pub struct AgentCoreHandle(pub Arc<AgentCore>);
 impl std::fmt::Debug for AgentCoreHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "AgentCoreHandle")
+    }
+}
+
+/// Wrapper for `PluginManager` so it can live in a `Debug+Clone` AppState.
+/// We need `RwLock` because `initialize()`/`shutdown()` take `&mut self`.
+#[derive(Clone)]
+pub struct PluginManagerHandle(pub Arc<RwLock<PluginManager>>);
+
+impl std::fmt::Debug for PluginManagerHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PluginManagerHandle")
+    }
+}
+
+/// Runtime resource metrics for the agent process. Updated by a background
+/// sampler so per-request handlers can return cached values without paying
+/// the cost of refreshing sysinfo on every call.
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct ResourceMetrics {
+    pub cpu_percent: f32,
+    pub memory_percent: f32,
+}
+
+/// Type-erased setter for the global tracing log filter. Stored as a closure
+/// so AppState doesn't have to name the gnarly `tracing_subscriber::reload::Handle<…>`
+/// generic. Returns Err with a human-readable reason on parse failure.
+///
+/// Wrapped in a newtype so AppState can derive Debug — `dyn Fn` doesn't.
+#[derive(Clone)]
+pub struct LogLevelSetter(pub Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>);
+
+impl LogLevelSetter {
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn(&str) -> Result<(), String> + Send + Sync + 'static,
+    {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, level: &str) -> Result<(), String> {
+        (self.0)(level)
+    }
+}
+
+impl std::fmt::Debug for LogLevelSetter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "LogLevelSetter")
     }
 }
 
@@ -92,8 +140,18 @@ pub struct AppState {
     pub started_at: Instant,
     /// Default workspace directory used when switching to Coding mode.
     pub workspace_dir: PathBuf,
-    /// Per-plugin enabled/disabled state (in-memory; reflects UI toggles).
+    /// Per-plugin enabled/disabled state — mirrored in SQLite via `plugin_states`
+    /// table so toggles persist across restarts.
     pub plugin_states: Arc<RwLock<HashMap<String, bool>>>,
+    /// Live PluginManager — handlers call `list_plugins`, `reload_plugin`,
+    /// and `unload_plugin` through this.
+    pub plugin_manager: Option<PluginManagerHandle>,
+    /// Cached resource metrics, refreshed by a background sysinfo sampler.
+    pub metrics: Arc<RwLock<ResourceMetrics>>,
+    /// Setter for the runtime log filter (e.g. "info,xenoclaw=debug").
+    pub log_level_setter: Option<LogLevelSetter>,
+    /// Current log level string, kept in sync with the setter for GET /config.
+    pub current_log_level: Arc<RwLock<String>>,
 }
 
 /// Public-safe view of which messaging providers are configured.
@@ -133,6 +191,10 @@ impl AppState {
             started_at: Instant::now(),
             workspace_dir: default_workspace_dir(),
             plugin_states: Arc::new(RwLock::new(HashMap::new())),
+            plugin_manager: None,
+            metrics: Arc::new(RwLock::new(ResourceMetrics::default())),
+            log_level_setter: None,
+            current_log_level: Arc::new(RwLock::new("info".to_string())),
         }
     }
 
@@ -160,6 +222,10 @@ impl AppState {
             started_at: Instant::now(),
             workspace_dir: default_workspace_dir(),
             plugin_states: Arc::new(RwLock::new(HashMap::new())),
+            plugin_manager: None,
+            metrics: Arc::new(RwLock::new(ResourceMetrics::default())),
+            log_level_setter: None,
+            current_log_level: Arc::new(RwLock::new("info".to_string())),
         }
     }
 
@@ -182,6 +248,26 @@ impl AppState {
         self
     }
 
+    /// Attach the live PluginManager so handlers can list/reload/toggle plugins.
+    pub fn with_plugin_manager(mut self, manager: Arc<RwLock<PluginManager>>) -> Self {
+        self.plugin_manager = Some(PluginManagerHandle(manager));
+        self
+    }
+
+    /// Share the resource-metrics cell so the background sampler can write to
+    /// the same Arc the handlers read from.
+    pub fn with_metrics(mut self, metrics: Arc<RwLock<ResourceMetrics>>) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
+    /// Install a setter for the runtime log filter (wraps a tracing reload handle).
+    pub fn with_log_level_setter(mut self, setter: LogLevelSetter, current: String) -> Self {
+        self.log_level_setter = Some(setter);
+        self.current_log_level = Arc::new(RwLock::new(current));
+        self
+    }
+
     /// Create a default AppState for testing or development.
     pub fn default_with_keys(api_keys: Vec<ApiKey>) -> Self {
         Self::new(api_keys, RateLimitConfig::default())
@@ -191,5 +277,46 @@ impl AppState {
     pub fn with_db_pool(mut self, pool: SqlitePool) -> Self {
         self.db_pool = Some(pool);
         self
+    }
+}
+
+/// Load all persisted plugin enable/disable states from SQLite. Best-effort:
+/// on schema mismatch or DB unavailability we return an empty map so the
+/// server still boots.
+pub async fn load_plugin_states(pool: &SqlitePool) -> HashMap<String, bool> {
+    let mut out = HashMap::new();
+    match sqlx::query_as::<_, (String, i64)>("SELECT name, enabled FROM plugin_states")
+        .fetch_all(pool)
+        .await
+    {
+        Ok(rows) => {
+            for (name, enabled) in rows {
+                out.insert(name, enabled != 0);
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to load plugin_states from DB — defaulting to empty");
+        }
+    }
+    out
+}
+
+/// Persist a single plugin's enable state. Returns Ok(()) even when there's no
+/// pool — persistence is optional, the in-memory map is authoritative for the
+/// session.
+pub async fn save_plugin_state(pool: Option<&SqlitePool>, name: &str, enabled: bool) {
+    let Some(pool) = pool else { return };
+    let now = chrono::Utc::now().timestamp();
+    if let Err(e) = sqlx::query(
+        "INSERT INTO plugin_states (name, enabled, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at",
+    )
+    .bind(name)
+    .bind(enabled as i64)
+    .bind(now)
+    .execute(pool)
+    .await
+    {
+        tracing::warn!(plugin = %name, error = %e, "Failed to persist plugin state");
     }
 }

@@ -9,6 +9,7 @@ description = "HTTP/WebSocket API server for the VPS AI Agent Platform"
 [dependencies]
 agent-core = { workspace = true }
 common = { workspace = true }
+plugin-system = { workspace = true }
 security-layer = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

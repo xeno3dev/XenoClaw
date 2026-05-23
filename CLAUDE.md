@@ -152,7 +152,25 @@ refactor(scope): no behaviour change
 
 ## Known Limitations
 
-- Plugin toggling persists in-memory only; restarts reset the state. A full implementation would persist to the config file or database via `PluginManager`.
-- The `POST /api/v1/plugins/reload` and `/plugins/:name/reload` endpoints accept the request and return success but do not yet call into the live `PluginManager` (which is not held in `AppState`).
-- Resource metrics (CPU %, memory %) are not yet exposed by `AgentCore` and show as 0 on the Dashboard.
-- The config PUT endpoint only implements `mode` changes. Other config fields (rate limits, system prompt, etc.) require a restart.
+- Rate limits in `RateLimiter` are immutable once constructed, so the PUT /config endpoint does not yet support changing `rate_limit_default` at runtime — that still needs a restart.
+- The setup wizard's messaging step doesn't validate tokens by talking to the provider — it only writes them to config; first run errors surface in the journal.
+
+## Runtime-changeable settings
+
+The following are wired through `PUT /api/v1/config`:
+
+| Setting | Effect | Notes |
+|---------|--------|-------|
+| `mode` | `"general"` or `"coding"` — switches active tool set | Rejected silently while a message is streaming (AgentBusy) |
+| `system_prompt` | string or null — replaces the prepended prompt | Takes effect on next message; in-flight requests keep old prompt |
+| `log_level` | tracing EnvFilter string (`"info"`, `"debug,xenoclaw=trace"`, …) | Reloaded via `tracing_subscriber::reload::Handle` |
+
+Unknown keys are reported in the response's `warnings` array but don't fail the request.
+
+## Resource metrics
+
+CPU and memory percentages on the Dashboard come from a `/proc` sampler (Linux-only) that runs every 2s in a background tokio task. The values land in `Arc<RwLock<ResourceMetrics>>`, which the `/api/v1/status` handler reads — no per-request sampling cost.
+
+## Plugin toggles
+
+The Plugins page persists enabled/disabled state to the `plugin_states` SQLite table. On restart, the agent re-applies the saved state by unloading any plugin that the user previously disabled. Toggling a plugin on calls `PluginManager::reload_plugin` (which loads it from disk); toggling off calls `unload_plugin`.

@@ -51,6 +51,10 @@ pub struct AgentCore {
 
     /// Runtime configuration.
     config: AgentCoreConfig,
+
+    /// Live system prompt — mutable via `set_system_prompt` so the API can update
+    /// it without restarting. Initialised from `config.system_prompt`.
+    system_prompt: Arc<RwLock<Option<String>>>,
 }
 
 impl AgentCore {
@@ -60,6 +64,7 @@ impl AgentCore {
         tool_registry: ToolRegistry,
         config: AgentCoreConfig,
     ) -> Self {
+        let system_prompt = Arc::new(RwLock::new(config.system_prompt.clone()));
         Self {
             llm_router: Arc::new(RwLock::new(llm_router)),
             tool_registry: Arc::new(RwLock::new(tool_registry)),
@@ -68,6 +73,7 @@ impl AgentCore {
             in_flight: Arc::new(Mutex::new(0)),
             accepting_requests: Arc::new(RwLock::new(false)),
             config,
+            system_prompt,
         }
     }
 
@@ -213,7 +219,9 @@ impl AgentCore {
         let in_flight = Arc::clone(&self.in_flight);
         let mode = Arc::clone(&self.mode);
         let max_iterations = self.config.max_tool_iterations;
-        let system_prompt = self.config.system_prompt.clone();
+        // Snapshot the current system prompt — uses the live mutable value,
+        // not the one frozen at construction time.
+        let system_prompt = self.system_prompt.read().await.clone();
 
         let response_stream = async move {
             let result = Self::run_message_loop(
@@ -414,6 +422,18 @@ impl AgentCore {
                 content: msg.content.clone(),
             })
             .collect()
+    }
+
+    /// Get the current system prompt (cloned).
+    pub async fn system_prompt(&self) -> Option<String> {
+        self.system_prompt.read().await.clone()
+    }
+
+    /// Replace the system prompt. Takes effect on the next message processed —
+    /// in-flight requests keep their snapshotted prompt.
+    pub async fn set_system_prompt(&self, prompt: Option<String>) {
+        let mut guard = self.system_prompt.write().await;
+        *guard = prompt;
     }
 
     /// Get a reference to the tool registry for external registration.

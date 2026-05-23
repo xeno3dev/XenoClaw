@@ -1,7 +1,7 @@
 //! Configuration management endpoints.
 //!
 //! GET /api/v1/config — Get current configuration
-//! PUT /api/v1/config — Update configuration
+//! PUT /api/v1/config — Update configuration (mode, system_prompt, log_level)
 
 use axum::extract::State;
 use axum::routing::get;
@@ -20,6 +20,8 @@ pub struct ConfigResponse {
     pub version: String,
     pub mode: String,
     pub rate_limit_default: u32,
+    pub system_prompt: Option<String>,
+    pub log_level: String,
 }
 
 /// Request body for updating configuration.
@@ -34,6 +36,9 @@ pub struct UpdateConfigRequest {
 pub struct UpdateConfigResponse {
     pub status: &'static str,
     pub applied_settings: Vec<String>,
+    /// Per-key warnings — e.g. unknown keys or failed log-level parses.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// GET /api/v1/config — Get current configuration.
@@ -47,10 +52,19 @@ async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         "general".to_string()
     };
 
+    let system_prompt = match state.agent_core {
+        Some(ref handle) => handle.0.system_prompt().await,
+        None => None,
+    };
+
+    let log_level = state.current_log_level.read().await.clone();
+
     Json(ConfigResponse {
         version: state.version.clone(),
         mode,
         rate_limit_default: security_layer::DEFAULT_RATE_LIMIT,
+        system_prompt,
+        log_level,
     })
 }
 
@@ -60,7 +74,6 @@ async fn update_config(
     Extension(req_id): Extension<RequestId>,
     Json(body): Json<UpdateConfigRequest>,
 ) -> Result<Json<UpdateConfigResponse>, ApiError> {
-    // Validate that settings is a non-empty object
     let obj = body.settings.as_object().ok_or_else(|| {
         ApiError::bad_request("Settings must be a JSON object.", req_id.0.clone())
     })?;
@@ -72,7 +85,10 @@ async fn update_config(
         ));
     }
 
-    // Apply mode change if present
+    let mut applied: Vec<String> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+
+    // Apply mode change
     if let Some(mode_val) = obj.get("mode") {
         if let Some(mode_str) = mode_val.as_str() {
             if let Some(ref handle) = state.agent_core {
@@ -82,18 +98,66 @@ async fn update_config(
                     },
                     _ => AgentMode::General,
                 };
-                // AgentBusy is the only expected error — silently ignore it so the
-                // UI toggle doesn't surface an error while a message is streaming.
+                // AgentBusy is the only expected error — silently ignore so the
+                // UI toggle doesn't surface an error mid-stream.
                 let _ = handle.0.set_mode(new_mode).await;
+                applied.push("mode".to_string());
+            } else {
+                warnings.push("mode: agent_core not attached".to_string());
             }
         }
     }
 
-    let applied: Vec<String> = obj.keys().cloned().collect();
+    // Apply system_prompt change — accepts string (sets) or null (clears).
+    if let Some(prompt_val) = obj.get("system_prompt") {
+        if let Some(ref handle) = state.agent_core {
+            let new_prompt = if prompt_val.is_null() {
+                None
+            } else if let Some(s) = prompt_val.as_str() {
+                Some(s.to_string())
+            } else {
+                warnings.push("system_prompt: must be string or null".to_string());
+                None
+            };
+            handle.0.set_system_prompt(new_prompt).await;
+            applied.push("system_prompt".to_string());
+        } else {
+            warnings.push("system_prompt: agent_core not attached".to_string());
+        }
+    }
+
+    // Apply log_level change — passes the string straight to the tracing reload handle.
+    if let Some(level_val) = obj.get("log_level") {
+        if let Some(level_str) = level_val.as_str() {
+            if let Some(ref setter) = state.log_level_setter {
+                match setter.call(level_str) {
+                    Ok(()) => {
+                        *state.current_log_level.write().await = level_str.to_string();
+                        applied.push("log_level".to_string());
+                    }
+                    Err(e) => {
+                        warnings.push(format!("log_level: {e}"));
+                    }
+                }
+            } else {
+                warnings.push("log_level: tracing reload handle not installed".to_string());
+            }
+        } else {
+            warnings.push("log_level: must be a string".to_string());
+        }
+    }
+
+    // Anything we didn't recognise gets a warning so the client knows.
+    for key in obj.keys() {
+        if !matches!(key.as_str(), "mode" | "system_prompt" | "log_level") {
+            warnings.push(format!("unknown setting: {key}"));
+        }
+    }
 
     Ok(Json(UpdateConfigResponse {
         status: "applied",
         applied_settings: applied,
+        warnings,
     }))
 }
 

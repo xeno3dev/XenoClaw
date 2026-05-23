@@ -188,6 +188,17 @@ async fn create_tables(pool: &SqlitePool) -> Result<(), DbError> {
     .execute(pool)
     .await?;
 
+    // Plugin enabled/disabled state — survives restarts so user toggles persist.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS plugin_states (
+            name TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await?;
+
     // Audit log table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS audit_log (

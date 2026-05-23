@@ -101,6 +101,8 @@ export function Dashboard() {
         mode?: string;
         current_task?: string | null;
         uptime_seconds?: number;
+        cpu_percent?: number;
+        memory_percent?: number;
       };
 
       // Prefer the richer envelope when present; fall back to the
@@ -114,10 +116,8 @@ export function Dashboard() {
               uptimeSeconds: data.uptime_seconds ?? 0,
               mode: ((data.mode ?? 'general').charAt(0).toUpperCase() +
                 (data.mode ?? 'general').slice(1)) as AgentStatus['mode'],
-              // Resource usage not yet reported — leave blank until
-              // backend adds it; cards render a placeholder.
-              cpuPercent: 0,
-              memoryPercent: 0,
+              cpuPercent: data.cpu_percent ?? 0,
+              memoryPercent: data.memory_percent ?? 0,
             }
           : null);
 

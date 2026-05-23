@@ -18,6 +18,8 @@ pub struct StatusResponse {
     pub mode: String,
     pub current_task: Option<String>,
     pub uptime_seconds: u64,
+    pub cpu_percent: f32,
+    pub memory_percent: f32,
 }
 
 /// GET /api/v1/status — Get the current agent status.
@@ -46,11 +48,15 @@ async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
         ("idle".to_string(), None, "general".to_string())
     };
 
+    let metrics = *state.metrics.read().await;
+
     Json(StatusResponse {
         status: status_str,
         mode: mode_str,
         current_task,
         uptime_seconds,
+        cpu_percent: metrics.cpu_percent,
+        memory_percent: metrics.memory_percent,
     })
 }
 

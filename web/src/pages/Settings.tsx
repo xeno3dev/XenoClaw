@@ -5,7 +5,11 @@ import styles from './Settings.module.css';
 const API_BASE = '/api/v1';
 
 interface ConfigData {
-  [section: string]: Record<string, string | number | boolean>;
+  version: string;
+  mode: 'general' | 'coding' | string;
+  rate_limit_default: number;
+  system_prompt: string | null;
+  log_level: string;
 }
 
 interface MessagingProviderStatus {
@@ -18,6 +22,8 @@ interface MessagingStatusResponse {
   whatsapp: MessagingProviderStatus;
 }
 
+const LOG_LEVELS = ['error', 'warn', 'info', 'debug', 'trace'] as const;
+
 export function Settings() {
   const { apiFetch } = useAuth();
   const [config, setConfig] = useState<ConfigData | null>(null);
@@ -25,6 +31,10 @@ export function Settings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [agentMode, setAgentMode] = useState<'general' | 'coding'>('general');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [systemPromptDirty, setSystemPromptDirty] = useState(false);
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  const [logLevel, setLogLevel] = useState('info');
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -35,10 +45,9 @@ export function Settings() {
       if (!cfgRes.ok) throw new Error(`Failed to fetch config (${cfgRes.status})`);
       const data = await cfgRes.json() as ConfigData;
       setConfig(data);
-      const mode = data?.agent?.mode;
-      if (mode === 'coding' || mode === 'general') {
-        setAgentMode(mode);
-      }
+      if (data.mode === 'coding' || data.mode === 'general') setAgentMode(data.mode);
+      if (!systemPromptDirty) setSystemPrompt(data.system_prompt ?? '');
+      setLogLevel(data.log_level ?? 'info');
       if (msgRes.ok) {
         setMessaging(await msgRes.json() as MessagingStatusResponse);
       }
@@ -48,7 +57,7 @@ export function Settings() {
     } finally {
       setLoading(false);
     }
-  }, [apiFetch]);
+  }, [apiFetch, systemPromptDirty]);
 
   useEffect(() => {
     void fetchConfig();
@@ -56,18 +65,60 @@ export function Settings() {
 
   const setMode = useCallback(async (newMode: 'general' | 'coding') => {
     if (newMode === agentMode) return;
-    setAgentMode(newMode); // optimistic update
+    setAgentMode(newMode);
     try {
       const res = await apiFetch(`${API_BASE}/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: { mode: newMode } }),
       });
-      if (!res.ok) setAgentMode(agentMode); // revert on error
+      if (!res.ok) setAgentMode(agentMode);
     } catch {
-      setAgentMode(agentMode); // revert on network failure
+      setAgentMode(agentMode);
     }
   }, [agentMode, apiFetch]);
+
+  const saveSystemPrompt = useCallback(async () => {
+    setSavingPrompt(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: { system_prompt: systemPrompt.trim() === '' ? null : systemPrompt },
+        }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      setSystemPromptDirty(false);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save system prompt');
+    } finally {
+      setSavingPrompt(false);
+    }
+  }, [apiFetch, systemPrompt]);
+
+  const changeLogLevel = useCallback(async (level: string) => {
+    const previous = logLevel;
+    setLogLevel(level);
+    try {
+      const res = await apiFetch(`${API_BASE}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { log_level: level } }),
+      });
+      if (!res.ok) {
+        setLogLevel(previous);
+      } else {
+        const body = await res.json() as { warnings?: string[] };
+        if (body.warnings?.length) {
+          setError(body.warnings.join('; '));
+        }
+      }
+    } catch {
+      setLogLevel(previous);
+    }
+  }, [apiFetch, logLevel]);
 
   if (loading) {
     return (
@@ -113,10 +164,69 @@ export function Settings() {
         </p>
       </section>
 
+      {/* System Prompt Editor */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>System Prompt</h2>
+        <p className={styles.sectionHint}>
+          Prepended to every conversation. Takes effect on the next message —
+          in-flight requests keep the previous prompt.
+        </p>
+        <textarea
+          className={styles.promptEditor}
+          value={systemPrompt}
+          onChange={(e) => {
+            setSystemPrompt(e.target.value);
+            setSystemPromptDirty(true);
+          }}
+          rows={6}
+          placeholder="(empty — agent uses no system prompt)"
+        />
+        <div className={styles.promptActions}>
+          <button
+            className={styles.primaryButton}
+            onClick={() => void saveSystemPrompt()}
+            disabled={!systemPromptDirty || savingPrompt}
+          >
+            {savingPrompt ? 'Saving…' : 'Save'}
+          </button>
+          {systemPromptDirty && (
+            <button
+              className={styles.secondaryButton}
+              onClick={() => {
+                setSystemPrompt(config?.system_prompt ?? '');
+                setSystemPromptDirty(false);
+              }}
+              disabled={savingPrompt}
+            >
+              Revert
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* Log Level */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Log Level</h2>
+        <p className={styles.sectionHint}>
+          Adjusts the tracing filter at runtime — no restart needed.
+        </p>
+        <div className={styles.modeToggle}>
+          {LOG_LEVELS.map((level) => (
+            <button
+              key={level}
+              className={`${styles.modeButton} ${logLevel === level ? styles.modeActive : ''}`}
+              onClick={() => void changeLogLevel(level)}
+            >
+              {level}
+            </button>
+          ))}
+        </div>
+      </section>
+
       {/* API Key Management */}
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>API Key Management</h2>
-        <p className={styles.placeholder}>
+        <p className={styles.sectionHint}>
           Rotate the admin API key from the command line:
           {' '}
           <code className={styles.code}>sudo xenoclaw set-api-key</code>
@@ -154,29 +264,22 @@ export function Settings() {
         </div>
       </section>
 
-      {/* Configuration Display */}
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Current Configuration</h2>
-        {config ? (
-          <div className={styles.configGrid}>
-            {Object.entries(config).map(([section, values]) => (
-              <div key={section} className={styles.configSection}>
-                <h3 className={styles.configSectionName}>{section}</h3>
-                <div className={styles.configEntries}>
-                  {Object.entries(values).map(([key, value]) => (
-                    <div key={key} className={styles.configRow}>
-                      <span className={styles.configKey}>{key}</span>
-                      <span className={styles.configValue}>{String(value)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+      {/* Current Configuration Summary */}
+      {config && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Server Info</h2>
+          <div className={styles.configEntries}>
+            <div className={styles.configRow}>
+              <span className={styles.configKey}>version</span>
+              <span className={styles.configValue}>{config.version}</span>
+            </div>
+            <div className={styles.configRow}>
+              <span className={styles.configKey}>rate_limit_default</span>
+              <span className={styles.configValue}>{config.rate_limit_default}</span>
+            </div>
           </div>
-        ) : (
-          <p className={styles.emptyState}>No configuration data available</p>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }

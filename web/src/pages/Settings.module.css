@@ -107,6 +107,80 @@
   margin: 0;
 }
 
+/* System prompt editor */
+.promptEditor {
+  width: 100%;
+  min-height: 7rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.promptEditor:focus {
+  border-color: var(--color-primary);
+}
+
+.promptEditor::placeholder {
+  color: var(--color-dim);
+}
+
+.promptActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.primaryButton {
+  padding: 0.5rem 1.25rem;
+  background: var(--color-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: var(--color-primary-bright, var(--color-primary));
+  opacity: 0.92;
+}
+
+.primaryButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.secondaryButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .sectionHint {
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
