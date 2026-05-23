@@ -8,6 +8,8 @@ use axum::routing::get;
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 
+use agent_core::types::AgentMode;
+
 use crate::error::ApiError;
 use crate::middleware::auth::RequestId;
 use crate::state::AppState;
@@ -36,16 +38,25 @@ pub struct UpdateConfigResponse {
 
 /// GET /api/v1/config — Get current configuration.
 async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
+    let mode = if let Some(ref handle) = state.agent_core {
+        match handle.0.mode().await {
+            AgentMode::General => "general".to_string(),
+            AgentMode::Coding { .. } => "coding".to_string(),
+        }
+    } else {
+        "general".to_string()
+    };
+
     Json(ConfigResponse {
         version: state.version.clone(),
-        mode: "general".to_string(),
+        mode,
         rate_limit_default: security_layer::DEFAULT_RATE_LIMIT,
     })
 }
 
 /// PUT /api/v1/config — Update configuration.
 async fn update_config(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Extension(req_id): Extension<RequestId>,
     Json(body): Json<UpdateConfigRequest>,
 ) -> Result<Json<UpdateConfigResponse>, ApiError> {
@@ -61,7 +72,23 @@ async fn update_config(
         ));
     }
 
-    // In a full implementation, this would validate and apply config changes.
+    // Apply mode change if present
+    if let Some(mode_val) = obj.get("mode") {
+        if let Some(mode_str) = mode_val.as_str() {
+            if let Some(ref handle) = state.agent_core {
+                let new_mode = match mode_str {
+                    "coding" => AgentMode::Coding {
+                        workspace: state.workspace_dir.clone(),
+                    },
+                    _ => AgentMode::General,
+                };
+                // AgentBusy is the only expected error — silently ignore it so the
+                // UI toggle doesn't surface an error while a message is streaming.
+                let _ = handle.0.set_mode(new_mode).await;
+            }
+        }
+    }
+
     let applied: Vec<String> = obj.keys().cloned().collect();
 
     Ok(Json(UpdateConfigResponse {

@@ -1,0 +1,158 @@
+# XenoClaw — Development Guide
+
+## Overview
+
+XenoClaw is a self-hosted AI agent runtime: a Rust backend with an Axum API server, a React/TypeScript web UI, and a TUI client. It supports multiple LLM providers via a router, a plugin system, tool execution, task scheduling, and third-party messaging bridges (Telegram, Discord, WhatsApp).
+
+## Repository Layout
+
+```
+XenoClaw/
+├── crates/
+│   ├── xenoclaw/          # Binary entry point and CLI subcommands
+│   ├── api-server/        # Axum HTTP/WebSocket server
+│   ├── agent-core/        # Agent runtime: message loop, tool dispatch
+│   ├── common/            # Shared types, config models, errors
+│   ├── llm-router/        # Multi-provider LLM completion routing
+│   ├── plugin-system/     # WASM/native plugin loading
+│   ├── security-layer/    # API key auth, bcrypt, rate limiting
+│   ├── memory-store/      # SQLite-backed memory tools
+│   ├── task-scheduler/    # Cron-style task scheduler
+│   ├── process-supervisor/# Agent lifecycle management
+│   ├── tui/               # Terminal UI client
+│   └── mcp-*/             # MCP client/server bridges
+└── web/                   # Vite + React + TypeScript frontend
+    └── src/
+        ├── components/    # Layout, shared UI
+        ├── hooks/         # useAuth, useWebSocket
+        └── pages/         # Chat, Dashboard, Settings, Plugins, …
+```
+
+## Development Branch
+
+Active development: `claude/web-login-sandbox-setup-MnN5c`
+
+## Build & Run
+
+### Backend
+
+```bash
+# From repo root
+cargo build --workspace
+
+# Run the agent (reads /etc/xenoclaw/config.toml first, then ~/.xenoclaw/config.toml)
+cargo run -p xenoclaw -- serve
+
+# First-run setup wizard
+cargo run -p xenoclaw -- setup
+
+# Reset admin password (bypasses TUI wizard)
+cargo run -p xenoclaw -- passwd
+
+# Rotate API key
+cargo run -p xenoclaw -- set-api-key
+
+# Verify credentials locally
+cargo run -p xenoclaw -- verify-login --user admin --password <pw>
+```
+
+### Frontend
+
+```bash
+cd web
+npm install
+npm run dev      # dev server at :5173, proxies /api to :3000
+npm run build    # production build → web/dist/
+npm run typecheck
+```
+
+The production binary serves `web/dist/` as a fallback on the same port as the API (default `:3000`). Set `XENOCLAW_WEB_DIR` or configure `[web] dir` in config.toml to override.
+
+## Config File
+
+Default path resolution (preference order):
+1. `$XENOCLAW_CONFIG_PATH` (set by the systemd service unit)
+2. `/etc/xenoclaw/config.toml` (system install path)
+3. `~/.xenoclaw/config.toml` (local dev)
+
+The wizard (`xenoclaw setup`) writes to whichever path you pass it. The systemd service reads `/etc/xenoclaw/config.toml`. Always run the wizard with `--config /etc/xenoclaw/config.toml` on a production install, or use `xenoclaw passwd` to set credentials directly.
+
+## Authentication
+
+Two login methods, both returning a Bearer token:
+
+| Method      | Endpoint             | Credential          |
+|-------------|----------------------|---------------------|
+| Password    | POST /api/v1/auth/login | username + password (bcrypt) |
+| API key     | Bearer header only   | raw key (SHA-256 in config) |
+
+Password tokens are in-memory and lost on server restart. API key tokens are stateless (re-checked against config on each request).
+
+## API Endpoints
+
+All endpoints (except `/api/v1/health` and `/api/v1/auth/login`) require `Authorization: Bearer <token>`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/status | Agent status, mode, uptime |
+| GET | /api/v1/config | Config subset (version, mode, rate limit) |
+| PUT | /api/v1/config | Update config (currently: mode switch) |
+| GET | /api/v1/plugins | List plugins with enabled state |
+| POST | /api/v1/plugins/reload | Reload all plugins |
+| POST | /api/v1/plugins/:name/toggle | Toggle plugin on/off |
+| POST | /api/v1/plugins/:name/reload | Reload specific plugin |
+| GET | /api/v1/messaging | Messaging bridge status |
+| WS | /api/v1/ws/chat?token=… | Real-time chat stream |
+| WS | /api/v1/ws/events?token=… | System event stream |
+
+WebSocket auth uses `?token=` query param (browsers can't send custom headers on WS upgrades).
+
+## Frontend Auth Pattern
+
+All authenticated page fetches must use `apiFetch` from `useAuth()`:
+
+```typescript
+const { apiFetch } = useAuth();
+const res = await apiFetch('/api/v1/status'); // injects Bearer token, auto-logs out on 401
+```
+
+Never call `fetch()` directly from a page that requires login — it won't send the token.
+
+## Agent Modes
+
+| Mode | Tools available |
+|------|----------------|
+| General | Base tools (search, tasks, memory) |
+| Coding | Base + dev tools (file ops, terminal, git, LSP) |
+
+Switch via `PUT /api/v1/config` with `{"settings": {"mode": "general"|"coding"}}`. The Chat page header and the Settings page both expose this toggle. Mode change is rejected with `AgentBusy` while a message is in-flight (the UI ignores this and reverts optimistically).
+
+## WebSocket Message Protocol
+
+All WS messages are JSON `{ type: string, payload: any }`.
+
+**Client → Server:**
+- `{ type: "message", payload: { session_id, content } }`
+
+**Server → Client:**
+- `{ type: "token", payload: { content } }` — streamed token
+- `{ type: "done" }` — stream complete
+- `{ type: "error", payload: { message } }` — error
+- `{ type: "message", payload: { content, diff_image? } }` — full non-streamed response
+- `{ type: "diff_image", payload: { url? | svg? } }` — code diff visualization
+
+## Commit Conventions
+
+```
+fix(scope): what was broken and what changed
+feat(scope): what was added
+style(scope): visual/CSS changes
+refactor(scope): no behaviour change
+```
+
+## Known Limitations
+
+- Plugin toggling persists in-memory only; restarts reset the state. A full implementation would persist to the config file or database via `PluginManager`.
+- The `POST /api/v1/plugins/reload` and `/plugins/:name/reload` endpoints accept the request and return success but do not yet call into the live `PluginManager` (which is not held in `AppState`).
+- Resource metrics (CPU %, memory %) are not yet exposed by `AgentCore` and show as 0 on the Dashboard.
+- The config PUT endpoint only implements `mode` changes. Other config fields (rate limits, system prompt, etc.) require a restart.

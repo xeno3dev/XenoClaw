@@ -49,9 +49,20 @@ export function Plugins() {
     }
   }, [apiFetch, fetchPlugins]);
 
-  const togglePlugin = useCallback((_name: string) => {
-    // Placeholder — would POST to API to enable/disable
-  }, []);
+  const togglePlugin = useCallback(async (name: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/plugins/${encodeURIComponent(name)}/toggle`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(`Failed to toggle plugin (${res.status})`);
+      const data = await res.json() as { name: string; enabled: boolean };
+      setPlugins((prev) =>
+        prev.map((p) => (p.name === name ? { ...p, enabled: data.enabled } : p))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to toggle plugin');
+    }
+  }, [apiFetch]);
 
   if (loading) {
     return (

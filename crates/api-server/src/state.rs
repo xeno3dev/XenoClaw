@@ -5,13 +5,16 @@
 //! version information.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::sqlite::SqlitePool;
 use tokio::sync::RwLock;
 
+use agent_core::AgentCore;
 use security_layer::auth::ApiKeyAuthenticator;
 use security_layer::rate_limit::{RateLimitConfig, RateLimiter};
 
@@ -20,6 +23,17 @@ use common::models::{AgentMode, ApiKey};
 use common::types::{ApiKeyId, SessionId};
 
 use crate::routes::ws::WsState;
+
+/// Newtype so `Arc<AgentCore>` can be stored in a `#[derive(Debug, Clone)]` struct.
+/// `AgentCore` itself does not implement `Debug`, so we provide a stub impl here.
+#[derive(Clone)]
+pub struct AgentCoreHandle(pub Arc<AgentCore>);
+
+impl std::fmt::Debug for AgentCoreHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AgentCoreHandle")
+    }
+}
 
 /// Information about an active session.
 #[derive(Debug, Clone, Serialize)]
@@ -72,6 +86,14 @@ pub struct AppState {
     /// by the Settings UI to render connection status without ever exposing
     /// the actual bot tokens over the wire.
     pub messaging_status: MessagingStatus,
+    /// Live reference to the agent runtime for status queries and mode changes.
+    pub agent_core: Option<AgentCoreHandle>,
+    /// When the server started — used to compute uptime_seconds in /api/v1/status.
+    pub started_at: Instant,
+    /// Default workspace directory used when switching to Coding mode.
+    pub workspace_dir: PathBuf,
+    /// Per-plugin enabled/disabled state (in-memory; reflects UI toggles).
+    pub plugin_states: Arc<RwLock<HashMap<String, bool>>>,
 }
 
 /// Public-safe view of which messaging providers are configured.
@@ -81,6 +103,14 @@ pub struct MessagingStatus {
     pub telegram_configured: bool,
     pub discord_configured: bool,
     pub whatsapp_configured: bool,
+}
+
+fn default_workspace_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(".xenoclaw")
+        .join("workspace")
 }
 
 impl AppState {
@@ -99,6 +129,10 @@ impl AppState {
             admin_session_key_id: ApiKeyId::new(),
             db_pool: None,
             messaging_status: MessagingStatus::default(),
+            agent_core: None,
+            started_at: Instant::now(),
+            workspace_dir: default_workspace_dir(),
+            plugin_states: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -122,6 +156,10 @@ impl AppState {
             admin_session_key_id: ApiKeyId::new(),
             db_pool: None,
             messaging_status: MessagingStatus::default(),
+            agent_core: None,
+            started_at: Instant::now(),
+            workspace_dir: default_workspace_dir(),
+            plugin_states: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -129,6 +167,18 @@ impl AppState {
     /// after reading the on-disk config). Builder-style for ergonomic chaining.
     pub fn with_messaging_status(mut self, status: MessagingStatus) -> Self {
         self.messaging_status = status;
+        self
+    }
+
+    /// Attach the live AgentCore so status/config endpoints reflect real state.
+    pub fn with_agent_core(mut self, core: Arc<AgentCore>) -> Self {
+        self.agent_core = Some(AgentCoreHandle(core));
+        self
+    }
+
+    /// Override the default workspace directory used when switching to Coding mode.
+    pub fn with_workspace_dir(mut self, dir: PathBuf) -> Self {
+        self.workspace_dir = dir;
         self
     }
 

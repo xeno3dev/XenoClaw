@@ -28,14 +28,46 @@ const SESSION_ID = 'default-session';
  * Implements Requirements 7.1, 7.4, 7.5, 16.4
  */
 export function Chat() {
-  const { token } = useAuth();
+  const { token, apiFetch } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [agentMode, setAgentMode] = useState<'general' | 'coding'>('general');
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const streamingMessageRef = useRef<string | null>(null);
+
+  // Fetch the current agent mode from the status endpoint on mount
+  useEffect(() => {
+    apiFetch('/api/v1/status')
+      .then((res) => (res.ok ? (res.json() as Promise<{ mode?: string }>) : null))
+      .then((data) => {
+        if (data?.mode === 'coding' || data?.mode === 'general') {
+          setAgentMode(data.mode);
+        }
+      })
+      .catch(() => {}); // network errors are non-fatal — keep default
+  }, [apiFetch]);
+
+  // Switch the agent mode and persist via the config endpoint
+  const setMode = useCallback(
+    async (newMode: 'general' | 'coding') => {
+      if (newMode === agentMode) return;
+      setAgentMode(newMode);
+      try {
+        const res = await apiFetch('/api/v1/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: { mode: newMode } }),
+        });
+        if (!res.ok) setAgentMode(agentMode); // revert on error
+      } catch {
+        setAgentMode(agentMode); // revert on network failure
+      }
+    },
+    [agentMode, apiFetch],
+  );
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
@@ -235,15 +267,33 @@ export function Chat() {
 
   return (
     <div className={styles.container}>
-      {/* Header with connection status */}
+      {/* Header with mode toggle and connection status */}
       <div className={styles.header}>
         <h1 className={styles.headerTitle}>Chat</h1>
-        <div className={styles.headerStatus}>
-          <span
-            className={`${styles.statusDot} ${getStatusDotClass(status)}`}
-            aria-label={`Connection status: ${status}`}
-          />
-          <span>{getStatusLabel(status)}</span>
+        <div className={styles.headerRight}>
+          <div className={styles.modeToggle} role="group" aria-label="Agent mode">
+            <button
+              className={`${styles.modeBtn} ${agentMode === 'general' ? styles.modeBtnActive : ''}`}
+              onClick={() => void setMode('general')}
+              aria-pressed={agentMode === 'general'}
+            >
+              General
+            </button>
+            <button
+              className={`${styles.modeBtn} ${agentMode === 'coding' ? styles.modeBtnActive : ''}`}
+              onClick={() => void setMode('coding')}
+              aria-pressed={agentMode === 'coding'}
+            >
+              Coding
+            </button>
+          </div>
+          <div className={styles.headerStatus}>
+            <span
+              className={`${styles.statusDot} ${getStatusDotClass(status)}`}
+              aria-label={`Connection status: ${status}`}
+            />
+            <span>{getStatusLabel(status)}</span>
+          </div>
         </div>
       </div>
 

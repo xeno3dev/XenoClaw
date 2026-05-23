@@ -54,10 +54,20 @@ export function Settings() {
     void fetchConfig();
   }, [fetchConfig]);
 
-  const toggleMode = useCallback(() => {
-    setAgentMode((prev) => (prev === 'general' ? 'coding' : 'general'));
-    // Placeholder — would POST to API to change mode
-  }, []);
+  const setMode = useCallback(async (newMode: 'general' | 'coding') => {
+    if (newMode === agentMode) return;
+    setAgentMode(newMode); // optimistic update
+    try {
+      const res = await apiFetch(`${API_BASE}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { mode: newMode } }),
+      });
+      if (!res.ok) setAgentMode(agentMode); // revert on error
+    } catch {
+      setAgentMode(agentMode); // revert on network failure
+    }
+  }, [agentMode, apiFetch]);
 
   if (loading) {
     return (
@@ -85,13 +95,13 @@ export function Settings() {
         <div className={styles.modeToggle}>
           <button
             className={`${styles.modeButton} ${agentMode === 'general' ? styles.modeActive : ''}`}
-            onClick={toggleMode}
+            onClick={() => void setMode('general')}
           >
             General
           </button>
           <button
             className={`${styles.modeButton} ${agentMode === 'coding' ? styles.modeActive : ''}`}
-            onClick={toggleMode}
+            onClick={() => void setMode('coding')}
           >
             Coding
           </button>

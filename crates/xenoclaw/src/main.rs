@@ -347,7 +347,9 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         telegram_configured: config.messaging.telegram.is_some(),
         discord_configured: config.messaging.discord.is_some(),
         whatsapp_configured: config.messaging.whatsapp.is_some(),
-    });
+    })
+    .with_agent_core(Arc::clone(&agent_core))
+    .with_workspace_dir(workspace_dir.clone());
     let router = build_router(state);
 
     // Plugin system
