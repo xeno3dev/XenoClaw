@@ -35,6 +35,9 @@ export function Settings() {
   const [systemPromptDirty, setSystemPromptDirty] = useState(false);
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [logLevel, setLogLevel] = useState('info');
+  const [rateLimit, setRateLimit] = useState<string>('');
+  const [rateLimitDirty, setRateLimitDirty] = useState(false);
+  const [savingRateLimit, setSavingRateLimit] = useState(false);
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -48,6 +51,7 @@ export function Settings() {
       if (data.mode === 'coding' || data.mode === 'general') setAgentMode(data.mode);
       if (!systemPromptDirty) setSystemPrompt(data.system_prompt ?? '');
       setLogLevel(data.log_level ?? 'info');
+      if (!rateLimitDirty) setRateLimit(String(data.rate_limit_default ?? ''));
       if (msgRes.ok) {
         setMessaging(await msgRes.json() as MessagingStatusResponse);
       }
@@ -57,7 +61,7 @@ export function Settings() {
     } finally {
       setLoading(false);
     }
-  }, [apiFetch, systemPromptDirty]);
+  }, [apiFetch, systemPromptDirty, rateLimitDirty]);
 
   useEffect(() => {
     void fetchConfig();
@@ -97,6 +101,29 @@ export function Settings() {
       setSavingPrompt(false);
     }
   }, [apiFetch, systemPrompt]);
+
+  const saveRateLimit = useCallback(async () => {
+    const parsed = Number.parseInt(rateLimit, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setError('Rate limit must be a positive integer');
+      return;
+    }
+    setSavingRateLimit(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { rate_limit_default: parsed } }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      setRateLimitDirty(false);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save rate limit');
+    } finally {
+      setSavingRateLimit(false);
+    }
+  }, [apiFetch, rateLimit]);
 
   const changeLogLevel = useCallback(async (level: string) => {
     const previous = logLevel;
@@ -264,7 +291,48 @@ export function Settings() {
         </div>
       </section>
 
-      {/* Current Configuration Summary */}
+      {/* Rate Limit */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Rate Limit</h2>
+        <p className={styles.sectionHint}>
+          Default requests per minute per API key. Applies immediately — atomic
+          swap inside the live rate limiter.
+        </p>
+        <div className={styles.promptActions}>
+          <input
+            type="number"
+            min={1}
+            className={styles.rateInput}
+            value={rateLimit}
+            onChange={(e) => {
+              setRateLimit(e.target.value);
+              setRateLimitDirty(true);
+            }}
+            placeholder="100"
+          />
+          <button
+            className={styles.primaryButton}
+            onClick={() => void saveRateLimit()}
+            disabled={!rateLimitDirty || savingRateLimit}
+          >
+            {savingRateLimit ? 'Saving…' : 'Save'}
+          </button>
+          {rateLimitDirty && (
+            <button
+              className={styles.secondaryButton}
+              onClick={() => {
+                setRateLimit(String(config?.rate_limit_default ?? ''));
+                setRateLimitDirty(false);
+              }}
+              disabled={savingRateLimit}
+            >
+              Revert
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* Server Info */}
       {config && (
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Server Info</h2>
@@ -272,10 +340,6 @@ export function Settings() {
             <div className={styles.configRow}>
               <span className={styles.configKey}>version</span>
               <span className={styles.configValue}>{config.version}</span>
-            </div>
-            <div className={styles.configRow}>
-              <span className={styles.configKey}>rate_limit_default</span>
-              <span className={styles.configValue}>{config.rate_limit_default}</span>
             </div>
           </div>
         </section>

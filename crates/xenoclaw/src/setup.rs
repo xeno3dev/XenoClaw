@@ -2606,7 +2606,17 @@ async fn step_messaging(state: &mut WizardState) -> Result<StepOutcome> {
                     state.telegram_bot_token = telegram_input.value().trim().to_string();
                     state.discord_bot_token = discord_input.value().trim().to_string();
                     state.whatsapp_phone = whatsapp_input.value().trim().to_string();
-                    return Ok(StepOutcome::Next);
+                    let any = !state.telegram_bot_token.is_empty()
+                        || !state.discord_bot_token.is_empty()
+                        || !state.whatsapp_phone.is_empty();
+                    if !any {
+                        return Ok(StepOutcome::Next);
+                    }
+                    match show_messaging_validation(state).await? {
+                        ValidationOutcome::Proceed => return Ok(StepOutcome::Next),
+                        ValidationOutcome::Edit => continue,
+                        ValidationOutcome::Quit => return Ok(StepOutcome::Quit),
+                    }
                 }
                 KeyCode::Esc => return Ok(StepOutcome::Back),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -2658,6 +2668,222 @@ async fn step_messaging(state: &mut WizardState) -> Result<StepOutcome> {
             }
         }
     }
+}
+
+// ─── Step 7.5: Messaging token validation ───────────────────────────────────
+
+#[derive(Debug, Clone)]
+enum ValidationStatus {
+    Ok,
+    Failed(String),
+    Skipped,
+}
+
+#[derive(Debug, Clone)]
+struct ValidationResults {
+    telegram: ValidationStatus,
+    discord: ValidationStatus,
+    whatsapp: ValidationStatus,
+}
+
+enum ValidationOutcome {
+    Proceed,
+    Edit,
+    Quit,
+}
+
+/// Display "Validating…" then a results screen for the three messaging providers.
+/// Returns whether the user wants to proceed, go back and edit, or quit entirely.
+async fn show_messaging_validation(state: &WizardState) -> Result<ValidationOutcome> {
+    // Phase 1: "Validating…" screen
+    {
+        let mut stdout = io::stdout();
+        clear_screen(&mut stdout)?;
+        print_header(&mut stdout, 7)?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(white()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Validating messaging tokens…\r\n\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(
+                "   Contacting Telegram and Discord (10s timeout).\r\n",
+            ))?;
+        bg(&mut stdout, BG)?;
+        stdout.flush()?;
+    }
+
+    let results = validate_messaging_tokens(state).await;
+
+    // Phase 2: results screen, loop on input
+    loop {
+        let mut stdout = io::stdout();
+        clear_screen(&mut stdout)?;
+        print_header(&mut stdout, 7)?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(white()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Token Validation\r\n\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+
+        render_validation_row(&mut stdout, "Telegram", &results.telegram)?;
+        render_validation_row(&mut stdout, "Discord", &results.discord)?;
+        render_validation_row(&mut stdout, "WhatsApp", &results.whatsapp)?;
+
+        bg(&mut stdout, BG)?;
+        stdout.queue(Print("\r\n"))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(
+                "   Failures may just mean the host is offline — you can still save\r\n",
+            ))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print("   and fix tokens later by re-running the wizard.\r\n"))?;
+        stdout.flush()?;
+
+        print_footer(
+            &mut stdout,
+            "  [Enter] Continue  [Esc] Back to edit  [Ctrl+C] Quit",
+        )?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Enter => return Ok(ValidationOutcome::Proceed),
+                KeyCode::Esc => return Ok(ValidationOutcome::Edit),
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return Ok(ValidationOutcome::Quit);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn render_validation_row(
+    stdout: &mut io::Stdout,
+    label: &str,
+    status: &ValidationStatus,
+) -> io::Result<()> {
+    bg(stdout, BG)?;
+    let (icon, icon_color, detail) = match status {
+        ValidationStatus::Ok => ("✓", green(), "valid".to_string()),
+        ValidationStatus::Failed(reason) => ("✗", red(), reason.clone()),
+        ValidationStatus::Skipped => ("·", dim(), "not configured".to_string()),
+    };
+    stdout
+        .queue(SetForegroundColor(icon_color))?
+        .queue(Print(format!("   {icon}  ")))?
+        .queue(SetForegroundColor(white()))?
+        .queue(Print(format!("{label:<10}")))?
+        .queue(SetForegroundColor(dim()))?
+        .queue(Print(format!("  {detail}\r\n")))?;
+    Ok(())
+}
+
+/// Run all three provider validations concurrently and collect results.
+async fn validate_messaging_tokens(state: &WizardState) -> ValidationResults {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let (tg, dc, wa) = tokio::join!(
+        validate_telegram_token(&client, &state.telegram_bot_token),
+        validate_discord_token(&client, &state.discord_bot_token),
+        async { validate_whatsapp_phone(&state.whatsapp_phone) },
+    );
+
+    ValidationResults {
+        telegram: tg,
+        discord: dc,
+        whatsapp: wa,
+    }
+}
+
+/// Hit Telegram's `getMe` — succeeds iff `ok: true` in the JSON body.
+async fn validate_telegram_token(client: &reqwest::Client, token: &str) -> ValidationStatus {
+    if token.is_empty() {
+        return ValidationStatus::Skipped;
+    }
+    let url = format!("https://api.telegram.org/bot{token}/getMe");
+    match client.get(&url).send().await {
+        Ok(r) => {
+            let status = r.status();
+            if status.is_success() {
+                match r.json::<serde_json::Value>().await {
+                    Ok(v) if v.get("ok").and_then(|b| b.as_bool()) == Some(true) => {
+                        ValidationStatus::Ok
+                    }
+                    Ok(_) => ValidationStatus::Failed("API replied ok=false".to_string()),
+                    Err(e) => ValidationStatus::Failed(format!("Bad JSON: {e}")),
+                }
+            } else if status.as_u16() == 401 {
+                ValidationStatus::Failed("Unauthorized — token is wrong".to_string())
+            } else {
+                ValidationStatus::Failed(format!("HTTP {status}"))
+            }
+        }
+        Err(e) if e.is_timeout() => {
+            ValidationStatus::Failed("Timed out (host offline?)".to_string())
+        }
+        Err(e) => ValidationStatus::Failed(format!("Network: {e}")),
+    }
+}
+
+/// Hit Discord's `users/@me` with a Bot token. 401 = bad token, 200 = good.
+async fn validate_discord_token(client: &reqwest::Client, token: &str) -> ValidationStatus {
+    if token.is_empty() {
+        return ValidationStatus::Skipped;
+    }
+    let resp = client
+        .get("https://discord.com/api/v10/users/@me")
+        .header("Authorization", format!("Bot {token}"))
+        .send()
+        .await;
+    match resp {
+        Ok(r) if r.status().is_success() => ValidationStatus::Ok,
+        Ok(r) if r.status().as_u16() == 401 => {
+            ValidationStatus::Failed("Unauthorized — token is wrong".to_string())
+        }
+        Ok(r) => ValidationStatus::Failed(format!("HTTP {}", r.status())),
+        Err(e) if e.is_timeout() => {
+            ValidationStatus::Failed("Timed out (host offline?)".to_string())
+        }
+        Err(e) => ValidationStatus::Failed(format!("Network: {e}")),
+    }
+}
+
+/// Local E.164 format check — `+` followed by 7-15 digits, leading digit 1-9.
+/// The bridge will discover unreachable numbers when it pairs; the wizard can
+/// at least catch obvious format mistakes without making an API call.
+fn validate_whatsapp_phone(phone: &str) -> ValidationStatus {
+    if phone.is_empty() {
+        return ValidationStatus::Skipped;
+    }
+    if !phone.starts_with('+') {
+        return ValidationStatus::Failed("Must start with + (E.164)".to_string());
+    }
+    let digits = &phone[1..];
+    if digits.len() < 7 || digits.len() > 15 {
+        return ValidationStatus::Failed(format!(
+            "Must have 7-15 digits after +, got {}",
+            digits.len()
+        ));
+    }
+    if !digits.chars().all(|c| c.is_ascii_digit()) {
+        return ValidationStatus::Failed("Only digits allowed after +".to_string());
+    }
+    if digits.starts_with('0') {
+        return ValidationStatus::Failed("Country code cannot start with 0".to_string());
+    }
+    ValidationStatus::Ok
 }
 
 // ─── Step 8: Review ──────────────────────────────────────────────────────────

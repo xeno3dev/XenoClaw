@@ -39,6 +39,7 @@ axum = { workspace = true }
 bcrypt = { workspace = true }
 async-trait = { workspace = true }
 sqlx = { workspace = true }
+reqwest = { workspace = true }
 
 # Binary-only deps
 tower-http = { workspace = true }

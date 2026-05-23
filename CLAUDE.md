@@ -150,11 +150,6 @@ style(scope): visual/CSS changes
 refactor(scope): no behaviour change
 ```
 
-## Known Limitations
-
-- Rate limits in `RateLimiter` are immutable once constructed, so the PUT /config endpoint does not yet support changing `rate_limit_default` at runtime — that still needs a restart.
-- The setup wizard's messaging step doesn't validate tokens by talking to the provider — it only writes them to config; first run errors surface in the journal.
-
 ## Runtime-changeable settings
 
 The following are wired through `PUT /api/v1/config`:
@@ -164,8 +159,19 @@ The following are wired through `PUT /api/v1/config`:
 | `mode` | `"general"` or `"coding"` — switches active tool set | Rejected silently while a message is streaming (AgentBusy) |
 | `system_prompt` | string or null — replaces the prepended prompt | Takes effect on next message; in-flight requests keep old prompt |
 | `log_level` | tracing EnvFilter string (`"info"`, `"debug,xenoclaw=trace"`, …) | Reloaded via `tracing_subscriber::reload::Handle` |
+| `rate_limit_default` | positive integer — per-key requests per minute | Atomic swap inside `RateLimiter`, takes effect immediately |
 
 Unknown keys are reported in the response's `warnings` array but don't fail the request.
+
+## Wizard token validation
+
+After the user enters Telegram / Discord / WhatsApp credentials in the setup wizard, an inline validation step runs:
+
+- **Telegram**: GET `https://api.telegram.org/bot<token>/getMe`, expects `ok: true`
+- **Discord**: GET `https://discord.com/api/v10/users/@me` with `Authorization: Bot <token>`, expects 200
+- **WhatsApp**: local E.164 format check (`+` followed by 7–15 digits, leading digit 1–9)
+
+Failures don't block submission — the user can press Enter to save anyway (useful when the host is temporarily offline) or Esc to go back and fix the input.
 
 ## Resource metrics
 

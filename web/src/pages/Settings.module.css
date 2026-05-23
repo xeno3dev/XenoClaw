@@ -135,6 +135,24 @@
 .promptActions {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
+}
+
+.rateInput {
+  width: 7rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.rateInput:focus {
+  border-color: var(--color-primary);
 }
 
 .primaryButton {

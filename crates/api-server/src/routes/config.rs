@@ -62,7 +62,7 @@ async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
     Json(ConfigResponse {
         version: state.version.clone(),
         mode,
-        rate_limit_default: security_layer::DEFAULT_RATE_LIMIT,
+        rate_limit_default: state.rate_limiter.default_limit(),
         system_prompt,
         log_level,
     })
@@ -126,6 +126,23 @@ async fn update_config(
         }
     }
 
+    // Apply rate_limit_default change — atomic swap inside RateLimiter, no rebuild.
+    if let Some(rate_val) = obj.get("rate_limit_default") {
+        if let Some(n) = rate_val.as_u64() {
+            if n == 0 || n > u32::MAX as u64 {
+                warnings.push(format!(
+                    "rate_limit_default: out of range (1..={})",
+                    u32::MAX
+                ));
+            } else {
+                state.rate_limiter.set_default_limit(n as u32);
+                applied.push("rate_limit_default".to_string());
+            }
+        } else {
+            warnings.push("rate_limit_default: must be a positive integer".to_string());
+        }
+    }
+
     // Apply log_level change — passes the string straight to the tracing reload handle.
     if let Some(level_val) = obj.get("log_level") {
         if let Some(level_str) = level_val.as_str() {
@@ -149,7 +166,10 @@ async fn update_config(
 
     // Anything we didn't recognise gets a warning so the client knows.
     for key in obj.keys() {
-        if !matches!(key.as_str(), "mode" | "system_prompt" | "log_level") {
+        if !matches!(
+            key.as_str(),
+            "mode" | "system_prompt" | "log_level" | "rate_limit_default"
+        ) {
             warnings.push(format!("unknown setting: {key}"));
         }
     }
