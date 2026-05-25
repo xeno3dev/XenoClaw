@@ -12,6 +12,7 @@ members = [
     "crates/tui",
     "crates/process-supervisor",
     "crates/common",
+    "crates/skills",
     "crates/xenoclaw",
 ]
 resolver = "2"
@@ -93,3 +94,4 @@ messaging-integration = { path = "crates/messaging-integration" }
 api-server = { path = "crates/api-server" }
 tui = { path = "crates/tui" }
 process-supervisor = { path = "crates/process-supervisor" }
+skills = { path = "crates/skills" }

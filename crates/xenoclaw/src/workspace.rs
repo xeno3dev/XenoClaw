@@ -14,7 +14,13 @@ use tracing::trace;
 /// Reads SOUL.md, IDENTITY.md, AGENTS.md, TOOLS.md, USER.md, MEMORY.md,
 /// BOOTSTRAP.md, memory/*.md, and skills/*/skill.md from the workspace directory.
 /// Missing files are silently skipped (logged at TRACE level).
-pub async fn build_system_prompt(workspace_dir: &Path) -> Result<String> {
+///
+/// `hermes_skill_index` is the Level 0 index from `~/.xenoclaw/skills/` (may be
+/// empty or None if the skill library is empty or disabled).
+pub async fn build_system_prompt(
+    workspace_dir: &Path,
+    hermes_skill_index: Option<&str>,
+) -> Result<String> {
     let mut sections = Vec::new();
 
     // Core files
@@ -44,11 +50,23 @@ pub async fn build_system_prompt(workspace_dir: &Path) -> Result<String> {
         sections.push(content.clone());
     }
 
-    // Skills
+    // Workspace-local skills (ClawhubHub plugins)
     let skills_section = build_skills_section(workspace_dir).await;
     if !skills_section.is_empty() {
         sections.push("### Installed Skills (ClawhubHub Plugins)".to_string());
         sections.push(skills_section);
+    }
+
+    // Hermes auto-created skill library (Level 0 index)
+    if let Some(index) = hermes_skill_index {
+        if !index.is_empty() && index != "Available skills: (none)" {
+            sections.push("### Auto-Created Skill Library".to_string());
+            sections.push(index.to_string());
+            sections.push(
+                "Use the `use_skill` tool to load the full instructions for any listed skill."
+                    .to_string(),
+            );
+        }
     }
 
     sections.push("---".to_string());

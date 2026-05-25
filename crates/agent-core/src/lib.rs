@@ -38,6 +38,6 @@ pub use session_manager::{
 };
 pub use tool_registry::{Tool, ToolRegistry};
 pub use types::{
-    AgentCoreConfig, AgentMode, AgentStatus, ModeError, ResponseChunk, ResponseStream,
-    ShutdownError,
+    AgentCoreConfig, AgentMode, AgentStatus, ModeError, PostTaskHookFn, ResponseChunk,
+    ResponseStream, ShutdownError,
 };

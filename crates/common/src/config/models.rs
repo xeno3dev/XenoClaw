@@ -53,6 +53,10 @@ pub struct PlatformConfig {
     /// MCP (Model Context Protocol) settings.
     #[serde(default)]
     pub mcp: McpConfig,
+
+    /// Skill library settings.
+    #[serde(default)]
+    pub skills: SkillsConfig,
 }
 
 impl Default for PlatformConfig {
@@ -69,6 +73,7 @@ impl Default for PlatformConfig {
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),
             mcp: McpConfig::default(),
+            skills: SkillsConfig::default(),
         }
     }
 }
@@ -845,6 +850,50 @@ pub struct McpServerConfig {
     /// Tool names to auto-approve (skip confirmation).
     #[serde(default)]
     pub auto_approve: Vec<String>,
+}
+
+/// Skill library configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillsConfig {
+    /// Enable the auto-skill-creation loop after complex tasks.
+    #[serde(default = "default_true")]
+    pub auto_create: bool,
+
+    /// Minimum tool-call count in a session before reflection is triggered.
+    #[serde(default = "default_skill_threshold")]
+    pub auto_create_threshold: u32,
+
+    /// Cron expression for the autonomous curator (default: weekly Sunday midnight).
+    #[serde(default = "default_curator_schedule")]
+    pub curator_schedule: String,
+
+    /// Enable the autonomous background curator.
+    #[serde(default = "default_true")]
+    pub curator_enabled: bool,
+
+    /// Override the default skills directory (`~/.xenoclaw/skills/`).
+    #[serde(default)]
+    pub skills_dir: Option<PathBuf>,
+}
+
+impl Default for SkillsConfig {
+    fn default() -> Self {
+        Self {
+            auto_create: true,
+            auto_create_threshold: default_skill_threshold(),
+            curator_schedule: default_curator_schedule(),
+            curator_enabled: true,
+            skills_dir: None,
+        }
+    }
+}
+
+fn default_skill_threshold() -> u32 {
+    15
+}
+
+fn default_curator_schedule() -> String {
+    "0 0 * * 0".to_string()
 }
 
 /// Session source identifier — tracks where a session originated from.

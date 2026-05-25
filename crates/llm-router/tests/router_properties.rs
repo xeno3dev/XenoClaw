@@ -121,6 +121,7 @@ fn platform_config_with_providers(providers: Vec<ProviderConfig>) -> PlatformCon
         monitoring: MonitoringConfig::default(),
         plugins: PluginConfig::default(),
         mcp: McpConfig::default(),
+        skills: common::config::SkillsConfig::default(),
     }
 }
 

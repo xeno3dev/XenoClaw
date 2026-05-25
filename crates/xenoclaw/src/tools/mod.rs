@@ -7,7 +7,10 @@
 pub mod git_tools;
 pub mod image_tools;
 pub mod memory_tools;
+pub mod skill_tool;
 pub mod task_tools;
+
+pub use skill_tool::UseSkillTool;
 
 use std::path::PathBuf;
 use std::sync::Arc;

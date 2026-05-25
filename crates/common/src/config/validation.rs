@@ -452,6 +452,7 @@ mod tests {
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),
             mcp: McpConfig::default(),
+            skills: SkillsConfig::default(),
         }
     }
 

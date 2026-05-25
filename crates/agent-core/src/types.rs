@@ -3,10 +3,15 @@
 //! Defines the agent's operational status, modes, response streaming,
 //! and tool-related types used throughout the agent-core crate.
 
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
+
+use llm_router::types::ChatMessage;
 
 use common::errors::PlatformError;
 use common::models::ToolResult;
@@ -97,6 +102,15 @@ pub enum ShutdownError {
     #[error("Failed to save state: {reason}")]
     StatePersistFailed { reason: String },
 }
+
+/// A fire-and-forget hook invoked after every completed message loop.
+///
+/// Receives the total tool-call count for the session and the full
+/// conversation transcript.  The hook decides internally whether to act
+/// (e.g. based on a minimum threshold).  It is spawned in a separate
+/// tokio task so it never blocks the agent response.
+pub type PostTaskHookFn =
+    Arc<dyn Fn(usize, Vec<ChatMessage>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 /// Configuration for the agent core runtime.
 #[derive(Debug, Clone, Serialize, Deserialize)]

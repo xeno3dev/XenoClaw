@@ -20,6 +20,7 @@ pub mod messages;
 pub mod messaging;
 pub mod plugins;
 pub mod sessions;
+pub mod skills;
 pub mod status;
 pub mod tasks;
 pub mod uploads;
@@ -51,6 +52,7 @@ pub fn build_routes(state: AppState) -> Router {
         .merge(memory::routes())
         .merge(plugins::routes())
         .merge(uploads::routes())
+        .merge(skills::routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,

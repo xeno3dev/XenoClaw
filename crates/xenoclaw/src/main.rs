@@ -25,13 +25,17 @@ use uuid::Uuid;
 
 use tower_http::services::{ServeDir, ServeFile};
 
-use agent_core::{AgentCore, AgentCoreConfig, AgentStatus, EventBus, ToolRegistry};
+use agent_core::{AgentCore, AgentCoreConfig, AgentStatus, EventBus, PostTaskHookFn, ToolRegistry};
 use api_server::state::{LogLevelSetter, MessagingStatus, ResourceMetrics};
 use api_server::{build_router, AppState};
 use chrono::Utc;
-use common::config::{load_config, signal::spawn_reload_handler, ConfigError};
+use clap::Args;
+use common::config::{load_config, signal::spawn_reload_handler, ConfigError, SkillsConfig};
 use common::{models::ApiKey, types::ApiKeyId};
-use llm_router::LlmRouter;
+use llm_router::{
+    types::{ChatMessage, ChatRole, CompletionRequest},
+    LlmRouter,
+};
 use plugin_system::PluginManager;
 use process_supervisor::{
     supervisor::{AgentHealthCheckFn, AgentStartFn, StateRestoreFn},
@@ -39,6 +43,7 @@ use process_supervisor::{
 };
 use security_layer::auth::ApiKeyAuthenticator;
 use security_layer::rate_limit::RateLimitConfig;
+use skills::{SkillCurator, SkillDoc, SkillLoader, SkillStore};
 use task_scheduler::{Scheduler, SchedulerConfig};
 
 #[derive(Parser)]
@@ -108,6 +113,29 @@ enum Command {
         #[arg(long)]
         session: Option<String>,
     },
+    /// Manage the XenoClaw skill library.
+    Skills(SkillsArgs),
+}
+
+/// Arguments for the `skills` subcommand.
+#[derive(Args)]
+pub struct SkillsArgs {
+    #[command(subcommand)]
+    pub command: SkillsCommand,
+}
+
+#[derive(Subcommand)]
+pub enum SkillsCommand {
+    /// List all skills with name, description, and use count.
+    List,
+    /// Show the full content of a skill.
+    Show { name: String },
+    /// Archive (soft-delete) a skill.
+    Remove { name: String },
+    /// Run the curator pass immediately (requires LLM to be configured).
+    Curate,
+    /// Show curator status and usage statistics.
+    Status,
 }
 
 #[tokio::main]
@@ -146,6 +174,7 @@ async fn main() -> Result<()> {
             api_key,
             session,
         } => run_tui(config_path, inline, endpoint, api_key, session).await,
+        Command::Skills(args) => run_skills_command(args.command, config_path).await,
     }
 }
 
@@ -260,13 +289,31 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         .cloned()
         .unwrap_or_else(|| xenoclaw_home().join("workspace"));
 
+    // Skills infrastructure — initialise store and loader.
+    let skills_dir = resolve_skills_dir(&config.skills);
+    let skill_store = Arc::new(SkillStore::new(skills_dir.clone()));
+    if let Err(e) = skill_store.ensure_dir().await {
+        tracing::warn!(error = %e, "Failed to create skills directory");
+    }
+    let skill_loader = Arc::new(SkillLoader::new(Arc::clone(&skill_store)));
+
+    // Level 0 index for system prompt injection.
+    let skill_index = skill_loader.level0_index().await;
+
     // Build the system prompt
-    let system_prompt = workspace::build_system_prompt(&workspace_dir)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to build system prompt, using empty");
-            String::new()
-        });
+    let system_prompt = workspace::build_system_prompt(
+        &workspace_dir,
+        if skill_index.is_empty() {
+            None
+        } else {
+            Some(&skill_index)
+        },
+    )
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "Failed to build system prompt, using empty");
+        String::new()
+    });
 
     // Construct the component graph
     let llm_router = LlmRouter::from_config(&config.llm);
@@ -311,6 +358,11 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         vision_supported,
     });
 
+    // Register the use_skill tool.
+    tool_registry.register(Arc::new(tools::UseSkillTool::new(Arc::clone(
+        &skill_loader,
+    ))));
+
     // Connect to external MCP servers and register their proxy tools
     let mut mcp_manager =
         mcp_client::connect_mcp_servers(&config.mcp.servers, &mut tool_registry).await;
@@ -320,7 +372,26 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         ..AgentCoreConfig::default()
     };
 
-    let agent_core = Arc::new(AgentCore::new(llm_router, tool_registry, agent_config));
+    // Build the post-task reflection hook (fire-and-forget after complex tasks).
+    let logs_dir = xenoclaw_home().join("logs");
+    let mut agent_core = AgentCore::new(llm_router, tool_registry, agent_config);
+
+    if config.skills.auto_create {
+        let llm_arc = Arc::clone(agent_core.llm_router());
+        let hook = make_skill_hook(
+            Arc::clone(&skill_store),
+            llm_arc,
+            config.skills.auto_create_threshold,
+            logs_dir.clone(),
+        );
+        agent_core = agent_core.with_post_task_hook(hook);
+        info!(
+            threshold = config.skills.auto_create_threshold,
+            "Skill auto-creation hook registered"
+        );
+    }
+
+    let agent_core = Arc::new(agent_core);
 
     // API state — bootstrap the admin API key from config if one was generated.
     let api_keys = if !config.security.admin_key_hash.is_empty() {
@@ -393,7 +464,8 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     .with_workspace_dir(workspace_dir.clone())
     .with_plugin_manager(Arc::clone(&plugin_manager))
     .with_metrics(Arc::clone(&metrics_cell))
-    .with_log_level_setter(log_level_setter, log_level.clone());
+    .with_log_level_setter(log_level_setter, log_level.clone())
+    .with_skill_store(Arc::clone(&skill_store));
 
     if let Some(pool) = db_pool.clone() {
         state = state.with_db_pool(pool.clone());
@@ -475,6 +547,17 @@ async fn serve(config_path: PathBuf) -> Result<()> {
             error!(error = %e, "API server error");
         }
     });
+
+    // Spawn the skill curator background task if enabled.
+    if config.skills.curator_enabled {
+        let curator = Arc::new(SkillCurator::new(
+            Arc::clone(&skill_store),
+            Arc::clone(agent_core.llm_router()),
+            config.skills.curator_schedule.clone(),
+            logs_dir.clone(),
+        ));
+        tokio::spawn(async move { curator.start_background().await });
+    }
 
     let pm_for_init = Arc::clone(&plugin_manager);
     let initial_plugin_states = state.plugin_states.clone();
@@ -825,4 +908,301 @@ fn reset_key() -> Result<()> {
     println!("Update your config.toml with this hash to enable the new key.");
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Skills CLI
+// ---------------------------------------------------------------------------
+
+/// Resolve the skills directory from config (or default to ~/.xenoclaw/skills/).
+fn resolve_skills_dir(skills_config: &SkillsConfig) -> PathBuf {
+    if let Some(ref dir) = skills_config.skills_dir {
+        return expand_tilde(dir);
+    }
+    xenoclaw_home().join("skills")
+}
+
+/// Expand a leading `~/` in a path using $HOME.
+fn expand_tilde(path: &Path) -> PathBuf {
+    if let Some(s) = path.to_str() {
+        if let Some(rest) = s.strip_prefix("~/") {
+            let home = std::env::var_os("HOME").unwrap_or_else(|| "/tmp".into());
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Handle `xenoclaw skills <subcommand>`.
+async fn run_skills_command(cmd: SkillsCommand, config_path: PathBuf) -> Result<()> {
+    // Load config for skills_dir and LLM settings.
+    let config = match load_config(&config_path) {
+        Ok(c) => c,
+        Err(ConfigError::FileNotFound(_)) => {
+            // Skills commands work without a full config — use defaults.
+            common::config::PlatformConfig::default()
+        }
+        Err(e) => {
+            eprintln!("Configuration error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let skills_dir = resolve_skills_dir(&config.skills);
+    let store = Arc::new(SkillStore::new(skills_dir.clone()));
+    store
+        .ensure_dir()
+        .await
+        .context("Failed to create skills directory")?;
+
+    match cmd {
+        SkillsCommand::List => {
+            let skills = store.list().await.context("Failed to list skills")?;
+            if skills.is_empty() {
+                println!(
+                    "No skills installed. Skills are created automatically after complex tasks."
+                );
+            } else {
+                println!("{:<32} {:>8}   {}", "Name", "Uses", "Description");
+                println!("{}", "-".repeat(72));
+                for s in &skills {
+                    println!(
+                        "{:<32} {:>8}   {}",
+                        s.front_matter.name, s.front_matter.use_count, s.front_matter.description,
+                    );
+                }
+                println!("\n{} skill(s) total.", skills.len());
+            }
+        }
+
+        SkillsCommand::Show { name } => match store.get(&name).await? {
+            Some(doc) => println!("{}", doc.render()),
+            None => {
+                eprintln!("Skill '{}' not found.", name);
+                std::process::exit(1);
+            }
+        },
+
+        SkillsCommand::Remove { name } => match store.archive(&name).await? {
+            true => println!("Skill '{}' archived (moved to .archive/).", name),
+            false => {
+                eprintln!("Skill '{}' not found.", name);
+                std::process::exit(1);
+            }
+        },
+
+        SkillsCommand::Status => {
+            let skills = store.list().await.context("Failed to list skills")?;
+            let logs_dir = xenoclaw_home().join("logs");
+
+            println!("Skill Library Status");
+            println!("====================");
+            println!("Skills directory : {}", skills_dir.display());
+            println!("Total skills     : {}", skills.len());
+
+            // Curator last run
+            let curator_dir = logs_dir.join("curator");
+            let last_run = {
+                let mut dates: Vec<String> = Vec::new();
+                if let Ok(mut entries) = tokio::fs::read_dir(&curator_dir).await {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if name.ends_with(".md") {
+                            dates.push(name.trim_end_matches(".md").to_string());
+                        }
+                    }
+                }
+                dates.sort();
+                dates.last().cloned()
+            };
+            match last_run {
+                Some(date) => println!("Last curator run : {date}"),
+                None => println!("Last curator run : No curator runs yet"),
+            }
+
+            if !skills.is_empty() {
+                let mut by_use = skills.clone();
+                by_use.sort_by(|a, b| b.front_matter.use_count.cmp(&a.front_matter.use_count));
+
+                println!("\nTop 5 by use count:");
+                for s in by_use.iter().take(5) {
+                    println!("  {:>6}  {}", s.front_matter.use_count, s.front_matter.name);
+                }
+
+                println!("\nBottom 5 by use count:");
+                for s in by_use.iter().rev().take(5) {
+                    println!("  {:>6}  {}", s.front_matter.use_count, s.front_matter.name);
+                }
+            }
+        }
+
+        SkillsCommand::Curate => {
+            // Need a real LLM config.
+            if config.llm.providers.is_empty() {
+                eprintln!(
+                    "No LLM providers configured. Add at least one [[llm.providers]] entry in config.toml."
+                );
+                std::process::exit(1);
+            }
+
+            // Initialise tracing to stderr so progress is visible.
+            let filter = tracing_subscriber::EnvFilter::new("info");
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_writer(std::io::stderr)
+                .try_init();
+
+            let llm_router = LlmRouter::from_config(&config.llm);
+            let llm_arc = Arc::new(tokio::sync::RwLock::new(llm_router));
+            let logs_dir = xenoclaw_home().join("logs");
+
+            let curator = SkillCurator::new(
+                Arc::clone(&store),
+                llm_arc,
+                config.skills.curator_schedule.clone(),
+                logs_dir,
+            );
+
+            println!("Running curator pass...");
+            match curator.run_once().await {
+                Ok(report) => {
+                    println!("{report}");
+                }
+                Err(e) => {
+                    eprintln!("Curator run failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Skill reflection hook
+// ---------------------------------------------------------------------------
+
+/// Build the `PostTaskHookFn` that runs skill reflection after complex tasks.
+fn make_skill_hook(
+    store: Arc<SkillStore>,
+    llm_router: Arc<tokio::sync::RwLock<LlmRouter>>,
+    threshold: u32,
+    logs_dir: PathBuf,
+) -> PostTaskHookFn {
+    Arc::new(move |tool_count: usize, transcript: Vec<ChatMessage>| {
+        let store = Arc::clone(&store);
+        let llm_router = Arc::clone(&llm_router);
+        let logs_dir = logs_dir.clone();
+        Box::pin(async move {
+            if tool_count >= threshold as usize {
+                run_skill_reflection(tool_count, transcript, store, llm_router, logs_dir).await;
+            }
+        })
+    })
+}
+
+/// Call the LLM to decide if a skill should be created/updated, then act on the response.
+async fn run_skill_reflection(
+    tool_count: usize,
+    transcript: Vec<ChatMessage>,
+    store: Arc<SkillStore>,
+    llm_router: Arc<tokio::sync::RwLock<LlmRouter>>,
+    _logs_dir: PathBuf,
+) {
+    let loader = SkillLoader::new(Arc::clone(&store));
+    let skill_index = loader.level0_index().await;
+
+    let transcript_text = transcript
+        .iter()
+        .map(|m| {
+            let role = format!("{:?}", m.role).to_lowercase();
+            format!("[{role}]: {}", m.content)
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let prompt = format!(
+        "You just completed a complex task ({tool_count} tool calls). \
+         Review what you did and decide:\n\
+         1. Is there a reusable procedure here worth saving as a skill?\n\
+         2. If yes: write a SKILL.md for it. Include the slug name (lowercase-hyphenated), \
+            one-line description, step-by-step procedure, any pitfalls encountered, and \
+            verified working commands.\n\
+         3. If a skill for this already exists (listed below), decide if it should be \
+            updated. Output the full updated SKILL.md.\n\
+         4. If no skill is warranted, output: SKIP\n\n\
+         Existing skills:\n{skill_index}\n\n\
+         Task transcript:\n{transcript_text}\n\n\
+         Respond ONLY with the SKILL.md content (starting with ---) or SKIP."
+    );
+
+    let request = CompletionRequest {
+        messages: vec![ChatMessage {
+            role: ChatRole::User,
+            content: prompt,
+        }],
+        tools: Vec::new(),
+        max_tokens: Some(4096),
+        temperature: Some(0.3),
+        stream: false,
+    };
+
+    let response = {
+        let router = llm_router.read().await;
+        match router.complete(&request).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "Skill reflection LLM call failed");
+                return;
+            }
+        }
+    };
+
+    let content = response.content.trim();
+
+    if content == "SKIP" || content.is_empty() {
+        tracing::info!(
+            event = "skill_skipped",
+            tool_count,
+            "Skill reflection: no skill warranted"
+        );
+        return;
+    }
+
+    match SkillDoc::parse(content) {
+        Ok(mut doc) => {
+            let exists = store
+                .get(&doc.front_matter.name)
+                .await
+                .ok()
+                .flatten()
+                .is_some();
+            if exists {
+                doc.front_matter.updated_at = Utc::now();
+                doc.front_matter.use_count += 1;
+            }
+            let name = doc.front_matter.name.clone();
+            match store.save(&doc).await {
+                Ok(_) if exists => tracing::info!(
+                    skill = %name,
+                    event = "skill_updated",
+                    "Skill updated by reflection"
+                ),
+                Ok(_) => tracing::info!(
+                    skill = %name,
+                    event = "skill_created",
+                    "Skill created by reflection"
+                ),
+                Err(e) => tracing::warn!(error = %e, skill = %name, "Failed to save skill"),
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                event = "skill_skipped",
+                "Could not parse skill reflection response"
+            );
+        }
+    }
 }
