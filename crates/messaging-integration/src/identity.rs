@@ -619,6 +619,7 @@ mod tests {
             channel_id: None,
             content: "hello".to_string(),
             timestamp: chrono::Utc::now(),
+            attachments: Vec::new(),
         };
 
         let result = authorize_message(&mapper, &incoming);
@@ -648,6 +649,7 @@ mod tests {
             channel_id: None,
             content: "hello".to_string(),
             timestamp: chrono::Utc::now(),
+            attachments: Vec::new(),
         };
 
         let result = authorize_message(&mapper, &incoming);
@@ -672,6 +674,7 @@ mod tests {
             channel_id: None,
             content: "!status".to_string(),
             timestamp: chrono::Utc::now(),
+            attachments: Vec::new(),
         };
 
         let result = authorize_message(&mapper, &incoming);

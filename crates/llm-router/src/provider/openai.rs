@@ -86,7 +86,7 @@ impl OpenAiProvider {
                     ChatRole::Assistant => "assistant".to_string(),
                     ChatRole::Tool => "tool".to_string(),
                 },
-                content: m.content.clone(),
+                content: openai_content(m),
             })
             .collect();
 
@@ -120,10 +120,47 @@ impl OpenAiProvider {
     }
 }
 
+/// Build the OpenAI `content` field: a plain string when there are no images,
+/// or an array of `text` / `image_url` parts (data URIs) when images present.
+fn openai_content(msg: &ChatMessage) -> serde_json::Value {
+    if msg.images.is_empty() {
+        return serde_json::Value::String(msg.content.clone());
+    }
+    let mut parts: Vec<serde_json::Value> = Vec::new();
+    if !msg.content.is_empty() {
+        parts.push(serde_json::json!({ "type": "text", "text": msg.content }));
+    }
+    for img in &msg.images {
+        parts.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": { "url": format!("data:{};base64,{}", img.media_type, img.data) }
+        }));
+    }
+    serde_json::Value::Array(parts)
+}
+
+/// OpenAI vision: gpt-4o family, gpt-4-turbo, gpt-4-vision, gpt-4.1, and o-series
+/// multimodal models. Heuristic on the model id.
+fn openai_model_supports_vision(model: &str) -> bool {
+    let m = model.to_lowercase();
+    m.contains("gpt-4o")
+        || m.contains("gpt-4.1")
+        || m.contains("gpt-4-turbo")
+        || m.contains("gpt-4-vision")
+        || m.contains("gpt-5")
+        || m.contains("o1")
+        || m.contains("o3")
+        || m.contains("o4")
+}
+
 #[async_trait::async_trait]
 impl LlmProvider for OpenAiProvider {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn supports_vision(&self) -> bool {
+        openai_model_supports_vision(&self.model)
     }
 
     async fn complete(&self, request: &CompletionRequest) -> Result<CompletionResponse, LlmError> {
@@ -356,7 +393,8 @@ struct OpenAiRequest {
 #[derive(Debug, Serialize, Deserialize)]
 struct OpenAiMessage {
     role: String,
-    content: String,
+    /// Either a plain string or an array of content parts (text + image_url).
+    content: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -480,14 +518,8 @@ mod tests {
 
         let request = CompletionRequest {
             messages: vec![
-                ChatMessage {
-                    role: ChatRole::System,
-                    content: "You are helpful.".to_string(),
-                },
-                ChatMessage {
-                    role: ChatRole::User,
-                    content: "Hello".to_string(),
-                },
+                ChatMessage::text(ChatRole::System, "You are helpful."),
+                ChatMessage::text(ChatRole::User, "Hello"),
             ],
             tools: vec![],
             max_tokens: Some(1000),
@@ -500,6 +532,7 @@ mod tests {
         assert_eq!(body.messages.len(), 2);
         assert_eq!(body.messages[0].role, "system");
         assert_eq!(body.messages[1].role, "user");
+        assert!(provider.supports_vision());
         assert!(body.tools.is_none());
         assert_eq!(body.max_tokens, Some(1000));
         assert_eq!(body.temperature, Some(0.7));
@@ -511,10 +544,7 @@ mod tests {
         let provider = OpenAiProvider::new("test", "http://localhost", None, "gpt-4o", 30);
 
         let request = CompletionRequest {
-            messages: vec![ChatMessage {
-                role: ChatRole::User,
-                content: "Search for cats".to_string(),
-            }],
+            messages: vec![ChatMessage::text(ChatRole::User, "Search for cats")],
             tools: vec![ToolDefinition {
                 name: "search".to_string(),
                 description: "Search the web".to_string(),

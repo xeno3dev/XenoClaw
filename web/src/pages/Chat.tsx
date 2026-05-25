@@ -31,10 +31,31 @@ interface ChatMessage {
   diffImage?: string;
   /** Whether this message is still being streamed */
   streaming?: boolean;
+  /** Filenames attached to this (user) message */
+  attachments?: string[];
 }
 
-// Session ID — in a real app this would come from auth/routing
-const SESSION_ID = 'default-session';
+/** A file the user has uploaded for the current message. */
+interface PendingAttachment {
+  /** Display name */
+  name: string;
+  /** Workspace-relative path returned by the upload endpoint */
+  path: string;
+  isImage: boolean;
+}
+
+/** Generate a session UUID. The backend validates session_id as a UUID. */
+function newSessionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  // Fallback RFC-4122-ish v4
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 /**
  * Chat page — real-time chat interface with WebSocket streaming.
@@ -46,10 +67,15 @@ export function Chat() {
   const [inputValue, setInputValue] = useState('');
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [agentMode, setAgentMode] = useState<AgentMode>('general');
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const streamingMessageRef = useRef<string | null>(null);
+  // Stable per-mount session id (UUID — the backend requires it).
+  const sessionIdRef = useRef<string>(newSessionId());
 
   // Fetch the current agent mode from the status endpoint on mount
   useEffect(() => {
@@ -223,10 +249,56 @@ export function Chat() {
     onMessage: handleWsMessage,
   });
 
+  // Upload selected files to the session's upload directory, then track them
+  // as pending attachments for the next message.
+  const handleFilesSelected = useCallback(
+    async (fileList: FileList | null) => {
+      if (!fileList || fileList.length === 0) return;
+      setUploading(true);
+      try {
+        const form = new FormData();
+        Array.from(fileList).forEach((f) => form.append('files', f, f.name));
+        const res = await apiFetch(`/api/v1/uploads/${sessionIdRef.current}`, {
+          method: 'POST',
+          body: form,
+        });
+        if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+        const data = (await res.json()) as {
+          files: { name: string; path: string; is_image: boolean }[];
+        };
+        setAttachments((prev) => [
+          ...prev,
+          ...data.files.map((f) => ({ name: f.name, path: f.path, isImage: f.is_image })),
+        ]);
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: generateId(),
+            role: 'error',
+            content: err instanceof Error ? err.message : 'Failed to upload file(s)',
+            timestamp: new Date(),
+          },
+        ]);
+      } finally {
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    },
+    [apiFetch],
+  );
+
+  const removeAttachment = useCallback((path: string) => {
+    setAttachments((prev) => prev.filter((a) => a.path !== path));
+  }, []);
+
   // Send a message
   const sendMessage = useCallback(() => {
     const content = inputValue.trim();
-    if (!content || status !== 'connected') return;
+    // Allow sending if there's text OR attachments.
+    if ((!content && attachments.length === 0) || status !== 'connected') return;
+
+    const attachmentPaths = attachments.map((a) => a.path);
 
     // Add user message to the list
     const userMessage: ChatMessage = {
@@ -234,25 +306,26 @@ export function Chat() {
       role: 'user',
       content,
       timestamp: new Date(),
+      attachments: attachmentPaths.length > 0 ? attachmentPaths : undefined,
     };
     setMessages((prev) => [...prev, userMessage]);
     setInputValue('');
+    setAttachments([]);
     setIsWaitingForResponse(true);
 
-    // Send via WebSocket
+    // Send via WebSocket — flat shape the backend expects.
     send({
       type: 'message',
-      payload: {
-        session_id: SESSION_ID,
-        content,
-      },
-    });
+      session_id: sessionIdRef.current,
+      content,
+      attachments: attachmentPaths,
+    } as unknown as WebSocketMessage);
 
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [inputValue, status, send]);
+  }, [inputValue, attachments, status, send]);
 
   // Handle Enter key (send) and Shift+Enter (newline)
   const handleKeyDown = useCallback(
@@ -276,7 +349,8 @@ export function Chat() {
     []
   );
 
-  const canSend = inputValue.trim().length > 0 && status === 'connected';
+  const canSend =
+    (inputValue.trim().length > 0 || attachments.length > 0) && status === 'connected';
 
   return (
     <div className={styles.container}>
@@ -346,6 +420,15 @@ export function Chat() {
             {msg.content && (
               <span className={styles.messageContent}>{msg.content}</span>
             )}
+            {msg.attachments && msg.attachments.length > 0 && (
+              <div className={styles.messageAttachments}>
+                {msg.attachments.map((path) => (
+                  <span key={path} className={styles.messageAttachmentChip}>
+                    {path.split('/').pop()}
+                  </span>
+                ))}
+              </div>
+            )}
             {msg.diffImage && renderDiffImage(msg.diffImage)}
             <span className={styles.messageTimestamp}>
               {formatTimestamp(msg.timestamp)}
@@ -363,8 +446,53 @@ export function Chat() {
         )}
       </div>
 
+      {/* Pending attachment chips */}
+      {attachments.length > 0 && (
+        <div className={styles.attachmentBar}>
+          {attachments.map((a) => (
+            <span key={a.path} className={styles.attachmentChip}>
+              <span className={styles.attachmentIcon} aria-hidden="true">
+                {a.isImage ? '🖼' : '📄'}
+              </span>
+              <span className={styles.attachmentName}>{a.name}</span>
+              <button
+                className={styles.attachmentRemove}
+                onClick={() => removeAttachment(a.path)}
+                aria-label={`Remove ${a.name}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Input area */}
       <div className={styles.inputArea}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className={styles.hiddenFileInput}
+          onChange={(e) => void handleFilesSelected(e.target.files)}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+        <button
+          className={styles.attachButton}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={status !== 'connected' || uploading}
+          aria-label="Attach files"
+          title="Attach files or images"
+        >
+          {uploading ? (
+            <span className={styles.attachSpinner} aria-hidden="true" />
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          )}
+        </button>
         <div className={styles.inputWrapper}>
           <textarea
             ref={textareaRef}

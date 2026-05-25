@@ -24,6 +24,12 @@ pub trait LlmProvider: Send + Sync {
     /// The provider's display name (used in logging and error messages).
     fn name(&self) -> &str;
 
+    /// Whether the configured model can accept image input (vision). Defaults
+    /// to false; providers override based on the model identifier.
+    fn supports_vision(&self) -> bool {
+        false
+    }
+
     /// Send a completion request and return the full response.
     async fn complete(&self, request: &CompletionRequest) -> Result<CompletionResponse, LlmError>;
 

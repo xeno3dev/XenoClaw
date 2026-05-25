@@ -266,6 +266,9 @@ async fn serve(config_path: PathBuf) -> Result<()> {
 
     // Construct the component graph
     let llm_router = LlmRouter::from_config(&config.llm);
+    // Capture vision capability before the router is moved into AgentCore —
+    // the view_image tool needs it for its fail-safe.
+    let vision_supported = llm_router.supports_vision();
 
     // Task scheduler
     let scheduler_config = SchedulerConfig::default();
@@ -300,6 +303,8 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         filesystem_rules: config.security.filesystem_rules.clone(),
         db_pool: db_pool.clone(),
         scheduler: Arc::clone(&scheduler),
+        workspace_dir: workspace_dir.clone(),
+        vision_supported,
     });
 
     // Connect to external MCP servers and register their proxy tools
@@ -684,6 +689,10 @@ async fn run_mcp_server(config_path: PathBuf) -> Result<()> {
         filesystem_rules: config.security.filesystem_rules.clone(),
         db_pool,
         scheduler,
+        workspace_dir: xenoclaw_home().join("workspace"),
+        // MCP clients render images themselves; the agent-side vision tool is
+        // not used over the MCP transport.
+        vision_supported: false,
     });
 
     let registry = Arc::new(RwLock::new(tool_registry));

@@ -11,6 +11,7 @@ pub mod logging;
 pub mod metrics;
 pub mod models;
 pub mod types;
+pub mod uploads;
 
 pub use errors::*;
 pub use logging::{LogConfig, LogEntry, LogLevel, StructuredLogger};

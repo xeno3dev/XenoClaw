@@ -102,13 +102,13 @@ impl AnthropicProvider {
                 ChatRole::User | ChatRole::Tool => {
                     messages.push(AnthropicMessage {
                         role: "user".to_string(),
-                        content: msg.content.clone(),
+                        content: anthropic_content(msg),
                     });
                 }
                 ChatRole::Assistant => {
                     messages.push(AnthropicMessage {
                         role: "assistant".to_string(),
-                        content: msg.content.clone(),
+                        content: anthropic_content(msg),
                     });
                 }
             }
@@ -144,10 +144,51 @@ impl AnthropicProvider {
     }
 }
 
+/// Build the Anthropic `content` field: a plain string when there are no
+/// images, or an array of text+image blocks when the message carries images.
+fn anthropic_content(msg: &ChatMessage) -> serde_json::Value {
+    if msg.images.is_empty() {
+        return serde_json::Value::String(msg.content.clone());
+    }
+    let mut blocks: Vec<serde_json::Value> = Vec::new();
+    if !msg.content.is_empty() {
+        blocks.push(serde_json::json!({ "type": "text", "text": msg.content }));
+    }
+    for img in &msg.images {
+        blocks.push(serde_json::json!({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": img.media_type,
+                "data": img.data,
+            }
+        }));
+    }
+    serde_json::Value::Array(blocks)
+}
+
+/// Anthropic vision is supported by Claude 3+ (opus/sonnet/haiku) and Claude 4.x.
+/// Legacy claude-2/claude-instant are text-only.
+fn anthropic_model_supports_vision(model: &str) -> bool {
+    let m = model.to_lowercase();
+    if m.contains("claude-2") || m.contains("claude-instant") {
+        return false;
+    }
+    m.contains("claude-3")
+        || m.contains("claude-opus")
+        || m.contains("claude-sonnet")
+        || m.contains("claude-haiku")
+        || m.contains("claude-4")
+}
+
 #[async_trait::async_trait]
 impl LlmProvider for AnthropicProvider {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn supports_vision(&self) -> bool {
+        anthropic_model_supports_vision(&self.model)
     }
 
     async fn complete(&self, request: &CompletionRequest) -> Result<CompletionResponse, LlmError> {
@@ -395,7 +436,8 @@ struct AnthropicRequest {
 #[derive(Debug, Serialize, Deserialize)]
 struct AnthropicMessage {
     role: String,
-    content: String,
+    /// Either a plain string or an array of content blocks (text + image).
+    content: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -515,14 +557,8 @@ mod tests {
 
         let request = CompletionRequest {
             messages: vec![
-                ChatMessage {
-                    role: ChatRole::System,
-                    content: "You are helpful.".to_string(),
-                },
-                ChatMessage {
-                    role: ChatRole::User,
-                    content: "Hello".to_string(),
-                },
+                ChatMessage::text(ChatRole::System, "You are helpful."),
+                ChatMessage::text(ChatRole::User, "Hello"),
             ],
             tools: vec![],
             max_tokens: Some(2000),
@@ -534,7 +570,43 @@ mod tests {
         assert_eq!(body.system, Some("You are helpful.".to_string()));
         assert_eq!(body.messages.len(), 1);
         assert_eq!(body.messages[0].role, "user");
+        assert_eq!(body.messages[0].content, serde_json::json!("Hello"));
         assert_eq!(body.max_tokens, 2000);
+    }
+
+    #[test]
+    fn test_image_message_builds_content_blocks() {
+        let provider = AnthropicProvider::new(
+            "test",
+            "http://localhost",
+            "key",
+            "claude-sonnet-4-20250514",
+            30,
+            None,
+        );
+        assert!(provider.supports_vision());
+
+        let request = CompletionRequest {
+            messages: vec![ChatMessage::with_images(
+                ChatRole::User,
+                "look",
+                vec![ImageContent {
+                    media_type: "image/png".to_string(),
+                    data: "AAAA".to_string(),
+                }],
+            )],
+            tools: vec![],
+            max_tokens: None,
+            temperature: None,
+            stream: false,
+        };
+        let body = provider.build_request_body(&request, false);
+        let content = &body.messages[0].content;
+        assert!(content.is_array());
+        let arr = content.as_array().unwrap();
+        assert_eq!(arr.len(), 2); // text + image
+        assert_eq!(arr[1]["type"], "image");
+        assert_eq!(arr[1]["source"]["media_type"], "image/png");
     }
 
     #[test]
@@ -549,10 +621,7 @@ mod tests {
         );
 
         let request = CompletionRequest {
-            messages: vec![ChatMessage {
-                role: ChatRole::User,
-                content: "Hi".to_string(),
-            }],
+            messages: vec![ChatMessage::text(ChatRole::User, "Hi")],
             tools: vec![],
             max_tokens: None,
             temperature: None,

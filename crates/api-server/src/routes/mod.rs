@@ -22,6 +22,7 @@ pub mod plugins;
 pub mod sessions;
 pub mod status;
 pub mod tasks;
+pub mod uploads;
 pub mod ws;
 
 use axum::middleware;
@@ -49,6 +50,7 @@ pub fn build_routes(state: AppState) -> Router {
         .merge(config::routes())
         .merge(memory::routes())
         .merge(plugins::routes())
+        .merge(uploads::routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,

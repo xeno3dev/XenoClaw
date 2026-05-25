@@ -2,11 +2,49 @@
 
 use serde::{Deserialize, Serialize};
 
+/// JSON key used to mark a tool result as carrying an inline image. The
+/// `view_image` tool emits `{"__xeno_image__": {"media_type", "data", "note"}}`
+/// and the agent core converts that into a multimodal `ChatMessage`.
+pub const IMAGE_SENTINEL_KEY: &str = "__xeno_image__";
+
+/// An inline image attached to a chat message (base64-encoded).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageContent {
+    /// MIME type, e.g. "image/png", "image/jpeg".
+    pub media_type: String,
+    /// Base64-encoded image bytes (no `data:` URI prefix).
+    pub data: String,
+}
+
 /// A message in a chat completion request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
+    /// Inline images to send alongside the text (multimodal). Empty for
+    /// text-only messages. Providers that don't support vision ignore this.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImageContent>,
+}
+
+impl ChatMessage {
+    /// Construct a text-only chat message.
+    pub fn text(role: ChatRole, content: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: content.into(),
+            images: Vec::new(),
+        }
+    }
+
+    /// Construct a chat message carrying one or more inline images.
+    pub fn with_images(role: ChatRole, content: impl Into<String>, images: Vec<ImageContent>) -> Self {
+        Self {
+            role,
+            content: content.into(),
+            images,
+        }
+    }
 }
 
 /// Role of a chat message participant.

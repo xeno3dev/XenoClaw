@@ -85,6 +85,15 @@ pub struct PlatformStatus {
     pub error: Option<String>,
 }
 
+/// A file attached to an incoming message (downloaded from the platform).
+#[derive(Debug, Clone)]
+pub struct IncomingAttachment {
+    /// Suggested filename (sanitized before being written to disk).
+    pub filename: String,
+    /// Raw file bytes downloaded from the platform.
+    pub data: Vec<u8>,
+}
+
 /// Result of processing an incoming message.
 #[derive(Debug, Clone)]
 pub struct IncomingMessage {
@@ -93,6 +102,8 @@ pub struct IncomingMessage {
     pub channel_id: Option<String>,
     pub content: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
+    /// Files attached to the message (photos, documents). Empty for text-only.
+    pub attachments: Vec<IncomingAttachment>,
 }
 
 /// Management command parsed from a message.

@@ -102,10 +102,40 @@ All endpoints (except `/api/v1/health` and `/api/v1/auth/login`) require `Author
 | POST | /api/v1/plugins/:name/toggle | Toggle plugin on/off |
 | POST | /api/v1/plugins/:name/reload | Reload specific plugin |
 | GET | /api/v1/messaging | Messaging bridge status |
+| POST | /api/v1/uploads/:session_id | Multipart file upload → `{workspace}/uploads/{session}/` |
 | WS | /api/v1/ws/chat?token=… | Real-time chat stream |
 | WS | /api/v1/ws/events?token=… | System event stream |
 
 WebSocket auth uses `?token=` query param (browsers can't send custom headers on WS upgrades).
+
+## File & Image Uploads
+
+Users can attach files/images in the web UI (paperclip button) and via messaging
+bridges. Uploads are stored at `{workspace}/uploads/{session_id}/{filename}`
+(`common::uploads` owns the path layout + filename sanitization, shared by the
+web endpoint and the messaging bridges).
+
+**Web flow:** the Chat page POSTs files to `/api/v1/uploads/{session}` (multipart),
+then includes the returned workspace-relative paths in the WS `message` payload's
+`attachments` array. The WS handler appends a note to the message content listing
+the files and which tool to use, then forwards to `AgentCore::process_message`.
+
+**Vision:** the `view_image` tool loads an image and — when the active model
+supports vision — returns an image sentinel (`{"__xeno_image__": {...}}`, key in
+`llm_router::types::IMAGE_SENTINEL_KEY`). The agent core converts that sentinel
+into a multimodal `ChatMessage`; the Anthropic/OpenAI providers serialize the
+`images` field into provider-native content blocks. **Fail-safe:** if the model
+is text-only (`LlmRouter::supports_vision()` is false, computed from the primary
+provider's model id), `view_image` returns a plain-text explanation instead of
+pixels — nothing errors.
+
+To support a new vision provider, implement `LlmProvider::supports_vision()` and
+emit image blocks from its `build_request_body`.
+
+**Messaging:** inbound Telegram photos/documents are downloaded and saved to the
+session's upload dir via `AgentMessageHandler` (`with_workspace_dir`). The
+messaging→agent dispatch itself is still stubbed, so saved files aren't yet fed
+into a live agent turn over the bridges — but the storage plumbing is in place.
 
 ## Frontend Auth Pattern
 

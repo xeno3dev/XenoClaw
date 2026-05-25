@@ -5,9 +5,11 @@
 //! (e.g., memory tools without a database pool) are skipped with a warning.
 
 pub mod git_tools;
+pub mod image_tools;
 pub mod memory_tools;
 pub mod task_tools;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use sqlx::sqlite::SqlitePool;
@@ -24,6 +26,7 @@ use common::config::{CodingConfig, FilesystemRule};
 use task_scheduler::Scheduler;
 
 use self::git_tools::{GitCommitTool, GitDiffTool, GitStatusTool};
+use self::image_tools::ViewImageTool;
 use self::memory_tools::{MemorySearchTool, MemoryStoreTool};
 use self::task_tools::{TaskCreateTool, TaskListTool};
 
@@ -37,6 +40,11 @@ pub struct BuiltinToolsConfig {
     pub db_pool: Option<SqlitePool>,
     /// Task scheduler instance for task tools.
     pub scheduler: Arc<Scheduler>,
+    /// Workspace root — used by the view_image tool to resolve upload paths.
+    pub workspace_dir: PathBuf,
+    /// Whether the active model supports image input (vision). Drives the
+    /// view_image tool's fail-safe.
+    pub vision_supported: bool,
 }
 
 /// Register all built-in tools into a new `ToolRegistry`.
@@ -109,7 +117,20 @@ pub fn register_builtin_tools(config: BuiltinToolsConfig) -> ToolRegistry {
     registry.register(Arc::new(TaskListTool::new(Arc::clone(&config.scheduler))));
     registered_count += 2;
 
-    info!(tool_count = registered_count, "Built-in tools registered");
+    // -------------------------------------------------------------------------
+    // Image viewing tool (always available — vision fail-safe handled internally)
+    // -------------------------------------------------------------------------
+    registry.register(Arc::new(ViewImageTool::new(
+        config.workspace_dir.clone(),
+        config.vision_supported,
+    )));
+    registered_count += 1;
+
+    info!(
+        tool_count = registered_count,
+        vision_supported = config.vision_supported,
+        "Built-in tools registered"
+    );
 
     registry
 }
