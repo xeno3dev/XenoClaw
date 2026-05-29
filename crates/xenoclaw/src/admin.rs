@@ -20,12 +20,14 @@ use security_layer::auth::{ApiKeyAuthenticator, PasswordAuthenticator};
 /// Show what the service thinks the admin identity is. Pure read-only —
 /// useful before guessing why login is rejected.
 pub fn show_admin(config_path: &Path) -> Result<()> {
-    let config = load_config(config_path).with_context(|| {
-        format!("failed to load config at {}", config_path.display())
-    })?;
+    let config = load_config(config_path)
+        .with_context(|| format!("failed to load config at {}", config_path.display()))?;
 
     println!("Config file:           {}", config_path.display());
-    println!("admin_username:        {:?}", config.security.admin_username);
+    println!(
+        "admin_username:        {:?}",
+        config.security.admin_username
+    );
 
     let pw_hash = &config.security.admin_password_hash;
     if pw_hash.is_empty() {
@@ -36,7 +38,10 @@ pub fn show_admin(config_path: &Path) -> Result<()> {
             pw_hash.len(),
             &pw_hash[..pw_hash.len().min(7)]
         );
-        if !(pw_hash.starts_with("$2a$") || pw_hash.starts_with("$2b$") || pw_hash.starts_with("$2y$")) {
+        if !(pw_hash.starts_with("$2a$")
+            || pw_hash.starts_with("$2b$")
+            || pw_hash.starts_with("$2y$"))
+        {
             println!("  WARNING: hash does not look like bcrypt ($2a$/$2b$/$2y$).");
         }
     }
@@ -62,9 +67,8 @@ pub fn show_admin(config_path: &Path) -> Result<()> {
 /// using the exact same bcrypt path the API server uses. Returns Ok with
 /// a printed result; the outer process exit code is non-zero on mismatch.
 pub fn verify_login(config_path: &Path, username: &str, password: &str) -> Result<()> {
-    let config = load_config(config_path).with_context(|| {
-        format!("failed to load config at {}", config_path.display())
-    })?;
+    let config = load_config(config_path)
+        .with_context(|| format!("failed to load config at {}", config_path.display()))?;
 
     println!("Config:    {}", config_path.display());
     println!("Username:  {:?}", username);
@@ -129,8 +133,7 @@ pub fn set_password(
         bail!("password must not be empty");
     }
 
-    let hash = bcrypt::hash(&pw, bcrypt::DEFAULT_COST)
-        .context("bcrypt::hash failed")?;
+    let hash = bcrypt::hash(&pw, bcrypt::DEFAULT_COST).context("bcrypt::hash failed")?;
 
     // Sanity check: the hash we just generated MUST verify against the
     // password we just typed, before we touch the config file. If this
@@ -248,15 +251,21 @@ fn rewrite_security_field(config_path: &Path, key: &str, value: &str) -> Result<
     }
 
     if !wrote {
-        bail!("could not find or create [security] section in {}", config_path.display());
+        bail!(
+            "could not find or create [security] section in {}",
+            config_path.display()
+        );
     }
 
     // Atomic write: temp file in the same dir, then rename.
     let tmp = config_path.with_extension("toml.tmp");
+    let perms = fs::metadata(config_path)
+        .with_context(|| format!("stat {}", config_path.display()))?
+        .permissions();
     fs::write(&tmp, &out).with_context(|| format!("write {}", tmp.display()))?;
-    fs::rename(&tmp, config_path).with_context(|| {
-        format!("rename {} -> {}", tmp.display(), config_path.display())
-    })?;
+    fs::set_permissions(&tmp, perms).with_context(|| format!("chmod {}", tmp.display()))?;
+    fs::rename(&tmp, config_path)
+        .with_context(|| format!("rename {} -> {}", tmp.display(), config_path.display()))?;
     Ok(())
 }
 

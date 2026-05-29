@@ -69,7 +69,13 @@ async fn fetch_telegram_file(
         }
     };
     let url = format!("https://api.telegram.org/file/bot{token}/{}", file.path);
-    let resp = reqwest::get(&url).await.ok()?;
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(30), reqwest::get(&url))
+        .await
+        .map_err(|_| {
+            warn!("Telegram file download timed out");
+        })
+        .ok()?
+        .ok()?;
     if !resp.status().is_success() {
         warn!(status = %resp.status(), "Telegram file download failed");
         return None;

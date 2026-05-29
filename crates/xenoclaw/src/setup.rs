@@ -84,7 +84,11 @@ fn color_depth() -> ColorDepth {
 
 fn red() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 255, g: 56, b: 56 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 255,
+            g: 56,
+            b: 56,
+        },
         ColorDepth::Color256 => Color::AnsiValue(196),
         ColorDepth::Color16 => Color::Red,
     }
@@ -92,7 +96,11 @@ fn red() -> Color {
 
 fn red_bright() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 255, g: 96, b: 96 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 255,
+            g: 96,
+            b: 96,
+        },
         ColorDepth::Color256 => Color::AnsiValue(203),
         ColorDepth::Color16 => Color::Red,
     }
@@ -100,7 +108,11 @@ fn red_bright() -> Color {
 
 fn red_deep() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 120, g: 20, b: 20 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 120,
+            g: 20,
+            b: 20,
+        },
         ColorDepth::Color256 => Color::AnsiValue(88),
         ColorDepth::Color16 => Color::DarkRed,
     }
@@ -108,7 +120,11 @@ fn red_deep() -> Color {
 
 fn white() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 240, g: 240, b: 240 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 240,
+            g: 240,
+            b: 240,
+        },
         ColorDepth::Color256 => Color::AnsiValue(255),
         ColorDepth::Color16 => Color::White,
     }
@@ -116,7 +132,11 @@ fn white() -> Color {
 
 fn text() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 200, g: 200, b: 200 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 200,
+            g: 200,
+            b: 200,
+        },
         ColorDepth::Color256 => Color::AnsiValue(251),
         ColorDepth::Color16 => Color::Grey,
     }
@@ -124,7 +144,11 @@ fn text() -> Color {
 
 fn dim() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 130, g: 130, b: 135 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 130,
+            g: 130,
+            b: 135,
+        },
         ColorDepth::Color256 => Color::AnsiValue(244),
         ColorDepth::Color16 => Color::DarkGrey,
     }
@@ -132,7 +156,11 @@ fn dim() -> Color {
 
 fn rule_fg() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 75, g: 75, b: 80 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 75,
+            g: 75,
+            b: 80,
+        },
         ColorDepth::Color256 => Color::AnsiValue(239),
         ColorDepth::Color16 => Color::DarkGrey,
     }
@@ -140,7 +168,11 @@ fn rule_fg() -> Color {
 
 fn green() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 80, g: 220, b: 100 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 80,
+            g: 220,
+            b: 100,
+        },
         ColorDepth::Color256 => Color::AnsiValue(83),
         ColorDepth::Color16 => Color::Green,
     }
@@ -148,7 +180,11 @@ fn green() -> Color {
 
 fn amber() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 255, g: 176, b: 0 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 255,
+            g: 176,
+            b: 0,
+        },
         ColorDepth::Color256 => Color::AnsiValue(214),
         ColorDepth::Color16 => Color::Yellow,
     }
@@ -1045,19 +1081,23 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
                 bg(&mut stdout, BG)?;
             } else {
                 bg(&mut stdout, BG)?;
-                stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
-                    "     [{num:>2}]  {:<20} {}\r\n",
-                    p.name, p.default_model
-                )))?;
+                stdout
+                    .queue(SetForegroundColor(dim()))?
+                    .queue(Print(format!(
+                        "     [{num:>2}]  {:<20} {}\r\n",
+                        p.name, p.default_model
+                    )))?;
             }
         }
 
         if end < PROVIDERS.len() {
             bg(&mut stdout, BG)?;
-            stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
-                "\r\n     … and {} more (scroll down)\r\n",
-                PROVIDERS.len() - end
-            )))?;
+            stdout
+                .queue(SetForegroundColor(dim()))?
+                .queue(Print(format!(
+                    "\r\n     … and {} more (scroll down)\r\n",
+                    PROVIDERS.len() - end
+                )))?;
         }
 
         stdout.flush()?;
@@ -1383,9 +1423,13 @@ fn render_cli_status_row(
             .queue(Print("   ✓  "))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(stdout, BG)?;
-        stdout.queue(SetForegroundColor(white()))?.queue(Print(format!("{label:<16}")))?;
+        stdout
+            .queue(SetForegroundColor(white()))?
+            .queue(Print(format!("{label:<16}")))?;
         if let Some(v) = extra {
-            stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!("  {v}")))?;
+            stdout
+                .queue(SetForegroundColor(dim()))?
+                .queue(Print(format!("  {v}")))?;
         }
     } else {
         stdout
@@ -2246,10 +2290,12 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             bg(&mut stdout, BG)?;
         } else {
             bg(&mut stdout, BG)?;
-            stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
-                "     Timeout: {}  {unit_label}\r\n",
-                timeout_input.value()
-            )))?;
+            stdout
+                .queue(SetForegroundColor(dim()))?
+                .queue(Print(format!(
+                    "     Timeout: {}  {unit_label}\r\n",
+                    timeout_input.value()
+                )))?;
         }
 
         stdout.queue(Print("\r\n"))?;
@@ -2442,10 +2488,12 @@ fn render_numeric_row(
         bg(stdout, BG)?;
     } else {
         bg(stdout, BG)?;
-        stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
-            "     {label}: {}  {unit}\r\n",
-            input.value()
-        )))?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(format!(
+                "     {label}: {}  {unit}\r\n",
+                input.value()
+            )))?;
     }
     Ok(())
 }
@@ -2551,40 +2599,32 @@ async fn step_messaging(state: &mut WizardState) -> Result<StepOutcome> {
             .queue(Print("   Messaging Bridges\r\n"))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
-        stdout
-            .queue(SetForegroundColor(dim()))?
-            .queue(Print(
-                "   Optional — leave any field blank to skip that provider.\r\n\r\n",
-            ))?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "   Optional — leave any field blank to skip that provider.\r\n\r\n",
+        ))?;
         bg(&mut stdout, BG)?;
 
         render_field(&mut stdout, field == 0, "Telegram token", &telegram_input)?;
         bg(&mut stdout, BG)?;
-        stdout
-            .queue(SetForegroundColor(dim()))?
-            .queue(Print(
-                "                  ↳ Get from @BotFather: /newbot, then copy the HTTP API token.\r\n",
-            ))?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "                  ↳ Get from @BotFather: /newbot, then copy the HTTP API token.\r\n",
+        ))?;
         bg(&mut stdout, BG)?;
         stdout.queue(Print("\r\n"))?;
 
         render_field(&mut stdout, field == 1, "Discord token", &discord_input)?;
         bg(&mut stdout, BG)?;
-        stdout
-            .queue(SetForegroundColor(dim()))?
-            .queue(Print(
-                "                  ↳ Discord Developer Portal → Bot → Reset/Copy Token.\r\n",
-            ))?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "                  ↳ Discord Developer Portal → Bot → Reset/Copy Token.\r\n",
+        ))?;
         bg(&mut stdout, BG)?;
         stdout.queue(Print("\r\n"))?;
 
         render_field(&mut stdout, field == 2, "WhatsApp phone", &whatsapp_input)?;
         bg(&mut stdout, BG)?;
-        stdout
-            .queue(SetForegroundColor(dim()))?
-            .queue(Print(
-                "                  ↳ E.164 number the bridge will pair with (e.g. +14155552671).\r\n",
-            ))?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "                  ↳ E.164 number the bridge will pair with (e.g. +14155552671).\r\n",
+        ))?;
         bg(&mut stdout, BG)?;
 
         stdout.flush()?;
@@ -2707,11 +2747,9 @@ async fn show_messaging_validation(state: &WizardState) -> Result<ValidationOutc
             .queue(Print("   Validating messaging tokens…\r\n\r\n"))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(&mut stdout, BG)?;
-        stdout
-            .queue(SetForegroundColor(dim()))?
-            .queue(Print(
-                "   Contacting Telegram and Discord (10s timeout).\r\n",
-            ))?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "   Contacting Telegram and Discord (10s timeout).\r\n",
+        ))?;
         bg(&mut stdout, BG)?;
         stdout.flush()?;
     }
@@ -2737,15 +2775,13 @@ async fn show_messaging_validation(state: &WizardState) -> Result<ValidationOutc
         bg(&mut stdout, BG)?;
         stdout.queue(Print("\r\n"))?;
         bg(&mut stdout, BG)?;
-        stdout
-            .queue(SetForegroundColor(dim()))?
-            .queue(Print(
-                "   Failures may just mean the host is offline — you can still save\r\n",
-            ))?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "   Failures may just mean the host is offline — you can still save\r\n",
+        ))?;
         bg(&mut stdout, BG)?;
-        stdout
-            .queue(SetForegroundColor(dim()))?
-            .queue(Print("   and fix tokens later by re-running the wizard.\r\n"))?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "   and fix tokens later by re-running the wizard.\r\n",
+        ))?;
         stdout.flush()?;
 
         print_footer(
@@ -2833,7 +2869,7 @@ async fn validate_telegram_token(client: &reqwest::Client, token: &str) -> Valid
         Err(e) if e.is_timeout() => {
             ValidationStatus::Failed("Timed out (host offline?)".to_string())
         }
-        Err(e) => ValidationStatus::Failed(format!("Network: {e}")),
+        Err(_) => ValidationStatus::Failed("Network error reaching Telegram".to_string()),
     }
 }
 
@@ -2970,9 +3006,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
                 "Coding",
                 format!(
                     "file ≤ {} MB, ≤ {} shells, undo {}",
-                    state.max_file_size_mb,
-                    state.max_concurrent_shells,
-                    state.undo_history_size,
+                    state.max_file_size_mb, state.max_concurrent_shells, state.undo_history_size,
                 ),
             ),
             ("Messaging", messaging_summary(state)),

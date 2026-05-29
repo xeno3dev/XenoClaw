@@ -509,7 +509,11 @@ async fn handle_chat_message(
     // Run the agent. process_message returns a stream that yields the final
     // response chunk (the runtime does the full tool loop internally).
     let mut stream = agent
-        .process_message(SessionId(session_uuid), user_message.clone(), history.clone())
+        .process_message(
+            SessionId(session_uuid),
+            user_message.clone(),
+            history.clone(),
+        )
         .await;
 
     let mut assistant_text = String::new();
@@ -575,7 +579,11 @@ fn compose_content_with_attachments(content: &str, attachments: &[String]) -> St
     for path in attachments {
         let is_img = common::uploads::is_image_filename(path);
         has_image |= is_img;
-        lines.push(format!("- {} {}", path, if is_img { "(image)" } else { "(file)" }));
+        lines.push(format!(
+            "- {} {}",
+            path,
+            if is_img { "(image)" } else { "(file)" }
+        ));
     }
     let mut tool_hint = String::from("Use `file_read` to read text files");
     if has_image {

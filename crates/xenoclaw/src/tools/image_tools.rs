@@ -99,8 +99,8 @@ impl Tool for ViewImageTool {
                 format!("'{path_arg}' is not a recognised image (png, jpg, jpeg, gif, webp, bmp).")
             })?;
 
-        let metadata = std::fs::metadata(&resolved)
-            .map_err(|e| format!("Cannot stat '{path_arg}': {e}"))?;
+        let metadata =
+            std::fs::metadata(&resolved).map_err(|e| format!("Cannot stat '{path_arg}': {e}"))?;
         let size = metadata.len();
 
         // Fail-safe: the model can't see images. Return a textual acknowledgement
@@ -146,8 +146,7 @@ impl Tool for ViewImageTool {
 /// Minimal standard base64 encoder (RFC 4648). Inlined to avoid adding a crate
 /// dependency in a network-restricted build environment.
 fn base64_encode(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
@@ -218,12 +217,11 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_non_image() {
-        let tmp = std::env::temp_dir().join("xeno_view_image_test3");
-        let _ = std::fs::create_dir_all(&tmp);
-        let f = tmp.join("notes.txt");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let f = tmp.path().join("notes.txt");
         std::fs::write(&f, b"hello").unwrap();
 
-        let tool = ViewImageTool::new(tmp.clone(), true);
+        let tool = ViewImageTool::new(tmp.path().to_path_buf(), true);
         let err = tool
             .execute(json!({ "path": f.to_string_lossy() }))
             .await

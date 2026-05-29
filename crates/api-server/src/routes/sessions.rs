@@ -96,8 +96,12 @@ fn source_to_string(source: &SessionSource) -> String {
 fn mode_to_string(mode: &AgentMode) -> String {
     match mode {
         AgentMode::General => "general".to_string(),
-        AgentMode::Coding { plan_only: true, .. } => "plan".to_string(),
-        AgentMode::Coding { plan_only: false, .. } => "code".to_string(),
+        AgentMode::Coding {
+            plan_only: true, ..
+        } => "plan".to_string(),
+        AgentMode::Coding {
+            plan_only: false, ..
+        } => "code".to_string(),
     }
 }
 

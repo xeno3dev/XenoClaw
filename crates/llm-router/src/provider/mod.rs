@@ -6,7 +6,9 @@ mod ollama;
 mod openai;
 
 pub use anthropic::AnthropicProvider;
-pub use cli_provider::{ClaudeCodeProvider, CodexCliProvider, CopilotCliProvider, GeminiCliProvider};
+pub use cli_provider::{
+    ClaudeCodeProvider, CodexCliProvider, CopilotCliProvider, GeminiCliProvider,
+};
 pub use ollama::OllamaProvider;
 pub use openai::OpenAiProvider;
 

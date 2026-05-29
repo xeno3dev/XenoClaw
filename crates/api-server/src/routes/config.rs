@@ -46,8 +46,12 @@ async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
     let mode = if let Some(ref handle) = state.agent_core {
         match handle.0.mode().await {
             AgentMode::General => "general".to_string(),
-            AgentMode::Coding { plan_only: true, .. } => "plan".to_string(),
-            AgentMode::Coding { plan_only: false, .. } => "code".to_string(),
+            AgentMode::Coding {
+                plan_only: true, ..
+            } => "plan".to_string(),
+            AgentMode::Coding {
+                plan_only: false, ..
+            } => "code".to_string(),
         }
     } else {
         "general".to_string()

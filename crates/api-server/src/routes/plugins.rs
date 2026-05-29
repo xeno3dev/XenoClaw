@@ -122,7 +122,7 @@ async fn toggle_plugin(
 
     // Apply to the live manager
     if let Some(ref handle) = state.plugin_manager {
-        let mgr = handle.0.read().await;
+        let mut mgr = handle.0.write().await;
         if new_enabled {
             if let Err(e) = mgr.reload_plugin(&name).await {
                 tracing::warn!(plugin = %name, error = %e, "Failed to load plugin on enable");
@@ -141,7 +141,7 @@ async fn toggle_plugin(
 /// POST /api/v1/plugins/reload — Reload all plugins from disk.
 async fn reload_all_plugins(State(state): State<AppState>) -> Json<PluginReloadResponse> {
     if let Some(ref handle) = state.plugin_manager {
-        let mgr = handle.0.read().await;
+        let mut mgr = handle.0.write().await;
         let results = mgr.load_all().await;
         let failures = results.iter().filter(|r| !r.success).count();
         let status = if failures == 0 { "reloaded" } else { "partial" };
@@ -175,7 +175,7 @@ async fn reload_plugin(
         ));
     }
     if let Some(ref handle) = state.plugin_manager {
-        let mgr = handle.0.read().await;
+        let mut mgr = handle.0.write().await;
         return match mgr.reload_plugin(&name).await {
             Ok(_) => Ok(Json(PluginReloadResponse {
                 name,

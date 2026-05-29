@@ -96,7 +96,9 @@ impl MessageHandler for AgentMessageHandler {
         );
 
         // 2. Persist any attachments to the session's upload directory.
-        let saved = self.save_attachments(&session_id.to_string(), &message).await;
+        let saved = self
+            .save_attachments(&session_id.to_string(), &message)
+            .await;
 
         // 3. Route message through agent core with this session.
         // For now, return a placeholder indicating the session was found/created.

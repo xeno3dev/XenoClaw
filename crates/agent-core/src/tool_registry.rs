@@ -272,11 +272,7 @@ impl ToolRegistry {
     /// - `plan_only`: when true, destructive (state-mutating) tools are
     ///   additionally excluded. Used by Plan mode so the agent can read and
     ///   propose changes but not execute them.
-    pub fn tool_definitions(
-        &self,
-        include_coding: bool,
-        plan_only: bool,
-    ) -> Vec<ToolDefinition> {
+    pub fn tool_definitions(&self, include_coding: bool, plan_only: bool) -> Vec<ToolDefinition> {
         self.tools
             .values()
             .filter(|entry| include_coding || !entry.tool.coding_only())

@@ -17,7 +17,9 @@ use tracing::{debug, error, info, warn};
 use common::errors::{LlmError, PlatformError};
 use common::models::{Message, MessageRole, ToolResult};
 use common::types::SessionId;
-use llm_router::types::{ChatMessage, ChatRole, CompletionRequest, ImageContent, IMAGE_SENTINEL_KEY};
+use llm_router::types::{
+    ChatMessage, ChatRole, CompletionRequest, ImageContent, IMAGE_SENTINEL_KEY,
+};
 use llm_router::LlmRouter;
 
 use crate::tool_registry::ToolRegistry;

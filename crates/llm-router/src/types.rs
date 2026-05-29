@@ -38,7 +38,11 @@ impl ChatMessage {
     }
 
     /// Construct a chat message carrying one or more inline images.
-    pub fn with_images(role: ChatRole, content: impl Into<String>, images: Vec<ImageContent>) -> Self {
+    pub fn with_images(
+        role: ChatRole,
+        content: impl Into<String>,
+        images: Vec<ImageContent>,
+    ) -> Self {
         Self {
             role,
             content: content.into(),

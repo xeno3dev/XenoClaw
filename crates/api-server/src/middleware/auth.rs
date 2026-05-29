@@ -73,33 +73,32 @@ pub async fn auth_middleware(
     // Validate API key format and authenticate.
     // First try pre-configured API keys; if that fails, check whether this is
     // a session token issued by the /auth/login endpoint.
-    let (key_id, key_rate_limit) =
-        match state.authenticator.authenticate(&token, &state.api_keys) {
-            Ok(id) => {
-                let rate_limit = state
-                    .api_keys
-                    .iter()
-                    .find(|k| k.id == id)
-                    .map(|k| k.rate_limit);
-                (id, rate_limit)
+    let (key_id, key_rate_limit) = match state.authenticator.authenticate(&token, &state.api_keys) {
+        Ok(id) => {
+            let rate_limit = state
+                .api_keys
+                .iter()
+                .find(|k| k.id == id)
+                .map(|k| k.rate_limit);
+            (id, rate_limit)
+        }
+        Err(_) => {
+            // Fall back to login-issued session tokens.
+            let is_login_token = state.login_tokens.read().await.contains(&token);
+            if is_login_token {
+                // Session tokens are not rate-limited per-key; pass None so
+                // the limiter uses its global default.
+                (state.admin_session_key_id, None)
+            } else {
+                return Err(ApiError::with_request_id(
+                    StatusCode::UNAUTHORIZED,
+                    "INVALID_CREDENTIALS",
+                    "Invalid API key.",
+                    request_id,
+                ));
             }
-            Err(_) => {
-                // Fall back to login-issued session tokens.
-                let is_login_token = state.login_tokens.read().await.contains(&token);
-                if is_login_token {
-                    // Session tokens are not rate-limited per-key; pass None so
-                    // the limiter uses its global default.
-                    (state.admin_session_key_id, None)
-                } else {
-                    return Err(ApiError::with_request_id(
-                        StatusCode::UNAUTHORIZED,
-                        "INVALID_CREDENTIALS",
-                        "Invalid API key.",
-                        request_id,
-                    ));
-                }
-            }
-        };
+        }
+    };
 
     // Check rate limit
     if let Err(err) = state

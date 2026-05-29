@@ -279,7 +279,7 @@ export function Settings() {
         </p>
         <div className={styles.providerGrid}>
           {(['telegram', 'discord', 'whatsapp'] as const).map((provider) => {
-            const configured = messaging?.[provider].configured ?? false;
+            const configured = messaging?.[provider]?.configured ?? false;
             return (
               <div key={provider} className={styles.providerCard}>
                 <span className={styles.providerName}>

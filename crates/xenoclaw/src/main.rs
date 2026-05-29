@@ -232,8 +232,7 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     let log_level = config.monitoring.log_level.to_string();
     let initial_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&log_level));
-    let (filter_layer, reload_handle) =
-        tracing_subscriber::reload::Layer::new(initial_filter);
+    let (filter_layer, reload_handle) = tracing_subscriber::reload::Layer::new(initial_filter);
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     let fmt_layer = tracing_subscriber::fmt::layer().with_target(true);
@@ -253,8 +252,13 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     info!("XenoClaw agent runtime starting");
     info!(config_path = %config_path.display(), "Configuration loaded");
 
-    // Workspace directory lives under ~/.xenoclaw/workspace
-    let workspace_dir = xenoclaw_home().join("workspace");
+    // Workspace directory: use configured path or fall back to ~/.xenoclaw/workspace
+    let workspace_dir = config
+        .coding
+        .workspace_dirs
+        .first()
+        .cloned()
+        .unwrap_or_else(|| xenoclaw_home().join("workspace"));
 
     // Build the system prompt
     let system_prompt = workspace::build_system_prompt(&workspace_dir)
@@ -365,12 +369,8 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     let plugin_limits = config.security.resource_limits.clone();
     let mut plugins_config = config.plugins.clone();
     plugins_config.directory = resolve_plugins_dir(&plugins_config.directory);
-    let plugin_manager = PluginManager::new(
-        plugins_config,
-        plugin_registry,
-        event_bus,
-        plugin_limits,
-    );
+    let plugin_manager =
+        PluginManager::new(plugins_config, plugin_registry, event_bus, plugin_limits);
     let plugin_manager = Arc::new(RwLock::new(plugin_manager));
 
     // Resource metrics cell — shared between the sysinfo sampler task and the
@@ -501,12 +501,8 @@ async fn serve(config_path: PathBuf) -> Result<()> {
                     tracing::warn!(plugin = %name, error = %e, "Failed to re-apply disabled state on startup");
                 } else {
                     // Save again to refresh updated_at
-                    api_server::state::save_plugin_state(
-                        db_pool_for_init.as_ref(),
-                        &name,
-                        false,
-                    )
-                    .await;
+                    api_server::state::save_plugin_state(db_pool_for_init.as_ref(), &name, false)
+                        .await;
                 }
             }
         }
@@ -689,7 +685,12 @@ async fn run_mcp_server(config_path: PathBuf) -> Result<()> {
         filesystem_rules: config.security.filesystem_rules.clone(),
         db_pool,
         scheduler,
-        workspace_dir: xenoclaw_home().join("workspace"),
+        workspace_dir: config
+            .coding
+            .workspace_dirs
+            .first()
+            .cloned()
+            .unwrap_or_else(|| xenoclaw_home().join("workspace")),
         // MCP clients render images themselves; the agent-side vision tool is
         // not used over the MCP transport.
         vision_supported: false,

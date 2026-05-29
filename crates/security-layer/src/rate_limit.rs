@@ -77,6 +77,7 @@ impl RateLimiter {
     /// Replace the default per-key limit at runtime. Returns the previous value.
     /// Affects every clone of this limiter (atomic is shared via Arc).
     pub fn set_default_limit(&self, new_limit: u32) -> u32 {
+        let new_limit = new_limit.max(1);
         self.current_default_limit
             .swap(new_limit, Ordering::Relaxed)
     }

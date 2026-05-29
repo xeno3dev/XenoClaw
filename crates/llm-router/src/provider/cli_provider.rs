@@ -282,7 +282,11 @@ impl LlmProvider for GeminiCliProvider {
             error!(provider = %self.name, stderr = %stderr, "Gemini CLI returned error");
             return Err(LlmError::InvalidResponse {
                 provider: self.name.clone(),
-                reason: format!("CLI exited with status {}: {}", output.status, stderr.trim()),
+                reason: format!(
+                    "CLI exited with status {}: {}",
+                    output.status,
+                    stderr.trim()
+                ),
             });
         }
 
@@ -374,7 +378,11 @@ impl LlmProvider for CodexCliProvider {
             error!(provider = %self.name, stderr = %stderr, "Codex CLI returned error");
             return Err(LlmError::InvalidResponse {
                 provider: self.name.clone(),
-                reason: format!("CLI exited with status {}: {}", output.status, stderr.trim()),
+                reason: format!(
+                    "CLI exited with status {}: {}",
+                    output.status,
+                    stderr.trim()
+                ),
             });
         }
 

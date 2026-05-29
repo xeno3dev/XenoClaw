@@ -19,7 +19,9 @@ const IMAGE_EXTENSIONS: &[(&str, &str)] = &[
 /// The uploads directory for a session: `{workspace}/uploads/{session_id}`.
 /// The session id is sanitized to a single path component.
 pub fn session_upload_dir(workspace: &Path, session_id: &str) -> PathBuf {
-    workspace.join("uploads").join(sanitize_component(session_id))
+    workspace
+        .join("uploads")
+        .join(sanitize_component(session_id))
 }
 
 /// Relative display path shown to the model, e.g. `uploads/{session}/foo.png`.

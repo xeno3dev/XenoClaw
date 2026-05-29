@@ -40,8 +40,12 @@ async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
 
         let m = match agent_mode {
             AgentMode::General => "general".to_string(),
-            AgentMode::Coding { plan_only: true, .. } => "plan".to_string(),
-            AgentMode::Coding { plan_only: false, .. } => "code".to_string(),
+            AgentMode::Coding {
+                plan_only: true, ..
+            } => "plan".to_string(),
+            AgentMode::Coding {
+                plan_only: false, ..
+            } => "code".to_string(),
         };
 
         (s, task, m)
