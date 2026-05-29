@@ -1,7 +1,7 @@
 /** TypeScript interfaces for Dashboard API response shapes */
 
 export type AgentStatusState = 'idle' | 'working' | 'error';
-export type AgentMode = 'General' | 'Coding';
+export type AgentMode = 'General' | 'Plan' | 'Code' | 'Coding';
 
 export interface AgentStatus {
   /** Current agent state */

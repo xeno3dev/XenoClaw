@@ -13,19 +13,14 @@ interface Session {
 }
 
 export function Sessions() {
-  const { token } = useAuth();
+  const { apiFetch } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const headers = useCallback(() => ({
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }), [token]);
-
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/sessions`, { headers: headers() });
+      const res = await apiFetch(`${API_BASE}/sessions`);
       if (!res.ok) throw new Error(`Failed to fetch sessions (${res.status})`);
       const data = await res.json() as { sessions: Session[] };
       setSessions(data.sessions ?? []);
@@ -35,7 +30,7 @@ export function Sessions() {
     } finally {
       setLoading(false);
     }
-  }, [headers]);
+  }, [apiFetch]);
 
   useEffect(() => {
     void fetchSessions();
@@ -43,9 +38,9 @@ export function Sessions() {
 
   const createSession = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/sessions`, {
+      const res = await apiFetch(`${API_BASE}/sessions`, {
         method: 'POST',
-        headers: headers(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: 'web', mode: 'general' }),
       });
       if (!res.ok) throw new Error(`Failed to create session (${res.status})`);
@@ -53,33 +48,27 @@ export function Sessions() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create session');
     }
-  }, [headers, fetchSessions]);
+  }, [apiFetch, fetchSessions]);
 
   const deleteSession = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`${API_BASE}/sessions/${id}`, {
-        method: 'DELETE',
-        headers: headers(),
-      });
+      const res = await apiFetch(`${API_BASE}/sessions/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`Failed to delete session (${res.status})`);
       setSessions((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete session');
     }
-  }, [headers]);
+  }, [apiFetch]);
 
   const switchSession = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`${API_BASE}/sessions/${id}/switch`, {
-        method: 'POST',
-        headers: headers(),
-      });
+      const res = await apiFetch(`${API_BASE}/sessions/${id}/switch`, { method: 'POST' });
       if (!res.ok) throw new Error(`Failed to switch session (${res.status})`);
       void fetchSessions();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to switch session');
     }
-  }, [headers, fetchSessions]);
+  }, [apiFetch, fetchSessions]);
 
   function formatTimestamp(iso: string): string {
     const date = new Date(iso);

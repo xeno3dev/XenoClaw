@@ -252,6 +252,8 @@ impl EventHandler for DiscordEventHandler {
             channel_id: Some(msg.channel_id.get().to_string()),
             content: msg.content.clone(),
             timestamp: Utc::now(),
+            // Discord attachment download is a follow-up (Telegram handled first).
+            attachments: Vec::new(),
         };
 
         // Check if this is a management command

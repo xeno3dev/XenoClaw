@@ -1,11 +1,21 @@
 import { useState, useCallback, type FormEvent } from 'react';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import styles from './Login.module.css';
 
 type AuthMode = 'password' | 'apikey';
 
+interface LocationState {
+  from?: { pathname: string };
+}
+
 export function Login() {
-  const { loginWithPassword, loginWithApiKey } = useAuth();
+  const { isAuthenticated, loginWithPassword, loginWithApiKey } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Bounce back to wherever ProtectedRoute kicked the user from, else home.
+  const from = (location.state as LocationState | null)?.from?.pathname ?? '/';
+
   const [mode, setMode] = useState<AuthMode>('password');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -18,27 +28,36 @@ export function Login() {
     setError('');
     setLoading(true);
 
-    let success = false;
-    if (mode === 'password') {
-      if (!username.trim() || !password) {
-        setError('Username and password are required');
-        setLoading(false);
-        return;
+    try {
+      let success = false;
+      if (mode === 'password') {
+        if (!username.trim() || !password) {
+          setError('Username and password are required');
+          return;
+        }
+        success = await loginWithPassword(username.trim(), password);
+        if (!success) setError('Invalid username or password');
+      } else {
+        if (!apiKey.trim()) {
+          setError('API key is required');
+          return;
+        }
+        success = await loginWithApiKey(apiKey.trim());
+        if (!success) setError('Invalid API key');
       }
-      success = await loginWithPassword(username.trim(), password);
-      if (!success) setError('Invalid username or password');
-    } else {
-      if (!apiKey.trim()) {
-        setError('API key is required');
-        setLoading(false);
-        return;
-      }
-      success = await loginWithApiKey(apiKey.trim());
-      if (!success) setError('Invalid API key');
-    }
 
-    setLoading(false);
-  }, [mode, username, password, apiKey, loginWithPassword, loginWithApiKey]);
+      if (success) {
+        navigate(from, { replace: true });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [mode, username, password, apiKey, loginWithPassword, loginWithApiKey, navigate, from]);
+
+  // Already signed in (e.g. page refresh with a valid stored token) — bounce out.
+  if (isAuthenticated) {
+    return <Navigate to={from} replace />;
+  }
 
   return (
     <div className={styles.container}>

@@ -14,7 +14,7 @@ interface MemoryEntry {
 }
 
 export function Memory() {
-  const { token } = useAuth();
+  const { apiFetch } = useAuth();
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,11 +27,6 @@ export function Memory() {
   const [formContent, setFormContent] = useState('');
   const [formTags, setFormTags] = useState('');
 
-  const headers = useCallback(() => ({
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }), [token]);
-
   const searchMemory = useCallback(async (e: FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -39,9 +34,8 @@ export function Memory() {
     setLoading(true);
     setHasSearched(true);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/memory/search?q=${encodeURIComponent(searchQuery.trim())}`,
-        { headers: headers() }
       );
       if (!res.ok) throw new Error(`Search failed (${res.status})`);
       const data = await res.json() as { results: MemoryEntry[] };
@@ -52,7 +46,7 @@ export function Memory() {
     } finally {
       setLoading(false);
     }
-  }, [headers, searchQuery]);
+  }, [apiFetch, searchQuery]);
 
   const storeEntry = useCallback(async (e: FormEvent) => {
     e.preventDefault();
@@ -64,9 +58,9 @@ export function Memory() {
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      const res = await fetch(`${API_BASE}/memory`, {
+      const res = await apiFetch(`${API_BASE}/memory`, {
         method: 'POST',
-        headers: headers(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: formTitle.trim(),
           content: formContent.trim(),
@@ -82,20 +76,17 @@ export function Memory() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to store entry');
     }
-  }, [headers, formTitle, formContent, formTags]);
+  }, [apiFetch, formTitle, formContent, formTags]);
 
   const deleteEntry = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`${API_BASE}/memory/${id}`, {
-        method: 'DELETE',
-        headers: headers(),
-      });
+      const res = await apiFetch(`${API_BASE}/memory/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`Failed to delete entry (${res.status})`);
       setEntries((prev) => prev.filter((e) => e.id !== id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete entry');
     }
-  }, [headers]);
+  }, [apiFetch]);
 
   return (
     <div className={styles.container}>

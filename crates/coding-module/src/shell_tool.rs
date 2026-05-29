@@ -140,6 +140,10 @@ impl Tool for ShellCommandTool {
     fn coding_only(&self) -> bool {
         true
     }
+
+    fn is_destructive(&self) -> bool {
+        true
+    }
 }
 
 /// Format a CommandOutput as a JSON string for the tool result.

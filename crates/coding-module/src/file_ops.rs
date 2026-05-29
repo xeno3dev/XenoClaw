@@ -348,6 +348,10 @@ impl Tool for FileCreateTool {
     fn coding_only(&self) -> bool {
         true
     }
+
+    fn is_destructive(&self) -> bool {
+        true
+    }
 }
 
 /// Tool for overwriting a file with new content.
@@ -405,6 +409,10 @@ impl Tool for FileWriteTool {
     }
 
     fn coding_only(&self) -> bool {
+        true
+    }
+
+    fn is_destructive(&self) -> bool {
         true
     }
 }
@@ -476,6 +484,10 @@ impl Tool for FileEditTool {
     fn coding_only(&self) -> bool {
         true
     }
+
+    fn is_destructive(&self) -> bool {
+        true
+    }
 }
 
 /// Tool for deleting a file.
@@ -524,6 +536,10 @@ impl Tool for FileDeleteTool {
     }
 
     fn coding_only(&self) -> bool {
+        true
+    }
+
+    fn is_destructive(&self) -> bool {
         true
     }
 }

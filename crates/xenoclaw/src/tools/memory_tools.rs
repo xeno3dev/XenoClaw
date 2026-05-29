@@ -201,4 +201,8 @@ impl Tool for MemoryStoreTool {
 
         Ok(response.to_string())
     }
+
+    fn is_destructive(&self) -> bool {
+        true
+    }
 }

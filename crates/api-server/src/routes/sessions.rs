@@ -96,7 +96,12 @@ fn source_to_string(source: &SessionSource) -> String {
 fn mode_to_string(mode: &AgentMode) -> String {
     match mode {
         AgentMode::General => "general".to_string(),
-        AgentMode::Coding { .. } => "coding".to_string(),
+        AgentMode::Coding {
+            plan_only: true, ..
+        } => "plan".to_string(),
+        AgentMode::Coding {
+            plan_only: false, ..
+        } => "code".to_string(),
     }
 }
 
@@ -104,8 +109,14 @@ fn mode_to_string(mode: &AgentMode) -> String {
 fn parse_mode(mode: &str) -> Option<AgentMode> {
     match mode {
         "general" => Some(AgentMode::General),
-        "coding" => Some(AgentMode::Coding {
+        // "plan" and "code" are both Coding; "coding" is a back-compat alias.
+        "plan" => Some(AgentMode::Coding {
             workspace: std::path::PathBuf::from("."),
+            plan_only: true,
+        }),
+        "code" | "coding" => Some(AgentMode::Coding {
+            workspace: std::path::PathBuf::from("."),
+            plan_only: false,
         }),
         _ => None,
     }
@@ -130,7 +141,7 @@ async fn create_session(
     let mode = parse_mode(&body.mode).ok_or_else(|| {
         ApiError::bad_request(
             format!(
-                "Invalid mode '{}'. Must be one of: general, coding.",
+                "Invalid mode '{}'. Must be one of: general, plan, code.",
                 body.mode
             ),
             req_id.0.clone(),

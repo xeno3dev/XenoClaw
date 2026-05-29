@@ -39,8 +39,14 @@ impl Default for AgentStatus {
 pub enum AgentMode {
     /// General-purpose agent with base tools only.
     General,
-    /// Coding agent with additional development tools.
-    Coding { workspace: PathBuf },
+    /// Coding agent with development tools. `plan_only` filters out destructive
+    /// tools (file writes, shell, commits) so the agent can investigate and
+    /// propose without executing — mirrors Claude Code / OpenCode "Plan mode".
+    Coding {
+        workspace: PathBuf,
+        #[serde(default)]
+        plan_only: bool,
+    },
 }
 
 impl Default for AgentMode {

@@ -4,10 +4,11 @@
 //! platform user gets their own isolated session with separate history
 //! and context.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::session_router::SessionRouter;
 use crate::{IncomingMessage, ManagementCommand, MessageHandler, MessagingError};
@@ -16,22 +17,64 @@ use crate::{IncomingMessage, ManagementCommand, MessageHandler, MessagingError};
 ///
 /// Each platform user gets their own isolated session. In a full implementation,
 /// this would hold an `Arc<AgentCore>` and route messages through the agent's
-/// processing pipeline with the appropriate session context.
+/// processing pipeline with the appropriate session context. For now the agent
+/// dispatch is stubbed (echo), but inbound attachments ARE downloaded and saved
+/// to `{workspace}/uploads/{session_id}/` so the plumbing is in place.
 pub struct AgentMessageHandler {
     session_router: Arc<SessionRouter>,
-    // In a full implementation, this would hold an Arc<AgentCore>
-    // For now, we provide a simple echo/placeholder response
+    /// Workspace root for storing uploaded attachments. When `None`, attachments
+    /// are acknowledged but not written to disk.
+    workspace_dir: Option<PathBuf>,
+    // In a full implementation, this would also hold an Arc<AgentCore>.
 }
 
 impl AgentMessageHandler {
     /// Create a new AgentMessageHandler with the given session router.
     pub fn new(session_router: Arc<SessionRouter>) -> Self {
-        Self { session_router }
+        Self {
+            session_router,
+            workspace_dir: None,
+        }
+    }
+
+    /// Set the workspace directory used to persist inbound attachments.
+    pub fn with_workspace_dir(mut self, dir: PathBuf) -> Self {
+        self.workspace_dir = Some(dir);
+        self
     }
 
     /// Get a reference to the underlying session router.
     pub fn session_router(&self) -> &Arc<SessionRouter> {
         &self.session_router
+    }
+
+    /// Persist a message's attachments under `{workspace}/uploads/{session_id}/`.
+    /// Returns the workspace-relative paths of stored files.
+    async fn save_attachments(&self, session_id: &str, message: &IncomingMessage) -> Vec<String> {
+        if message.attachments.is_empty() {
+            return Vec::new();
+        }
+        let Some(workspace) = &self.workspace_dir else {
+            warn!("No workspace configured; skipping attachment save");
+            return Vec::new();
+        };
+
+        let dir = common::uploads::session_upload_dir(workspace, session_id);
+        if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+            warn!(error = %e, "Failed to create upload dir for messaging attachment");
+            return Vec::new();
+        }
+
+        let mut saved = Vec::new();
+        for att in &message.attachments {
+            let filename = common::uploads::sanitize_filename(&att.filename);
+            let dest = dir.join(&filename);
+            match tokio::fs::write(&dest, &att.data).await {
+                Ok(()) => saved.push(common::uploads::display_path(session_id, &filename)),
+                Err(e) => warn!(error = %e, file = %filename, "Failed to save attachment"),
+            }
+        }
+        saved
     }
 }
 
@@ -48,17 +91,33 @@ impl MessageHandler for AgentMessageHandler {
             platform = ?message.platform,
             user_id = %message.platform_user_id,
             session_id = %session_id,
+            attachments = message.attachments.len(),
             "Routing message through session"
         );
 
-        // 2. Route message through agent core with this session
+        // 2. Persist any attachments to the session's upload directory.
+        let saved = self
+            .save_attachments(&session_id.to_string(), &message)
+            .await;
+
+        // 3. Route message through agent core with this session.
         // For now, return a placeholder indicating the session was found/created.
         // In a full implementation, this would call:
-        //   self.agent_core.process_message(session_id, message).await
-        Ok(format!(
-            "[Session {}] Received: {}",
-            session_id, message.content
-        ))
+        //   self.agent_core.process_message(session_id, message, history).await
+        if saved.is_empty() {
+            Ok(format!(
+                "[Session {}] Received: {}",
+                session_id, message.content
+            ))
+        } else {
+            Ok(format!(
+                "[Session {}] Received: {} (saved {} file(s): {})",
+                session_id,
+                message.content,
+                saved.len(),
+                saved.join(", ")
+            ))
+        }
     }
 
     async fn handle_command(
@@ -98,6 +157,7 @@ mod tests {
             channel_id: None,
             content: content.to_string(),
             timestamp: Utc::now(),
+            attachments: Vec::new(),
         }
     }
 

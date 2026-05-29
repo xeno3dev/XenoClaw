@@ -12,20 +12,15 @@ interface Plugin {
 }
 
 export function Plugins() {
-  const { token } = useAuth();
+  const { apiFetch } = useAuth();
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
 
-  const headers = useCallback(() => ({
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }), [token]);
-
   const fetchPlugins = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/plugins`, { headers: headers() });
+      const res = await apiFetch(`${API_BASE}/plugins`);
       if (!res.ok) throw new Error(`Failed to fetch plugins (${res.status})`);
       const data = await res.json() as { plugins: Plugin[] };
       setPlugins(data.plugins ?? []);
@@ -35,7 +30,7 @@ export function Plugins() {
     } finally {
       setLoading(false);
     }
-  }, [headers]);
+  }, [apiFetch]);
 
   useEffect(() => {
     void fetchPlugins();
@@ -44,10 +39,7 @@ export function Plugins() {
   const reloadPlugins = useCallback(async () => {
     setReloading(true);
     try {
-      const res = await fetch(`${API_BASE}/plugins/reload`, {
-        method: 'POST',
-        headers: headers(),
-      });
+      const res = await apiFetch(`${API_BASE}/plugins/reload`, { method: 'POST' });
       if (!res.ok) throw new Error(`Failed to reload plugins (${res.status})`);
       await fetchPlugins();
     } catch (err) {
@@ -55,11 +47,22 @@ export function Plugins() {
     } finally {
       setReloading(false);
     }
-  }, [headers, fetchPlugins]);
+  }, [apiFetch, fetchPlugins]);
 
-  const togglePlugin = useCallback((_name: string) => {
-    // Placeholder — would POST to API to enable/disable
-  }, []);
+  const togglePlugin = useCallback(async (name: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/plugins/${encodeURIComponent(name)}/toggle`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(`Failed to toggle plugin (${res.status})`);
+      const data = await res.json() as { name: string; enabled: boolean };
+      setPlugins((prev) =>
+        prev.map((p) => (p.name === name ? { ...p, enabled: data.enabled } : p))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to toggle plugin');
+    }
+  }, [apiFetch]);
 
   if (loading) {
     return (

@@ -4,32 +4,68 @@ import styles from './Settings.module.css';
 
 const API_BASE = '/api/v1';
 
-interface ConfigData {
-  [section: string]: Record<string, string | number | boolean>;
+type AgentMode = 'general' | 'plan' | 'code';
+
+const AGENT_MODES: { id: AgentMode; label: string; hint: string }[] = [
+  { id: 'general', label: 'General', hint: 'General mode: broad assistant capabilities' },
+  { id: 'plan', label: 'Plan', hint: 'Plan mode: read-only — investigates and proposes changes without writing' },
+  { id: 'code', label: 'Code', hint: 'Code mode: full dev tools including file writes, shell, and commits' },
+];
+
+function isAgentMode(v: unknown): v is AgentMode {
+  return v === 'general' || v === 'plan' || v === 'code';
 }
 
+interface ConfigData {
+  version: string;
+  mode: AgentMode | string;
+  rate_limit_default: number;
+  system_prompt: string | null;
+  log_level: string;
+}
+
+interface MessagingProviderStatus {
+  configured: boolean;
+}
+
+interface MessagingStatusResponse {
+  telegram: MessagingProviderStatus;
+  discord: MessagingProviderStatus;
+  whatsapp: MessagingProviderStatus;
+}
+
+const LOG_LEVELS = ['error', 'warn', 'info', 'debug', 'trace'] as const;
+
 export function Settings() {
-  const { token } = useAuth();
+  const { apiFetch } = useAuth();
   const [config, setConfig] = useState<ConfigData | null>(null);
+  const [messaging, setMessaging] = useState<MessagingStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [agentMode, setAgentMode] = useState<'general' | 'coding'>('general');
-
-  const headers = useCallback(() => ({
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }), [token]);
+  const [agentMode, setAgentMode] = useState<AgentMode>('general');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [systemPromptDirty, setSystemPromptDirty] = useState(false);
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  const [logLevel, setLogLevel] = useState('info');
+  const [rateLimit, setRateLimit] = useState<string>('');
+  const [rateLimitDirty, setRateLimitDirty] = useState(false);
+  const [savingRateLimit, setSavingRateLimit] = useState(false);
 
   const fetchConfig = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/config`, { headers: headers() });
-      if (!res.ok) throw new Error(`Failed to fetch config (${res.status})`);
-      const data = await res.json() as ConfigData;
+      const [cfgRes, msgRes] = await Promise.all([
+        apiFetch(`${API_BASE}/config`),
+        apiFetch(`${API_BASE}/messaging`),
+      ]);
+      if (!cfgRes.ok) throw new Error(`Failed to fetch config (${cfgRes.status})`);
+      const data = await cfgRes.json() as ConfigData;
       setConfig(data);
-      // Try to extract agent mode from config
-      const mode = data?.agent?.mode;
-      if (mode === 'coding' || mode === 'general') {
-        setAgentMode(mode);
+      if (isAgentMode(data.mode)) setAgentMode(data.mode);
+      if (!systemPromptDirty) setSystemPrompt(data.system_prompt ?? '');
+      setLogLevel(data.log_level ?? 'info');
+      if (!rateLimitDirty) setRateLimit(String(data.rate_limit_default ?? ''));
+      if (msgRes.ok) {
+        setMessaging(await msgRes.json() as MessagingStatusResponse);
       }
       setError(null);
     } catch (err) {
@@ -37,16 +73,91 @@ export function Settings() {
     } finally {
       setLoading(false);
     }
-  }, [headers]);
+  }, [apiFetch, systemPromptDirty, rateLimitDirty]);
 
   useEffect(() => {
     void fetchConfig();
   }, [fetchConfig]);
 
-  const toggleMode = useCallback(() => {
-    setAgentMode((prev) => (prev === 'general' ? 'coding' : 'general'));
-    // Placeholder — would POST to API to change mode
-  }, []);
+  const setMode = useCallback(async (newMode: AgentMode) => {
+    if (newMode === agentMode) return;
+    setAgentMode(newMode);
+    try {
+      const res = await apiFetch(`${API_BASE}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { mode: newMode } }),
+      });
+      if (!res.ok) setAgentMode(agentMode);
+    } catch {
+      setAgentMode(agentMode);
+    }
+  }, [agentMode, apiFetch]);
+
+  const saveSystemPrompt = useCallback(async () => {
+    setSavingPrompt(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: { system_prompt: systemPrompt.trim() === '' ? null : systemPrompt },
+        }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      setSystemPromptDirty(false);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save system prompt');
+    } finally {
+      setSavingPrompt(false);
+    }
+  }, [apiFetch, systemPrompt]);
+
+  const saveRateLimit = useCallback(async () => {
+    const parsed = Number.parseInt(rateLimit, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setError('Rate limit must be a positive integer');
+      return;
+    }
+    setSavingRateLimit(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { rate_limit_default: parsed } }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      setRateLimitDirty(false);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save rate limit');
+    } finally {
+      setSavingRateLimit(false);
+    }
+  }, [apiFetch, rateLimit]);
+
+  const changeLogLevel = useCallback(async (level: string) => {
+    const previous = logLevel;
+    setLogLevel(level);
+    try {
+      const res = await apiFetch(`${API_BASE}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { log_level: level } }),
+      });
+      if (!res.ok) {
+        setLogLevel(previous);
+      } else {
+        const body = await res.json() as { warnings?: string[] };
+        if (body.warnings?.length) {
+          setError(body.warnings.join('; '));
+        }
+      }
+    } catch {
+      setLogLevel(previous);
+    }
+  }, [apiFetch, logLevel]);
 
   if (loading) {
     return (
@@ -72,57 +183,174 @@ export function Settings() {
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Agent Mode</h2>
         <div className={styles.modeToggle}>
-          <button
-            className={`${styles.modeButton} ${agentMode === 'general' ? styles.modeActive : ''}`}
-            onClick={toggleMode}
-          >
-            General
-          </button>
-          <button
-            className={`${styles.modeButton} ${agentMode === 'coding' ? styles.modeActive : ''}`}
-            onClick={toggleMode}
-          >
-            Coding
-          </button>
+          {AGENT_MODES.map((m) => (
+            <button
+              key={m.id}
+              className={`${styles.modeButton} ${agentMode === m.id ? styles.modeActive : ''}`}
+              onClick={() => void setMode(m.id)}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
         <p className={styles.modeHint}>
-          {agentMode === 'general'
-            ? 'General mode: broad assistant capabilities'
-            : 'Coding mode: focused on code generation and editing'}
+          {AGENT_MODES.find((m) => m.id === agentMode)?.hint}
         </p>
+      </section>
+
+      {/* System Prompt Editor */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>System Prompt</h2>
+        <p className={styles.sectionHint}>
+          Prepended to every conversation. Takes effect on the next message —
+          in-flight requests keep the previous prompt.
+        </p>
+        <textarea
+          className={styles.promptEditor}
+          value={systemPrompt}
+          onChange={(e) => {
+            setSystemPrompt(e.target.value);
+            setSystemPromptDirty(true);
+          }}
+          rows={6}
+          placeholder="(empty — agent uses no system prompt)"
+        />
+        <div className={styles.promptActions}>
+          <button
+            className={styles.primaryButton}
+            onClick={() => void saveSystemPrompt()}
+            disabled={!systemPromptDirty || savingPrompt}
+          >
+            {savingPrompt ? 'Saving…' : 'Save'}
+          </button>
+          {systemPromptDirty && (
+            <button
+              className={styles.secondaryButton}
+              onClick={() => {
+                setSystemPrompt(config?.system_prompt ?? '');
+                setSystemPromptDirty(false);
+              }}
+              disabled={savingPrompt}
+            >
+              Revert
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* Log Level */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Log Level</h2>
+        <p className={styles.sectionHint}>
+          Adjusts the tracing filter at runtime — no restart needed.
+        </p>
+        <div className={styles.modeToggle}>
+          {LOG_LEVELS.map((level) => (
+            <button
+              key={level}
+              className={`${styles.modeButton} ${logLevel === level ? styles.modeActive : ''}`}
+              onClick={() => void changeLogLevel(level)}
+            >
+              {level}
+            </button>
+          ))}
+        </div>
       </section>
 
       {/* API Key Management */}
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>API Key Management</h2>
-        <p className={styles.placeholder}>
-          API key rotation and management will be available in a future update.
+        <p className={styles.sectionHint}>
+          Rotate the admin API key from the command line:
+          {' '}
+          <code className={styles.code}>sudo xenoclaw set-api-key</code>
+          {' '}
+          — restart the agent after for it to take effect.
         </p>
       </section>
 
-      {/* Configuration Display */}
+      {/* Messaging Bridges */}
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Current Configuration</h2>
-        {config ? (
-          <div className={styles.configGrid}>
-            {Object.entries(config).map(([section, values]) => (
-              <div key={section} className={styles.configSection}>
-                <h3 className={styles.configSectionName}>{section}</h3>
-                <div className={styles.configEntries}>
-                  {Object.entries(values).map(([key, value]) => (
-                    <div key={key} className={styles.configRow}>
-                      <span className={styles.configKey}>{key}</span>
-                      <span className={styles.configValue}>{String(value)}</span>
-                    </div>
-                  ))}
-                </div>
+        <h2 className={styles.sectionTitle}>Messaging Bridges</h2>
+        <p className={styles.sectionHint}>
+          Third-party chat integrations. Configure via the setup wizard
+          (<code className={styles.code}>xenoclaw -s</code>) — tokens are never
+          exposed through the web UI.
+        </p>
+        <div className={styles.providerGrid}>
+          {(['telegram', 'discord', 'whatsapp'] as const).map((provider) => {
+            const configured = messaging?.[provider]?.configured ?? false;
+            return (
+              <div key={provider} className={styles.providerCard}>
+                <span className={styles.providerName}>
+                  {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                </span>
+                <span
+                  className={`${styles.providerBadge} ${
+                    configured ? styles.providerBadgeOn : styles.providerBadgeOff
+                  }`}
+                >
+                  {configured ? 'Configured' : 'Not configured'}
+                </span>
               </div>
-            ))}
-          </div>
-        ) : (
-          <p className={styles.emptyState}>No configuration data available</p>
-        )}
+            );
+          })}
+        </div>
       </section>
+
+      {/* Rate Limit */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Rate Limit</h2>
+        <p className={styles.sectionHint}>
+          Default requests per minute per API key. Applies immediately — atomic
+          swap inside the live rate limiter.
+        </p>
+        <div className={styles.promptActions}>
+          <input
+            type="number"
+            min={1}
+            className={styles.rateInput}
+            value={rateLimit}
+            onChange={(e) => {
+              setRateLimit(e.target.value);
+              setRateLimitDirty(true);
+            }}
+            placeholder="100"
+          />
+          <button
+            className={styles.primaryButton}
+            onClick={() => void saveRateLimit()}
+            disabled={!rateLimitDirty || savingRateLimit}
+          >
+            {savingRateLimit ? 'Saving…' : 'Save'}
+          </button>
+          {rateLimitDirty && (
+            <button
+              className={styles.secondaryButton}
+              onClick={() => {
+                setRateLimit(String(config?.rate_limit_default ?? ''));
+                setRateLimitDirty(false);
+              }}
+              disabled={savingRateLimit}
+            >
+              Revert
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* Server Info */}
+      {config && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Server Info</h2>
+          <div className={styles.configEntries}>
+            <div className={styles.configRow}>
+              <span className={styles.configKey}>version</span>
+              <span className={styles.configValue}>{config.version}</span>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

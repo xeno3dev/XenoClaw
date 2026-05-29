@@ -4,13 +4,14 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--color-text, #e0e0e0);
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
   margin: 0;
 }
 
@@ -20,9 +21,9 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background: rgba(255, 56, 56, 0.1);
+  background: var(--color-error-soft);
   border: 1px solid rgba(255, 56, 56, 0.3);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--color-primary-bright);
   font-size: 0.875rem;
 }
@@ -41,6 +42,7 @@
 @media (min-width: 768px) {
   .grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
   }
 }
 
@@ -52,31 +54,39 @@
 
 /* Card base */
 .card {
-  background: var(--color-surface, #1a1a2e);
-  border: 1px solid var(--color-border, #2a2a4a);
-  border-radius: 10px;
-  padding: 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.375rem 1.375rem 1.25rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-base),
+              transform var(--transition-base);
+}
+
+.card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
 }
 
 .cardTitle {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: var(--color-text-secondary, #a0a0b0);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   margin: 0;
 }
 
 .loading {
-  color: var(--color-text-secondary, #a0a0b0);
+  color: var(--color-text-secondary);
   font-size: 0.875rem;
 }
 
 .emptyState {
-  color: var(--color-text-secondary, #a0a0b0);
+  color: var(--color-dim);
   font-size: 0.875rem;
   font-style: italic;
 }
@@ -95,39 +105,45 @@
 }
 
 .label {
-  font-size: 0.875rem;
-  color: var(--color-text-secondary, #a0a0b0);
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
 }
 
 .value {
   font-size: 0.875rem;
-  color: var(--color-text, #e0e0e0);
+  color: var(--color-text);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .statusBadge {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.6rem;
-  border-radius: 12px;
-  font-size: 0.75rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
   font-weight: 600;
-  text-transform: capitalize;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
 }
 
 .status_idle {
-  background: rgba(80, 220, 100, 0.15);
+  background: var(--color-success-soft);
   color: var(--color-success);
+  border-color: rgba(80, 220, 100, 0.25);
 }
 
 .status_working {
-  background: rgba(255, 176, 0, 0.15);
+  background: var(--color-warning-soft);
   color: var(--color-warning);
+  border-color: rgba(255, 176, 0, 0.25);
 }
 
 .status_error {
-  background: rgba(255, 56, 56, 0.15);
+  background: var(--color-error-soft);
   color: var(--color-error);
+  border-color: rgba(255, 56, 56, 0.25);
 }
 
 /* Resource Usage */
@@ -152,30 +168,34 @@
 .resourceValue {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--color-text, #e0e0e0);
+  color: var(--color-text);
 }
 
 .progressBar {
   width: 100%;
-  height: 8px;
-  background: var(--color-border, #2a2a4a);
-  border-radius: 4px;
+  height: 6px;
+  background: var(--color-bg-elevated);
+  border-radius: 999px;
   overflow: hidden;
+  border: 1px solid var(--color-border);
 }
 
 .progressFill {
   height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s ease;
-  background: var(--color-primary, #6c63ff);
+  border-radius: inherit;
+  transition: width 0.4s ease;
+  background: linear-gradient(90deg, var(--color-success), #6fe884);
+  box-shadow: 0 0 8px rgba(80, 220, 100, 0.3);
 }
 
 .progressFill[data-level="medium"] {
-  background: #f59e0b;
+  background: linear-gradient(90deg, var(--color-warning), #ffc640);
+  box-shadow: 0 0 8px rgba(255, 176, 0, 0.3);
 }
 
 .progressFill[data-level="high"] {
-  background: #ef4444;
+  background: linear-gradient(90deg, var(--color-error), var(--color-primary-bright));
+  box-shadow: 0 0 8px var(--color-primary-glow);
 }
 
 /* System Health */
@@ -216,21 +236,22 @@
 
 .serviceName {
   font-size: 0.875rem;
-  color: var(--color-text, #e0e0e0);
+  color: var(--color-text);
   flex: 1;
 }
 
 .serviceStatus {
   font-size: 0.75rem;
-  color: var(--color-text-secondary, #a0a0b0);
+  color: var(--color-text-secondary);
   text-transform: capitalize;
 }
 
 .serviceLatency {
   font-size: 0.75rem;
-  color: var(--color-text-secondary, #a0a0b0);
+  color: var(--color-dim);
   min-width: 3rem;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Scheduled Tasks */
@@ -246,10 +267,17 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem 0.625rem;
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 6px;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   gap: 0.75rem;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.taskRow:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
 }
 
 .taskInfo {
@@ -261,7 +289,7 @@
 
 .taskName {
   font-size: 0.875rem;
-  color: var(--color-text, #e0e0e0);
+  color: var(--color-text);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -270,7 +298,7 @@
 
 .taskMeta {
   font-size: 0.75rem;
-  color: var(--color-text-secondary, #a0a0b0);
+  color: var(--color-text-secondary);
 }
 
 .taskStatus {
@@ -346,12 +374,12 @@
 }
 
 .activity_info {
-  background: var(--color-text-secondary, #a0a0b0);
+  background: var(--color-text-secondary);
 }
 
 .activityMessage {
   font-size: 0.8125rem;
-  color: var(--color-text, #e0e0e0);
+  color: var(--color-text);
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -360,7 +388,7 @@
 
 .activityTime {
   font-size: 0.75rem;
-  color: var(--color-text-secondary, #a0a0b0);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
   min-width: 4rem;
   text-align: right;
@@ -379,11 +407,11 @@
 
 .tasksList::-webkit-scrollbar-thumb,
 .activityList::-webkit-scrollbar-thumb {
-  background: var(--color-border, #2a2a4a);
+  background: var(--color-border);
   border-radius: 3px;
 }
 
 .tasksList::-webkit-scrollbar-thumb:hover,
 .activityList::-webkit-scrollbar-thumb:hover {
-  background: var(--color-active, #3a3a5a);
+  background: var(--color-border-strong);
 }

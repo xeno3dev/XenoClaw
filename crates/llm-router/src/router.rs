@@ -275,6 +275,16 @@ impl LlmRouter {
     pub fn provider_count(&self) -> usize {
         self.providers.len()
     }
+
+    /// Whether the primary (highest-priority) provider's model supports vision.
+    /// Used by the `view_image` tool to decide whether to send image bytes or
+    /// fall back to a text-only "not supported" message.
+    pub fn supports_vision(&self) -> bool {
+        self.providers
+            .first()
+            .map(|p| p.client.supports_vision())
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -424,10 +434,7 @@ mod tests {
 
     fn make_request() -> CompletionRequest {
         CompletionRequest {
-            messages: vec![ChatMessage {
-                role: ChatRole::User,
-                content: "Hello".to_string(),
-            }],
+            messages: vec![ChatMessage::text(ChatRole::User, "Hello")],
             tools: vec![],
             max_tokens: None,
             temperature: None,

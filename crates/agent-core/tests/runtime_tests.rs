@@ -211,6 +211,7 @@ async fn test_switch_to_coding_mode() {
     let result = agent
         .set_mode(AgentMode::Coding {
             workspace: "/tmp/project".into(),
+            plan_only: false,
         })
         .await;
     assert!(result.is_ok());
@@ -227,6 +228,7 @@ async fn test_switch_back_to_general_mode() {
     agent
         .set_mode(AgentMode::Coding {
             workspace: "/tmp/project".into(),
+            plan_only: false,
         })
         .await
         .unwrap();
@@ -267,12 +269,12 @@ async fn test_tool_definitions_respect_mode() {
 
     // In General mode, coding tools should be excluded
     let registry = agent.tool_registry().read().await;
-    let general_tools = registry.tool_definitions(false);
+    let general_tools = registry.tool_definitions(false, false);
     assert_eq!(general_tools.len(), 1);
     assert_eq!(general_tools[0].name, "echo");
 
     // In Coding mode, all tools should be included
-    let coding_tools = registry.tool_definitions(true);
+    let coding_tools = registry.tool_definitions(true, false);
     assert_eq!(coding_tools.len(), 2);
 }
 
@@ -332,6 +334,7 @@ fn test_agent_status_serialization() {
 fn test_agent_mode_serialization() {
     let mode = AgentMode::Coding {
         workspace: "/home/user/project".into(),
+        plan_only: false,
     };
     let json = serde_json::to_string(&mode).unwrap();
     assert!(json.contains("coding"));

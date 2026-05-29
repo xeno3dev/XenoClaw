@@ -84,7 +84,11 @@ fn color_depth() -> ColorDepth {
 
 fn red() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 255, g: 56, b: 56 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 255,
+            g: 56,
+            b: 56,
+        },
         ColorDepth::Color256 => Color::AnsiValue(196),
         ColorDepth::Color16 => Color::Red,
     }
@@ -92,7 +96,11 @@ fn red() -> Color {
 
 fn red_bright() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 255, g: 96, b: 96 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 255,
+            g: 96,
+            b: 96,
+        },
         ColorDepth::Color256 => Color::AnsiValue(203),
         ColorDepth::Color16 => Color::Red,
     }
@@ -100,7 +108,11 @@ fn red_bright() -> Color {
 
 fn red_deep() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 120, g: 20, b: 20 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 120,
+            g: 20,
+            b: 20,
+        },
         ColorDepth::Color256 => Color::AnsiValue(88),
         ColorDepth::Color16 => Color::DarkRed,
     }
@@ -108,7 +120,11 @@ fn red_deep() -> Color {
 
 fn white() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 240, g: 240, b: 240 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 240,
+            g: 240,
+            b: 240,
+        },
         ColorDepth::Color256 => Color::AnsiValue(255),
         ColorDepth::Color16 => Color::White,
     }
@@ -116,7 +132,11 @@ fn white() -> Color {
 
 fn text() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 200, g: 200, b: 200 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 200,
+            g: 200,
+            b: 200,
+        },
         ColorDepth::Color256 => Color::AnsiValue(251),
         ColorDepth::Color16 => Color::Grey,
     }
@@ -124,7 +144,11 @@ fn text() -> Color {
 
 fn dim() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 130, g: 130, b: 135 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 130,
+            g: 130,
+            b: 135,
+        },
         ColorDepth::Color256 => Color::AnsiValue(244),
         ColorDepth::Color16 => Color::DarkGrey,
     }
@@ -132,7 +156,11 @@ fn dim() -> Color {
 
 fn rule_fg() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 75, g: 75, b: 80 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 75,
+            g: 75,
+            b: 80,
+        },
         ColorDepth::Color256 => Color::AnsiValue(239),
         ColorDepth::Color16 => Color::DarkGrey,
     }
@@ -140,7 +168,11 @@ fn rule_fg() -> Color {
 
 fn green() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 80, g: 220, b: 100 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 80,
+            g: 220,
+            b: 100,
+        },
         ColorDepth::Color256 => Color::AnsiValue(83),
         ColorDepth::Color16 => Color::Green,
     }
@@ -148,7 +180,11 @@ fn green() -> Color {
 
 fn amber() -> Color {
     match color_depth() {
-        ColorDepth::TrueColor => Color::Rgb { r: 255, g: 176, b: 0 },
+        ColorDepth::TrueColor => Color::Rgb {
+            r: 255,
+            g: 176,
+            b: 0,
+        },
         ColorDepth::Color256 => Color::AnsiValue(214),
         ColorDepth::Color16 => Color::Yellow,
     }
@@ -159,7 +195,7 @@ fn amber() -> Color {
 /// false on Color16 terminals where AnsiValue sequences don't render.
 const BG: Color = Color::AnsiValue(233);
 
-const TOTAL_STEPS: u8 = 8;
+const TOTAL_STEPS: u8 = 9;
 const RULE: &str = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
 // ─── Provider Definitions ────────────────────────────────────────────────────
@@ -419,6 +455,18 @@ struct WizardState {
     allow_pipes: bool,
     tool_timeout: String,
     timeout_unit: TimeoutUnit,
+    /// Max file size (MB) for the coding agent's file ops. Default 10.
+    max_file_size_mb: String,
+    /// Max concurrent shell processes. Default 5.
+    max_concurrent_shells: String,
+    /// Number of file operations to keep in the undo history. Default 50.
+    undo_history_size: String,
+    /// Telegram bot token (BotFather). Empty disables Telegram.
+    telegram_bot_token: String,
+    /// Discord bot token (Developer Portal). Empty disables Discord.
+    discord_bot_token: String,
+    /// WhatsApp phone number (E.164, e.g. +14155552671). Empty disables.
+    whatsapp_phone: String,
     /// CLI providers only: false when the CLI is not installed/logged-in
     /// and the user chose to skip — disables "Start server" on the done screen.
     cli_provider_ready: bool,
@@ -475,6 +523,12 @@ impl Default for WizardState {
             allow_pipes: false,
             tool_timeout: "30".to_string(),
             timeout_unit: TimeoutUnit::Seconds,
+            max_file_size_mb: "10".to_string(),
+            max_concurrent_shells: "5".to_string(),
+            undo_history_size: "50".to_string(),
+            telegram_bot_token: String::new(),
+            discord_bot_token: String::new(),
+            whatsapp_phone: String::new(),
             cli_provider_ready: true,
             mcp_registered: false,
         }
@@ -789,6 +843,31 @@ enum StepOutcome {
 
 /// Run the first-run setup wizard.
 pub async fn run_wizard(config_path: &Path) -> Result<()> {
+    // Warn loudly when the wizard is about to write to a path the installed
+    // systemd service will not read. The default with the systemd unit is
+    // /etc/xenoclaw/config.toml — if a user runs `xenoclaw -s` unprivileged,
+    // the wizard would silently update ~/.xenoclaw/config.toml instead, and
+    // every login would keep failing with "Invalid …" until they noticed.
+    let system_config = Path::new("/etc/xenoclaw/config.toml");
+    if system_config.exists() && config_path != system_config {
+        eprintln!(
+            "Warning: a system install at {} exists, but this wizard would write to {}.\n\
+             The xenoclaw-agent service reads the system config, so updates here will be ignored.\n\
+             Re-run with `sudo xenoclaw -s --config /etc/xenoclaw/config.toml` to update the system\n\
+             config, or pass --config <path> to confirm you really mean to write somewhere else.\n",
+            system_config.display(),
+            config_path.display(),
+        );
+        eprint!("Continue writing to {}? [y/N] ", config_path.display());
+        use std::io::BufRead;
+        let stdin = std::io::stdin();
+        let mut answer = String::new();
+        stdin.lock().read_line(&mut answer)?;
+        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            return Ok(());
+        }
+    }
+
     // Terminal size check — accept down to 60×20, but the experience is better at 80×24+.
     let (cols, rows) = terminal::size()?;
     if cols < 60 || rows < 20 {
@@ -827,8 +906,9 @@ async fn run_wizard_inner(config_path: &Path) -> Result<()> {
             4 => step_server(&mut state).await?,
             5 => step_api_key(&mut state).await?,
             6 => step_sandbox(&mut state).await?,
-            7 => step_review(&state, config_path).await?,
-            8 => step_done(&state, config_path).await?,
+            7 => step_messaging(&mut state).await?,
+            8 => step_review(&state, config_path).await?,
+            9 => step_done(&state, config_path).await?,
             _ => break,
         };
 
@@ -1001,19 +1081,23 @@ async fn step_provider(state: &mut WizardState) -> Result<StepOutcome> {
                 bg(&mut stdout, BG)?;
             } else {
                 bg(&mut stdout, BG)?;
-                stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
-                    "     [{num:>2}]  {:<20} {}\r\n",
-                    p.name, p.default_model
-                )))?;
+                stdout
+                    .queue(SetForegroundColor(dim()))?
+                    .queue(Print(format!(
+                        "     [{num:>2}]  {:<20} {}\r\n",
+                        p.name, p.default_model
+                    )))?;
             }
         }
 
         if end < PROVIDERS.len() {
             bg(&mut stdout, BG)?;
-            stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
-                "\r\n     … and {} more (scroll down)\r\n",
-                PROVIDERS.len() - end
-            )))?;
+            stdout
+                .queue(SetForegroundColor(dim()))?
+                .queue(Print(format!(
+                    "\r\n     … and {} more (scroll down)\r\n",
+                    PROVIDERS.len() - end
+                )))?;
         }
 
         stdout.flush()?;
@@ -1339,9 +1423,13 @@ fn render_cli_status_row(
             .queue(Print("   ✓  "))?
             .queue(SetAttribute(Attribute::Reset))?;
         bg(stdout, BG)?;
-        stdout.queue(SetForegroundColor(white()))?.queue(Print(format!("{label:<16}")))?;
+        stdout
+            .queue(SetForegroundColor(white()))?
+            .queue(Print(format!("{label:<16}")))?;
         if let Some(v) = extra {
-            stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!("  {v}")))?;
+            stdout
+                .queue(SetForegroundColor(dim()))?
+                .queue(Print(format!("  {v}")))?;
         }
     } else {
         stdout
@@ -1966,6 +2054,112 @@ async fn step_api_key(state: &mut WizardState) -> Result<StepOutcome> {
     }
 }
 
+/// One-line summary of which messaging bridges are configured, for the
+/// review screen. Shows "none" when all three are blank.
+fn messaging_summary(state: &WizardState) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if !state.telegram_bot_token.is_empty() {
+        parts.push("Telegram");
+    }
+    if !state.discord_bot_token.is_empty() {
+        parts.push("Discord");
+    }
+    if !state.whatsapp_phone.is_empty() {
+        parts.push("WhatsApp");
+    }
+    if parts.is_empty() {
+        "none".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+/// Build the `[messaging]` block(s) for the generated config.
+///
+/// Each provider is emitted only when its field is populated, so a blank
+/// wizard run leaves [messaging] entirely absent and the runtime defaults
+/// (no bridges) apply. The bot tokens are TOML-escaped to handle the
+/// characters real tokens contain (`:`, backslashes from copy-paste, etc.).
+fn build_messaging_section(state: &WizardState) -> String {
+    let any = !state.telegram_bot_token.is_empty()
+        || !state.discord_bot_token.is_empty()
+        || !state.whatsapp_phone.is_empty();
+    if !any {
+        return String::new();
+    }
+
+    let mut out = String::from("\n[messaging]\n");
+    if !state.telegram_bot_token.is_empty() {
+        out.push_str(&format!(
+            "\n[messaging.telegram]\nbot_token = {}\n",
+            toml_basic_string(&state.telegram_bot_token),
+        ));
+    }
+    if !state.discord_bot_token.is_empty() {
+        out.push_str(&format!(
+            "\n[messaging.discord]\nbot_token = {}\n",
+            toml_basic_string(&state.discord_bot_token),
+        ));
+    }
+    if !state.whatsapp_phone.is_empty() {
+        out.push_str(&format!(
+            "\n[messaging.whatsapp]\nphone_number = {}\n",
+            toml_basic_string(&state.whatsapp_phone),
+        ));
+    }
+    out
+}
+
+/// TOML basic-string encoding. Conservative — handles the characters bot
+/// tokens and phone numbers actually contain.
+fn toml_basic_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04X}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Pick a web UI directory to bake into the generated config.
+///
+/// `common::config::default_web_dir()` falls back to the literal `./web/dist`
+/// when `XENOCLAW_WEB_DIR` isn't set — which is true when the wizard is run
+/// interactively from a shell, even though the systemd unit later sets the
+/// env var. Writing that relative path into the TOML clobbers the install
+/// script's correct value and breaks `web.dir` lookup at service start.
+///
+/// Prefer, in order:
+///   1. `$XENOCLAW_WEB_DIR` if set
+///   2. `/opt/xenoclaw/web` if it exists (the install.sh layout)
+///   3. `./web/dist` canonicalized if it exists (dev checkout)
+///   4. `/opt/xenoclaw/web` as the most useful default for VPS users
+fn resolve_wizard_web_dir() -> PathBuf {
+    if let Some(env) = std::env::var_os("XENOCLAW_WEB_DIR") {
+        return PathBuf::from(env);
+    }
+    let installed = PathBuf::from("/opt/xenoclaw/web");
+    if installed.exists() {
+        return installed;
+    }
+    let dev = PathBuf::from("./web/dist");
+    if dev.exists() {
+        if let Ok(abs) = std::fs::canonicalize(&dev) {
+            return abs;
+        }
+    }
+    installed
+}
+
 /// Hash a password using bcrypt.
 fn hash_password(password: &str) -> String {
     bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap_or_else(|_| {
@@ -1983,6 +2177,9 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
     let mut custom_input = TextInput::new(&state.custom_commands);
     let mut exclude_input = TextInput::new(&state.excluded_commands);
     let mut timeout_input = TextInput::new(&state.tool_timeout);
+    let mut max_file_size_input = TextInput::new(&state.max_file_size_mb);
+    let mut max_concurrent_shells_input = TextInput::new(&state.max_concurrent_shells);
+    let mut undo_history_input = TextInput::new(&state.undo_history_size);
     let mut editing: Option<usize> = None;
 
     loop {
@@ -1992,7 +2189,10 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
         let row_custom = cmd_count + 2;
         let row_exclude = cmd_count + 3;
         let row_timeout = cmd_count + 4;
-        let total_rows = cmd_count + 5;
+        let row_max_file_size = cmd_count + 5;
+        let row_max_concurrent_shells = cmd_count + 6;
+        let row_undo_history = cmd_count + 7;
+        let total_rows = cmd_count + 8;
 
         let unit_label = match state.timeout_unit {
             TimeoutUnit::Seconds => "seconds",
@@ -2090,11 +2290,50 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             bg(&mut stdout, BG)?;
         } else {
             bg(&mut stdout, BG)?;
-            stdout.queue(SetForegroundColor(dim()))?.queue(Print(format!(
-                "     Timeout: {}  {unit_label}\r\n",
-                timeout_input.value()
-            )))?;
+            stdout
+                .queue(SetForegroundColor(dim()))?
+                .queue(Print(format!(
+                    "     Timeout: {}  {unit_label}\r\n",
+                    timeout_input.value()
+                )))?;
         }
+
+        stdout.queue(Print("\r\n"))?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print("   Coding limits\r\n"))?;
+        bg(&mut stdout, BG)?;
+
+        // Max file size (MB) — for the coding agent's file read/write ops
+        render_numeric_row(
+            &mut stdout,
+            selected == row_max_file_size,
+            editing == Some(row_max_file_size),
+            "Max file size",
+            &max_file_size_input,
+            "MB",
+        )?;
+
+        // Max concurrent shells — caps how many shell commands run at once
+        render_numeric_row(
+            &mut stdout,
+            selected == row_max_concurrent_shells,
+            editing == Some(row_max_concurrent_shells),
+            "Max concurrent shells",
+            &max_concurrent_shells_input,
+            "processes",
+        )?;
+
+        // Undo history size — how many file ops can be reverted
+        render_numeric_row(
+            &mut stdout,
+            selected == row_undo_history,
+            editing == Some(row_undo_history),
+            "Undo history",
+            &undo_history_input,
+            "entries",
+        )?;
 
         stdout.flush()?;
         let footer = if editing.is_some() {
@@ -2111,10 +2350,20 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                     &mut custom_input
                 } else if edit_row == row_exclude {
                     &mut exclude_input
-                } else {
+                } else if edit_row == row_timeout {
                     &mut timeout_input
+                } else if edit_row == row_max_file_size {
+                    &mut max_file_size_input
+                } else if edit_row == row_max_concurrent_shells {
+                    &mut max_concurrent_shells_input
+                } else {
+                    &mut undo_history_input
                 };
                 let is_timeout = edit_row == row_timeout;
+                let is_numeric = is_timeout
+                    || edit_row == row_max_file_size
+                    || edit_row == row_max_concurrent_shells
+                    || edit_row == row_undo_history;
 
                 match key.code {
                     KeyCode::Left => input.move_left(),
@@ -2140,7 +2389,7 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                         editing = None;
                     }
                     KeyCode::Char(c) => {
-                        if is_timeout {
+                        if is_numeric {
                             if c.is_ascii_digit() {
                                 input.insert(c);
                             }
@@ -2174,13 +2423,22 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
                     }
                 }
                 KeyCode::Enter => {
-                    if selected == row_custom || selected == row_exclude || selected == row_timeout
+                    if selected == row_custom
+                        || selected == row_exclude
+                        || selected == row_timeout
+                        || selected == row_max_file_size
+                        || selected == row_max_concurrent_shells
+                        || selected == row_undo_history
                     {
                         editing = Some(selected);
                     } else {
                         state.custom_commands = custom_input.value().to_string();
                         state.excluded_commands = exclude_input.value().to_string();
                         state.tool_timeout = timeout_input.value().to_string();
+                        state.max_file_size_mb = max_file_size_input.value().to_string();
+                        state.max_concurrent_shells =
+                            max_concurrent_shells_input.value().to_string();
+                        state.undo_history_size = undo_history_input.value().to_string();
                         return Ok(StepOutcome::Next);
                     }
                 }
@@ -2199,6 +2457,45 @@ async fn step_sandbox(state: &mut WizardState) -> Result<StepOutcome> {
             }
         }
     }
+}
+
+/// Render a numeric field with a trailing unit label. Active when selected;
+/// goes white-on-active and shows a cursor block while editing.
+fn render_numeric_row(
+    stdout: &mut io::Stdout,
+    active: bool,
+    editing: bool,
+    label: &str,
+    input: &TextInput,
+    unit: &str,
+) -> io::Result<()> {
+    if active || editing {
+        let display = if editing {
+            input.display()
+        } else {
+            input.value().to_string()
+        };
+        bg(stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(red()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print(format!("   > {label}: ")))?
+            .queue(SetForegroundColor(white()))?
+            .queue(Print(format!("{display}  ")))?
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(format!("{unit}\r\n")))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(stdout, BG)?;
+    } else {
+        bg(stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(dim()))?
+            .queue(Print(format!(
+                "     {label}: {}  {unit}\r\n",
+                input.value()
+            )))?;
+    }
+    Ok(())
 }
 
 /// Render a checkbox-style toggle row. Active → red arrow + white text.
@@ -2276,7 +2573,356 @@ fn render_text_row(
     Ok(())
 }
 
-// ─── Step 7: Review ──────────────────────────────────────────────────────────
+// ─── Step 7: Messaging ───────────────────────────────────────────────────────
+//
+// Optional third-party chat bridges (Telegram, Discord, WhatsApp). All three
+// fields are optional — leaving a field blank disables that provider. The
+// telegram bot token is the BotFather "<id>:<hex>" string; Discord is the
+// Developer Portal bot token; WhatsApp is the E.164 phone number that the
+// xenoclaw process drives via the messaging-bridge stack.
+
+async fn step_messaging(state: &mut WizardState) -> Result<StepOutcome> {
+    let mut telegram_input = TextInput::new(&state.telegram_bot_token);
+    let mut discord_input = TextInput::new(&state.discord_bot_token);
+    let mut whatsapp_input = TextInput::new(&state.whatsapp_phone);
+    let mut field: u8 = 0; // 0=telegram, 1=discord, 2=whatsapp
+
+    loop {
+        let mut stdout = io::stdout();
+        clear_screen(&mut stdout)?;
+        print_header(&mut stdout, 7)?;
+
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(white()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Messaging Bridges\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "   Optional — leave any field blank to skip that provider.\r\n\r\n",
+        ))?;
+        bg(&mut stdout, BG)?;
+
+        render_field(&mut stdout, field == 0, "Telegram token", &telegram_input)?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "                  ↳ Get from @BotFather: /newbot, then copy the HTTP API token.\r\n",
+        ))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(Print("\r\n"))?;
+
+        render_field(&mut stdout, field == 1, "Discord token", &discord_input)?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "                  ↳ Discord Developer Portal → Bot → Reset/Copy Token.\r\n",
+        ))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(Print("\r\n"))?;
+
+        render_field(&mut stdout, field == 2, "WhatsApp phone", &whatsapp_input)?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "                  ↳ E.164 number the bridge will pair with (e.g. +14155552671).\r\n",
+        ))?;
+        bg(&mut stdout, BG)?;
+
+        stdout.flush()?;
+
+        print_footer(
+            &mut stdout,
+            "  [Tab] Next  [←→] Cursor  [Enter] Confirm  [Esc] Back",
+        )?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Tab => {
+                    field = (field + 1) % 3;
+                }
+                KeyCode::BackTab => {
+                    field = if field == 0 { 2 } else { field - 1 };
+                }
+                KeyCode::Enter => {
+                    state.telegram_bot_token = telegram_input.value().trim().to_string();
+                    state.discord_bot_token = discord_input.value().trim().to_string();
+                    state.whatsapp_phone = whatsapp_input.value().trim().to_string();
+                    let any = !state.telegram_bot_token.is_empty()
+                        || !state.discord_bot_token.is_empty()
+                        || !state.whatsapp_phone.is_empty();
+                    if !any {
+                        return Ok(StepOutcome::Next);
+                    }
+                    match show_messaging_validation(state).await? {
+                        ValidationOutcome::Proceed => return Ok(StepOutcome::Next),
+                        ValidationOutcome::Edit => continue,
+                        ValidationOutcome::Quit => return Ok(StepOutcome::Quit),
+                    }
+                }
+                KeyCode::Esc => return Ok(StepOutcome::Back),
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return Ok(StepOutcome::Quit);
+                }
+                KeyCode::Left => match field {
+                    0 => telegram_input.move_left(),
+                    1 => discord_input.move_left(),
+                    2 => whatsapp_input.move_left(),
+                    _ => {}
+                },
+                KeyCode::Right => match field {
+                    0 => telegram_input.move_right(),
+                    1 => discord_input.move_right(),
+                    2 => whatsapp_input.move_right(),
+                    _ => {}
+                },
+                KeyCode::Home => match field {
+                    0 => telegram_input.move_home(),
+                    1 => discord_input.move_home(),
+                    2 => whatsapp_input.move_home(),
+                    _ => {}
+                },
+                KeyCode::End => match field {
+                    0 => telegram_input.move_end(),
+                    1 => discord_input.move_end(),
+                    2 => whatsapp_input.move_end(),
+                    _ => {}
+                },
+                KeyCode::Backspace => match field {
+                    0 => telegram_input.backspace(),
+                    1 => discord_input.backspace(),
+                    2 => whatsapp_input.backspace(),
+                    _ => {}
+                },
+                KeyCode::Delete => match field {
+                    0 => telegram_input.delete(),
+                    1 => discord_input.delete(),
+                    2 => whatsapp_input.delete(),
+                    _ => {}
+                },
+                KeyCode::Char(c) => match field {
+                    0 => telegram_input.insert(c),
+                    1 => discord_input.insert(c),
+                    2 => whatsapp_input.insert(c),
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+}
+
+// ─── Step 7.5: Messaging token validation ───────────────────────────────────
+
+#[derive(Debug, Clone)]
+enum ValidationStatus {
+    Ok,
+    Failed(String),
+    Skipped,
+}
+
+#[derive(Debug, Clone)]
+struct ValidationResults {
+    telegram: ValidationStatus,
+    discord: ValidationStatus,
+    whatsapp: ValidationStatus,
+}
+
+enum ValidationOutcome {
+    Proceed,
+    Edit,
+    Quit,
+}
+
+/// Display "Validating…" then a results screen for the three messaging providers.
+/// Returns whether the user wants to proceed, go back and edit, or quit entirely.
+async fn show_messaging_validation(state: &WizardState) -> Result<ValidationOutcome> {
+    // Phase 1: "Validating…" screen
+    {
+        let mut stdout = io::stdout();
+        clear_screen(&mut stdout)?;
+        print_header(&mut stdout, 7)?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(white()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Validating messaging tokens…\r\n\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "   Contacting Telegram and Discord (10s timeout).\r\n",
+        ))?;
+        bg(&mut stdout, BG)?;
+        stdout.flush()?;
+    }
+
+    let results = validate_messaging_tokens(state).await;
+
+    // Phase 2: results screen, loop on input
+    loop {
+        let mut stdout = io::stdout();
+        clear_screen(&mut stdout)?;
+        print_header(&mut stdout, 7)?;
+        bg(&mut stdout, BG)?;
+        stdout
+            .queue(SetForegroundColor(white()))?
+            .queue(SetAttribute(Attribute::Bold))?
+            .queue(Print("   Token Validation\r\n\r\n"))?
+            .queue(SetAttribute(Attribute::Reset))?;
+
+        render_validation_row(&mut stdout, "Telegram", &results.telegram)?;
+        render_validation_row(&mut stdout, "Discord", &results.discord)?;
+        render_validation_row(&mut stdout, "WhatsApp", &results.whatsapp)?;
+
+        bg(&mut stdout, BG)?;
+        stdout.queue(Print("\r\n"))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "   Failures may just mean the host is offline — you can still save\r\n",
+        ))?;
+        bg(&mut stdout, BG)?;
+        stdout.queue(SetForegroundColor(dim()))?.queue(Print(
+            "   and fix tokens later by re-running the wizard.\r\n",
+        ))?;
+        stdout.flush()?;
+
+        print_footer(
+            &mut stdout,
+            "  [Enter] Continue  [Esc] Back to edit  [Ctrl+C] Quit",
+        )?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Enter => return Ok(ValidationOutcome::Proceed),
+                KeyCode::Esc => return Ok(ValidationOutcome::Edit),
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return Ok(ValidationOutcome::Quit);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn render_validation_row(
+    stdout: &mut io::Stdout,
+    label: &str,
+    status: &ValidationStatus,
+) -> io::Result<()> {
+    bg(stdout, BG)?;
+    let (icon, icon_color, detail) = match status {
+        ValidationStatus::Ok => ("✓", green(), "valid".to_string()),
+        ValidationStatus::Failed(reason) => ("✗", red(), reason.clone()),
+        ValidationStatus::Skipped => ("·", dim(), "not configured".to_string()),
+    };
+    stdout
+        .queue(SetForegroundColor(icon_color))?
+        .queue(Print(format!("   {icon}  ")))?
+        .queue(SetForegroundColor(white()))?
+        .queue(Print(format!("{label:<10}")))?
+        .queue(SetForegroundColor(dim()))?
+        .queue(Print(format!("  {detail}\r\n")))?;
+    Ok(())
+}
+
+/// Run all three provider validations concurrently and collect results.
+async fn validate_messaging_tokens(state: &WizardState) -> ValidationResults {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let (tg, dc, wa) = tokio::join!(
+        validate_telegram_token(&client, &state.telegram_bot_token),
+        validate_discord_token(&client, &state.discord_bot_token),
+        async { validate_whatsapp_phone(&state.whatsapp_phone) },
+    );
+
+    ValidationResults {
+        telegram: tg,
+        discord: dc,
+        whatsapp: wa,
+    }
+}
+
+/// Hit Telegram's `getMe` — succeeds iff `ok: true` in the JSON body.
+async fn validate_telegram_token(client: &reqwest::Client, token: &str) -> ValidationStatus {
+    if token.is_empty() {
+        return ValidationStatus::Skipped;
+    }
+    let url = format!("https://api.telegram.org/bot{token}/getMe");
+    match client.get(&url).send().await {
+        Ok(r) => {
+            let status = r.status();
+            if status.is_success() {
+                match r.json::<serde_json::Value>().await {
+                    Ok(v) if v.get("ok").and_then(|b| b.as_bool()) == Some(true) => {
+                        ValidationStatus::Ok
+                    }
+                    Ok(_) => ValidationStatus::Failed("API replied ok=false".to_string()),
+                    Err(e) => ValidationStatus::Failed(format!("Bad JSON: {e}")),
+                }
+            } else if status.as_u16() == 401 {
+                ValidationStatus::Failed("Unauthorized — token is wrong".to_string())
+            } else {
+                ValidationStatus::Failed(format!("HTTP {status}"))
+            }
+        }
+        Err(e) if e.is_timeout() => {
+            ValidationStatus::Failed("Timed out (host offline?)".to_string())
+        }
+        Err(_) => ValidationStatus::Failed("Network error reaching Telegram".to_string()),
+    }
+}
+
+/// Hit Discord's `users/@me` with a Bot token. 401 = bad token, 200 = good.
+async fn validate_discord_token(client: &reqwest::Client, token: &str) -> ValidationStatus {
+    if token.is_empty() {
+        return ValidationStatus::Skipped;
+    }
+    let resp = client
+        .get("https://discord.com/api/v10/users/@me")
+        .header("Authorization", format!("Bot {token}"))
+        .send()
+        .await;
+    match resp {
+        Ok(r) if r.status().is_success() => ValidationStatus::Ok,
+        Ok(r) if r.status().as_u16() == 401 => {
+            ValidationStatus::Failed("Unauthorized — token is wrong".to_string())
+        }
+        Ok(r) => ValidationStatus::Failed(format!("HTTP {}", r.status())),
+        Err(e) if e.is_timeout() => {
+            ValidationStatus::Failed("Timed out (host offline?)".to_string())
+        }
+        Err(e) => ValidationStatus::Failed(format!("Network: {e}")),
+    }
+}
+
+/// Local E.164 format check — `+` followed by 7-15 digits, leading digit 1-9.
+/// The bridge will discover unreachable numbers when it pairs; the wizard can
+/// at least catch obvious format mistakes without making an API call.
+fn validate_whatsapp_phone(phone: &str) -> ValidationStatus {
+    if phone.is_empty() {
+        return ValidationStatus::Skipped;
+    }
+    if !phone.starts_with('+') {
+        return ValidationStatus::Failed("Must start with + (E.164)".to_string());
+    }
+    let digits = &phone[1..];
+    if digits.len() < 7 || digits.len() > 15 {
+        return ValidationStatus::Failed(format!(
+            "Must have 7-15 digits after +, got {}",
+            digits.len()
+        ));
+    }
+    if !digits.chars().all(|c| c.is_ascii_digit()) {
+        return ValidationStatus::Failed("Only digits allowed after +".to_string());
+    }
+    if digits.starts_with('0') {
+        return ValidationStatus::Failed("Country code cannot start with 0".to_string());
+    }
+    ValidationStatus::Ok
+}
+
+// ─── Step 8: Review ──────────────────────────────────────────────────────────
 
 async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutcome> {
     let p = &PROVIDERS[state.provider_idx];
@@ -2316,7 +2962,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
     loop {
         let mut stdout = io::stdout();
         clear_screen(&mut stdout)?;
-        print_header(&mut stdout, 7)?;
+        print_header(&mut stdout, 8)?;
 
         bg(&mut stdout, BG)?;
         stdout
@@ -2356,6 +3002,14 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
             ("Web UI", format!("{}:{}", state.host, state.web_port)),
             ("Auth", auth_str.to_string()),
             ("Sandbox", sandbox_str.clone()),
+            (
+                "Coding",
+                format!(
+                    "file ≤ {} MB, ≤ {} shells, undo {}",
+                    state.max_file_size_mb, state.max_concurrent_shells, state.undo_history_size,
+                ),
+            ),
+            ("Messaging", messaging_summary(state)),
         ];
 
         for (label, value) in rows {
@@ -2415,7 +3069,7 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
     }
 }
 
-// ─── Step 8: Done ────────────────────────────────────────────────────────────
+// ─── Step 9: Done ────────────────────────────────────────────────────────────
 
 async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcome> {
     let p = &PROVIDERS[state.provider_idx];
@@ -2424,7 +3078,7 @@ async fn step_done(state: &WizardState, config_path: &Path) -> Result<StepOutcom
     loop {
         let mut stdout = io::stdout();
         clear_screen(&mut stdout)?;
-        print_header(&mut stdout, 8)?;
+        print_header(&mut stdout, 9)?;
 
         print_success(&mut stdout, "Setup complete — agent ready")?;
         stdout.queue(Print("\r\n"))?;
@@ -2812,7 +3466,7 @@ port = {port}
         model = state.model,
         host = state.host,
         port = state.port,
-        web_dir = common::config::default_web_dir().display(),
+        web_dir = resolve_wizard_web_dir().display(),
         data_dir = data_dir.display(),
         log_dir = log_dir.display(),
         admin_username = state.admin_username,
@@ -2841,6 +3495,9 @@ port = {port}
             }
         }
         let blocklist = blocklist_items.join(", ");
+        let max_file_size_mb: u32 = state.max_file_size_mb.parse().unwrap_or(10);
+        let max_concurrent_shells: u8 = state.max_concurrent_shells.parse().unwrap_or(5);
+        let undo_history_size: usize = state.undo_history_size.parse().unwrap_or(50);
         format!(
             r#"
 [coding]
@@ -2848,19 +3505,24 @@ workspace_dirs       = ["{workspace}"]
 repository_dirs      = ["{workspace}"]
 command_allowlist    = [{allowlist}]
 command_blocklist    = [{blocklist}]
-max_file_size_mb     = 10
-max_concurrent_shells = 5
+max_file_size_mb     = {max_file_size_mb}
+max_concurrent_shells = {max_concurrent_shells}
 shell_timeout_seconds = {timeout}
-undo_history_size    = 50
+undo_history_size    = {undo_history_size}
 "#,
             workspace = state.workspace_dir,
             allowlist = command_allowlist,
             blocklist = blocklist,
             timeout = timeout,
+            max_file_size_mb = max_file_size_mb,
+            max_concurrent_shells = max_concurrent_shells,
+            undo_history_size = undo_history_size,
         )
     };
 
-    let full_content = format!("{toml_content}{coding_section}");
+    let messaging_section = build_messaging_section(state);
+
+    let full_content = format!("{toml_content}{coding_section}{messaging_section}");
 
     if let Some(parent) = config_path.parent() {
         tokio::fs::create_dir_all(parent).await?;

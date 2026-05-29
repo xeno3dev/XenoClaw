@@ -228,4 +228,8 @@ impl Tool for GitCommitTool {
     fn coding_only(&self) -> bool {
         true
     }
+
+    fn is_destructive(&self) -> bool {
+        true
+    }
 }

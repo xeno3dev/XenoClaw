@@ -177,6 +177,10 @@ impl Tool for TaskCreateTool {
 
         Ok(response.to_string())
     }
+
+    fn is_destructive(&self) -> bool {
+        true
+    }
 }
 
 // =============================================================================

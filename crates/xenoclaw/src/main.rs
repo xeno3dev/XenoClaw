@@ -5,6 +5,7 @@
 //! - `setup`: Run the first-run configuration wizard
 //! - `reset-key`: Generate a new admin API key
 
+mod admin;
 mod cli_health;
 mod mcp_client;
 mod mcp_server;
@@ -25,6 +26,7 @@ use uuid::Uuid;
 use tower_http::services::{ServeDir, ServeFile};
 
 use agent_core::{AgentCore, AgentCoreConfig, AgentStatus, EventBus, ToolRegistry};
+use api_server::state::{LogLevelSetter, MessagingStatus, ResourceMetrics};
 use api_server::{build_router, AppState};
 use chrono::Utc;
 use common::config::{load_config, signal::spawn_reload_handler, ConfigError};
@@ -64,8 +66,28 @@ enum Command {
     Serve,
     /// Run the first-run setup wizard
     Setup,
-    /// Generate and display a new admin API key
+    /// Generate and display a new admin API key (does not modify config)
     ResetKey,
+    /// Set the admin password directly in the config (bypasses the TUI wizard)
+    Passwd {
+        /// Username to set alongside the new password (optional).
+        #[arg(long)]
+        user: Option<String>,
+        /// Password to set. If omitted, prompts twice on the TTY.
+        #[arg(long)]
+        password: Option<String>,
+    },
+    /// Rotate the admin API key in the config and print the new raw key.
+    SetApiKey,
+    /// Show the admin identity the running service would use.
+    ShowAdmin,
+    /// Locally verify whether a username/password would pass the API's bcrypt check.
+    VerifyLogin {
+        #[arg(long)]
+        user: String,
+        #[arg(long)]
+        password: String,
+    },
     /// Run as an MCP server over stdio (for Claude Code / Copilot integration)
     Mcp,
     /// Open an interactive chat session with a running XenoClaw agent.
@@ -109,6 +131,14 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Command::ResetKey => reset_key(),
+        Command::Passwd { user, password } => {
+            admin::set_password(&config_path, user.as_deref(), password.as_deref())
+        }
+        Command::SetApiKey => admin::set_api_key(&config_path),
+        Command::ShowAdmin => admin::show_admin(&config_path),
+        Command::VerifyLogin { user, password } => {
+            admin::verify_login(&config_path, &user, &password)
+        }
         Command::Mcp => run_mcp_server(config_path).await,
         Command::Tui {
             inline,
@@ -119,8 +149,23 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Returns ~/.xenoclaw/config.toml
+/// Returns the config path to use when `--config` is not given.
+///
+/// Preference order:
+///   1. $XENOCLAW_CONFIG_PATH (set by the systemd service unit).
+///   2. /etc/xenoclaw/config.toml when it exists — system install path that
+///      install.sh writes to. Without this, `xenoclaw -s` would default to
+///      ~/.xenoclaw/config.toml and silently diverge from the file the
+///      systemd service actually reads, leaving login broken.
+///   3. ~/.xenoclaw/config.toml — local dev / unprivileged use.
 fn default_config_path() -> PathBuf {
+    if let Some(p) = std::env::var_os("XENOCLAW_CONFIG_PATH") {
+        return PathBuf::from(p);
+    }
+    let system = PathBuf::from("/etc/xenoclaw/config.toml");
+    if system.exists() {
+        return system;
+    }
     xenoclaw_home().join("config.toml")
 }
 
@@ -182,20 +227,38 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         }
     };
 
-    // Initialize tracing
+    // Initialize tracing with a reload-capable EnvFilter so PUT /api/v1/config
+    // can change the log level at runtime without a restart.
     let log_level = config.monitoring.log_level.to_string();
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+    let initial_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&log_level));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(true)
+    let (filter_layer, reload_handle) = tracing_subscriber::reload::Layer::new(initial_filter);
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    let fmt_layer = tracing_subscriber::fmt::layer().with_target(true);
+    tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(fmt_layer)
         .init();
+    // Type-erased setter — AppState stores this closure, the config endpoint calls it.
+    let log_level_setter = LogLevelSetter::new(move |s: &str| -> Result<(), String> {
+        let new_filter = tracing_subscriber::EnvFilter::try_new(s)
+            .map_err(|e| format!("invalid filter '{s}': {e}"))?;
+        reload_handle
+            .reload(new_filter)
+            .map_err(|e| format!("reload failed: {e}"))
+    });
 
     info!("XenoClaw agent runtime starting");
     info!(config_path = %config_path.display(), "Configuration loaded");
 
-    // Workspace directory lives under ~/.xenoclaw/workspace
-    let workspace_dir = xenoclaw_home().join("workspace");
+    // Workspace directory: use configured path or fall back to ~/.xenoclaw/workspace
+    let workspace_dir = config
+        .coding
+        .workspace_dirs
+        .first()
+        .cloned()
+        .unwrap_or_else(|| xenoclaw_home().join("workspace"));
 
     // Build the system prompt
     let system_prompt = workspace::build_system_prompt(&workspace_dir)
@@ -207,6 +270,9 @@ async fn serve(config_path: PathBuf) -> Result<()> {
 
     // Construct the component graph
     let llm_router = LlmRouter::from_config(&config.llm);
+    // Capture vision capability before the router is moved into AgentCore —
+    // the view_image tool needs it for its fail-safe.
+    let vision_supported = llm_router.supports_vision();
 
     // Task scheduler
     let scheduler_config = SchedulerConfig::default();
@@ -234,12 +300,15 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         }
     };
 
-    // Register built-in tools
+    // Register built-in tools — clone the pool so we can also pass the
+    // original into AppState (used for plugin_states persistence).
     let mut tool_registry = tools::register_builtin_tools(tools::BuiltinToolsConfig {
         coding: config.coding.clone(),
         filesystem_rules: config.security.filesystem_rules.clone(),
-        db_pool,
+        db_pool: db_pool.clone(),
         scheduler: Arc::clone(&scheduler),
+        workspace_dir: workspace_dir.clone(),
+        vision_supported,
     });
 
     // Connect to external MCP servers and register their proxy tools
@@ -266,30 +335,85 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     } else {
         Vec::new()
     };
+
+    // Loud warning when no login method is configured — every web/API login
+    // attempt will return 401 ("Invalid …") until creds are set. This is the
+    // failure mode you'd hit if install.sh dropped the example config but the
+    // wizard wrote creds to a different file (e.g. ~/.xenoclaw/config.toml).
+    let pw_set = !config.security.admin_password_hash.is_empty();
+    let key_set = !config.security.admin_key_hash.is_empty();
+    if !pw_set && !key_set {
+        tracing::warn!(
+            config_path = %config_path.display(),
+            "No admin credentials in config: admin_password_hash and admin_key_hash are both empty. \
+             Web UI and API logins will be rejected. Run `xenoclaw -s --config {}` to configure.",
+            config_path.display()
+        );
+    } else {
+        info!(
+            password_login = pw_set,
+            api_key_login = key_set,
+            admin_username = %config.security.admin_username,
+            "Admin credentials loaded"
+        );
+    }
     let rate_limit_config = RateLimitConfig {
         default_limit: config.api.rate_limit_per_minute,
         ..RateLimitConfig::default()
     };
-    let state = AppState::with_admin_credentials(
-        api_keys,
-        rate_limit_config,
-        config.security.admin_username.clone(),
-        config.security.admin_password_hash.clone(),
-    );
-    let router = build_router(state);
-
-    // Plugin system
+    // Build the plugin manager BEFORE AppState so we can pass it in. We hold
+    // it in an Arc<RwLock<>> because `initialize()`/`shutdown()` need &mut self
+    // but the per-request handlers only need &self (via .read()).
     let plugin_registry = Arc::new(RwLock::new(ToolRegistry::new()));
     let event_bus = EventBus::new(256);
     let plugin_limits = config.security.resource_limits.clone();
     let mut plugins_config = config.plugins.clone();
     plugins_config.directory = resolve_plugins_dir(&plugins_config.directory);
-    let mut plugin_manager = PluginManager::new(
-        plugins_config,
-        plugin_registry,
-        event_bus,
-        plugin_limits,
-    );
+    let plugin_manager =
+        PluginManager::new(plugins_config, plugin_registry, event_bus, plugin_limits);
+    let plugin_manager = Arc::new(RwLock::new(plugin_manager));
+
+    // Resource metrics cell — shared between the sysinfo sampler task and the
+    // status route handler.
+    let metrics_cell: Arc<RwLock<ResourceMetrics>> =
+        Arc::new(RwLock::new(ResourceMetrics::default()));
+
+    let mut state = AppState::with_admin_credentials(
+        api_keys,
+        rate_limit_config,
+        config.security.admin_username.clone(),
+        config.security.admin_password_hash.clone(),
+    )
+    .with_messaging_status(MessagingStatus {
+        telegram_configured: config.messaging.telegram.is_some(),
+        discord_configured: config.messaging.discord.is_some(),
+        whatsapp_configured: config.messaging.whatsapp.is_some(),
+    })
+    .with_agent_core(Arc::clone(&agent_core))
+    .with_workspace_dir(workspace_dir.clone())
+    .with_plugin_manager(Arc::clone(&plugin_manager))
+    .with_metrics(Arc::clone(&metrics_cell))
+    .with_log_level_setter(log_level_setter, log_level.clone());
+
+    if let Some(pool) = db_pool.clone() {
+        state = state.with_db_pool(pool.clone());
+        // Load any previously-toggled plugin states from SQLite so restarts
+        // don't surprise the user with re-enabled plugins they disabled.
+        let persisted = api_server::state::load_plugin_states(&pool).await;
+        if !persisted.is_empty() {
+            info!(
+                count = persisted.len(),
+                "Loaded persisted plugin enable/disable states"
+            );
+            *state.plugin_states.write().await = persisted;
+        }
+    }
+
+    // Spawn the resource-metrics sampler. Updates every 2s; the status handler
+    // reads from the same Arc<RwLock<ResourceMetrics>> without paying refresh cost.
+    spawn_metrics_sampler(Arc::clone(&metrics_cell));
+
+    let router = build_router(state.clone());
 
     // Process supervisor
     let supervisor = Arc::new(ProcessSupervisor::new(SupervisorConfig::default()));
@@ -352,13 +476,34 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         }
     });
 
+    let pm_for_init = Arc::clone(&plugin_manager);
+    let initial_plugin_states = state.plugin_states.clone();
+    let db_pool_for_init = state.db_pool.clone();
     tokio::spawn(async move {
-        let results = plugin_manager.initialize().await;
+        let results = {
+            let mut mgr = pm_for_init.write().await;
+            mgr.initialize().await
+        };
         for r in &results {
             if r.success {
                 info!(plugin = %r.name, "Plugin loaded");
             } else {
                 tracing::warn!(plugin = %r.name, error = ?r.error, "Plugin failed to load");
+            }
+        }
+        // Unload anything the user previously toggled off — restart should
+        // honour the last enable/disable state.
+        let toggles = initial_plugin_states.read().await.clone();
+        let mgr = pm_for_init.read().await;
+        for (name, enabled) in toggles {
+            if !enabled && mgr.is_loaded(&name).await {
+                if let Err(e) = mgr.unload_plugin(&name).await {
+                    tracing::warn!(plugin = %name, error = %e, "Failed to re-apply disabled state on startup");
+                } else {
+                    // Save again to refresh updated_at
+                    api_server::state::save_plugin_state(db_pool_for_init.as_ref(), &name, false)
+                        .await;
+                }
             }
         }
     });
@@ -382,6 +527,10 @@ async fn serve(config_path: PathBuf) -> Result<()> {
 
     // Graceful shutdown
     mcp_manager.shutdown().await;
+    {
+        let mut mgr = plugin_manager.write().await;
+        mgr.shutdown().await;
+    }
 
     if let Err(e) = agent_core.shutdown().await {
         tracing::warn!(error = %e, "Agent shutdown error");
@@ -392,6 +541,80 @@ async fn serve(config_path: PathBuf) -> Result<()> {
 
     info!("XenoClaw agent runtime stopped");
     Ok(())
+}
+
+/// Spawn a background task that refreshes CPU + memory metrics every 2s by
+/// reading /proc directly. Linux-only — the agent doesn't run on macOS/Windows.
+fn spawn_metrics_sampler(cell: Arc<RwLock<ResourceMetrics>>) {
+    tokio::spawn(async move {
+        // Prime the CPU counters — first call returns None because we need
+        // two samples to compute a delta.
+        let mut last = read_cpu_totals();
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        loop {
+            let now = read_cpu_totals();
+            let cpu_percent = match (last, now) {
+                (Some((idle_a, total_a)), Some((idle_b, total_b))) if total_b > total_a => {
+                    let idle_delta = idle_b.saturating_sub(idle_a) as f64;
+                    let total_delta = (total_b - total_a) as f64;
+                    ((total_delta - idle_delta) / total_delta * 100.0) as f32
+                }
+                _ => 0.0,
+            };
+            last = now;
+
+            let memory_percent = read_memory_percent().unwrap_or(0.0);
+
+            *cell.write().await = ResourceMetrics {
+                cpu_percent,
+                memory_percent,
+            };
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    });
+}
+
+/// Read aggregate CPU jiffies from /proc/stat — returns (idle, total) or None
+/// if the file is unreadable / malformed. The "cpu " summary line lists:
+///   user nice system idle iowait irq softirq steal guest guest_nice
+/// We sum all fields for total; idle = idle + iowait.
+fn read_cpu_totals() -> Option<(u64, u64)> {
+    let contents = std::fs::read_to_string("/proc/stat").ok()?;
+    let line = contents.lines().find(|l| l.starts_with("cpu "))?;
+    let mut parts = line.split_whitespace();
+    parts.next()?; // "cpu" tag
+    let nums: Vec<u64> = parts.filter_map(|p| p.parse().ok()).collect();
+    if nums.len() < 4 {
+        return None;
+    }
+    let idle = nums[3] + nums.get(4).copied().unwrap_or(0); // idle + iowait
+    let total: u64 = nums.iter().sum();
+    Some((idle, total))
+}
+
+/// Read memory usage from /proc/meminfo as a percentage of MemTotal that is
+/// not available to userspace. Returns None on parse failure.
+fn read_memory_percent() -> Option<f32> {
+    let contents = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let mut mem_total: Option<u64> = None;
+    let mut mem_available: Option<u64> = None;
+    for line in contents.lines() {
+        if let Some(rest) = line.strip_prefix("MemTotal:") {
+            mem_total = rest.split_whitespace().next().and_then(|n| n.parse().ok());
+        } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
+            mem_available = rest.split_whitespace().next().and_then(|n| n.parse().ok());
+        }
+        if mem_total.is_some() && mem_available.is_some() {
+            break;
+        }
+    }
+    let total = mem_total?;
+    let available = mem_available?;
+    if total == 0 {
+        return Some(0.0);
+    }
+    let used = total.saturating_sub(available);
+    Some((used as f64 / total as f64 * 100.0) as f32)
 }
 
 /// Run the MCP server over stdio.
@@ -462,6 +685,15 @@ async fn run_mcp_server(config_path: PathBuf) -> Result<()> {
         filesystem_rules: config.security.filesystem_rules.clone(),
         db_pool,
         scheduler,
+        workspace_dir: config
+            .coding
+            .workspace_dirs
+            .first()
+            .cloned()
+            .unwrap_or_else(|| xenoclaw_home().join("workspace")),
+        // MCP clients render images themselves; the agent-side vision tool is
+        // not used over the MCP transport.
+        vision_supported: false,
     });
 
     let registry = Arc::new(RwLock::new(tool_registry));

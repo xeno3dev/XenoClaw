@@ -18,12 +18,88 @@ use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
 use crate::{
-    IncomingMessage, ManagementCommand, MessageContent, MessageHandler, MessageTarget,
-    MessagingBot, MessagingError, Platform, PlatformStatus,
+    IncomingAttachment, IncomingMessage, ManagementCommand, MessageContent, MessageHandler,
+    MessageTarget, MessagingBot, MessagingError, Platform, PlatformStatus,
 };
 
 /// Maximum time allowed to process and respond to a message (30 seconds).
 const DEFAULT_RESPONSE_TIMEOUT_SECS: u64 = 30;
+
+/// Download the largest photo and/or document attached to a Telegram message.
+/// Returns the downloaded files as `IncomingAttachment`s (best-effort — failures
+/// are logged and skipped rather than aborting message handling).
+async fn download_telegram_attachments(
+    bot: &Bot,
+    token: &str,
+    msg: &Message,
+) -> Vec<IncomingAttachment> {
+    let mut out = Vec::new();
+
+    // Photos arrive as multiple resolutions; the last entry is the largest.
+    if let Some(largest) = msg.photo().and_then(|sizes| sizes.last()) {
+        if let Some(att) = fetch_telegram_file(bot, token, &largest.file.id, None).await {
+            out.push(att);
+        }
+    }
+
+    // Documents carry their original filename.
+    if let Some(doc) = msg.document() {
+        if let Some(att) =
+            fetch_telegram_file(bot, token, &doc.file.id, doc.file_name.as_deref()).await
+        {
+            out.push(att);
+        }
+    }
+
+    out
+}
+
+/// Resolve a Telegram file_id to its bytes via getFile + the file download URL.
+async fn fetch_telegram_file(
+    bot: &Bot,
+    token: &str,
+    file_id: &str,
+    preferred_name: Option<&str>,
+) -> Option<IncomingAttachment> {
+    let file = match bot.get_file(file_id.to_string()).await {
+        Ok(f) => f,
+        Err(e) => {
+            warn!(error = %e, "Telegram getFile failed");
+            return None;
+        }
+    };
+    let url = format!("https://api.telegram.org/file/bot{token}/{}", file.path);
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(30), reqwest::get(&url))
+        .await
+        .map_err(|_| {
+            warn!("Telegram file download timed out");
+        })
+        .ok()?
+        .ok()?;
+    if !resp.status().is_success() {
+        warn!(status = %resp.status(), "Telegram file download failed");
+        return None;
+    }
+    let bytes = resp.bytes().await.ok()?.to_vec();
+
+    // Prefer the original filename (documents); fall back to the storage path's
+    // basename (photos), then a generic name.
+    let filename = preferred_name
+        .filter(|n| !n.is_empty())
+        .map(|n| n.to_string())
+        .or_else(|| {
+            std::path::Path::new(&file.path)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "attachment".to_string());
+
+    Some(IncomingAttachment {
+        filename,
+        data: bytes,
+    })
+}
 
 // =============================================================================
 // Configuration
@@ -137,11 +213,16 @@ impl MessagingBot for TelegramBot {
             let config = config.clone();
             let status = Arc::clone(&status_clone);
             async move {
-                // Only process text messages
-                let text = match msg.text() {
-                    Some(t) => t.to_string(),
-                    None => return Ok(()),
-                };
+                // Accept text, captions (on media), or media-only messages.
+                let text = msg
+                    .text()
+                    .or_else(|| msg.caption())
+                    .map(|t| t.to_string())
+                    .unwrap_or_default();
+                let has_media = msg.photo().is_some() || msg.document().is_some();
+                if text.is_empty() && !has_media {
+                    return Ok(());
+                }
 
                 let chat_id = msg.chat.id;
 
@@ -172,12 +253,17 @@ impl MessagingBot for TelegramBot {
                     .map(|u| u.id.0.to_string())
                     .unwrap_or_default();
 
+                // Download any attached photo/document so the agent can use it.
+                let attachments =
+                    download_telegram_attachments(&bot, &config.bot_token, &msg).await;
+
                 let incoming = IncomingMessage {
                     platform: Platform::Telegram,
                     platform_user_id: user_id,
                     channel_id: Some(chat_id.0.to_string()),
                     content: text.clone(),
                     timestamp: Utc::now(),
+                    attachments,
                 };
 
                 // Check if this is a management command

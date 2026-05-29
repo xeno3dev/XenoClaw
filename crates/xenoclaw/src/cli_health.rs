@@ -224,7 +224,9 @@ async fn check_codex_cli() -> CliHealth {
 
     // Login: Codex authenticates via OPENAI_API_KEY or a stored API key file.
     let logged_in = if installed {
-        std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false)
+        std::env::var("OPENAI_API_KEY")
+            .map(|k| !k.is_empty())
+            .unwrap_or(false)
             || has_codex_credentials()
     } else {
         false
@@ -357,7 +359,10 @@ pub fn remove_mcp_config() -> Result<()> {
         .context("failed to read ~/.claude/settings.json")?;
     let mut settings: Value = serde_json::from_str(&raw).unwrap_or(json!({}));
 
-    if let Some(mcp) = settings.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+    if let Some(mcp) = settings
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+    {
         mcp.remove("xenoclaw");
     }
 
@@ -421,7 +426,10 @@ pub fn remove_gemini_mcp_config() -> Result<()> {
         .context("failed to read ~/.gemini/settings.json")?;
     let mut settings: Value = serde_json::from_str(&raw).unwrap_or(json!({}));
 
-    if let Some(mcp) = settings.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+    if let Some(mcp) = settings
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+    {
         mcp.remove("xenoclaw");
     }
 

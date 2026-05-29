@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import { useInterval } from '../hooks/useInterval';
 import { useWebSocket } from '../hooks/useWebSocket';
 import type {
@@ -72,42 +73,76 @@ function statusDotClass(status: ServiceStatus): string {
  * Data is refreshed every ≤5 seconds via REST polling and WebSocket events.
  */
 export function Dashboard() {
+  const { apiFetch, token } = useAuth();
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTask[]>([]);
   const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  /** Fetch status data from the REST API */
+  /** Fetch status data from the REST API.
+   *
+   * The current backend returns a flat AgentStatus-shaped payload
+   * ({status, mode, current_task, uptime_seconds}). The full
+   * {agent, health, recentActivity} envelope this dashboard was
+   * designed around is aspirational — those fields don't exist yet
+   * server-side. Parse defensively so the page renders what the
+   * server actually provides and degrades gracefully on the rest.
+   */
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/status`);
+      const res = await apiFetch(`${API_BASE}/status`);
       if (!res.ok) {
         throw new Error(`Status API returned ${res.status}`);
       }
-      const data = (await res.json()) as StatusResponse;
-      setAgentStatus(data.agent);
-      setSystemHealth(data.health);
-      setRecentActivity(data.recentActivity.slice(0, 50));
+      const data = (await res.json()) as Partial<StatusResponse> & {
+        // Flat fallback shape the backend currently returns.
+        status?: string;
+        mode?: string;
+        current_task?: string | null;
+        uptime_seconds?: number;
+        cpu_percent?: number;
+        memory_percent?: number;
+      };
+
+      // Prefer the richer envelope when present; fall back to the
+      // flat fields the live server actually emits.
+      const flatAgent: AgentStatus | null =
+        data.agent ??
+        (data.status !== undefined
+          ? {
+              status: (data.status as AgentStatus['status']) ?? 'idle',
+              currentTask: data.current_task ?? null,
+              uptimeSeconds: data.uptime_seconds ?? 0,
+              mode: ((data.mode ?? 'general').charAt(0).toUpperCase() +
+                (data.mode ?? 'general').slice(1)) as AgentStatus['mode'],
+              cpuPercent: data.cpu_percent ?? 0,
+              memoryPercent: data.memory_percent ?? 0,
+            }
+          : null);
+
+      setAgentStatus(flatAgent);
+      setSystemHealth(data.health ?? null);
+      setRecentActivity(Array.isArray(data.recentActivity) ? data.recentActivity.slice(0, 50) : []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch status');
     }
-  }, []);
+  }, [apiFetch]);
 
   /** Fetch scheduled tasks from the REST API */
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/tasks`);
+      const res = await apiFetch(`${API_BASE}/tasks`);
       if (!res.ok) {
         throw new Error(`Tasks API returned ${res.status}`);
       }
       const data = (await res.json()) as TasksResponse;
-      setScheduledTasks(data.tasks);
+      setScheduledTasks(Array.isArray(data.tasks) ? data.tasks : []);
     } catch {
       // Non-critical — status fetch error already shown
     }
-  }, []);
+  }, [apiFetch]);
 
   /** Combined fetch for polling */
   const pollData = useCallback(() => {
@@ -144,9 +179,10 @@ export function Dashboard() {
     }
   }, []);
 
-  // Connect to the events WebSocket for real-time updates
+  // Connect to the events WebSocket for real-time updates. The server
+  // expects the same Bearer token via the ?token= query param.
   useWebSocket({
-    token: '', // Auth handled by cookie/session in production
+    token: token ?? '',
     endpoint: '/api/v1/ws/events',
     onMessage: handleWsMessage,
     autoConnect: true,

@@ -8,6 +8,7 @@
 //! with a `retry_after` duration indicating when the client can retry.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -55,16 +56,36 @@ struct RequestRecord {
 #[derive(Debug, Clone)]
 pub struct RateLimiter {
     config: RateLimitConfig,
+    /// Mutable default limit — overrides `config.default_limit` when set.
+    /// Wrapped in an Arc so clones share the same atomic; updating via
+    /// `set_default_limit` affects every handle.
+    current_default_limit: Arc<AtomicU32>,
     records: Arc<RwLock<HashMap<ApiKeyId, RequestRecord>>>,
 }
 
 impl RateLimiter {
     /// Create a new rate limiter with the given configuration.
     pub fn new(config: RateLimitConfig) -> Self {
+        let initial = config.default_limit;
         Self {
             config,
+            current_default_limit: Arc::new(AtomicU32::new(initial)),
             records: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Replace the default per-key limit at runtime. Returns the previous value.
+    /// Affects every clone of this limiter (atomic is shared via Arc).
+    pub fn set_default_limit(&self, new_limit: u32) -> u32 {
+        let new_limit = new_limit.max(1);
+        self.current_default_limit
+            .swap(new_limit, Ordering::Relaxed)
+    }
+
+    /// Get the live default limit (may differ from `config.default_limit` if
+    /// `set_default_limit` has been called).
+    pub fn default_limit(&self) -> u32 {
+        self.current_default_limit.load(Ordering::Relaxed)
     }
 
     /// Check whether a request from the given API key is allowed.
@@ -81,7 +102,7 @@ impl RateLimiter {
         key_limit: Option<u32>,
     ) -> Result<(), SecurityError> {
         let now = Utc::now();
-        let limit = key_limit.unwrap_or(self.config.default_limit);
+        let limit = key_limit.unwrap_or_else(|| self.current_default_limit.load(Ordering::Relaxed));
         let window =
             chrono::Duration::from_std(self.config.window).unwrap_or(chrono::Duration::seconds(60));
         let window_start = now - window;

@@ -17,7 +17,9 @@ use tracing::{debug, error, info, warn};
 use common::errors::{LlmError, PlatformError};
 use common::models::{Message, MessageRole, ToolResult};
 use common::types::SessionId;
-use llm_router::types::{ChatMessage, ChatRole, CompletionRequest};
+use llm_router::types::{
+    ChatMessage, ChatRole, CompletionRequest, ImageContent, IMAGE_SENTINEL_KEY,
+};
 use llm_router::LlmRouter;
 
 use crate::tool_registry::ToolRegistry;
@@ -51,6 +53,10 @@ pub struct AgentCore {
 
     /// Runtime configuration.
     config: AgentCoreConfig,
+
+    /// Live system prompt — mutable via `set_system_prompt` so the API can update
+    /// it without restarting. Initialised from `config.system_prompt`.
+    system_prompt: Arc<RwLock<Option<String>>>,
 }
 
 impl AgentCore {
@@ -60,6 +66,7 @@ impl AgentCore {
         tool_registry: ToolRegistry,
         config: AgentCoreConfig,
     ) -> Self {
+        let system_prompt = Arc::new(RwLock::new(config.system_prompt.clone()));
         Self {
             llm_router: Arc::new(RwLock::new(llm_router)),
             tool_registry: Arc::new(RwLock::new(tool_registry)),
@@ -68,6 +75,7 @@ impl AgentCore {
             in_flight: Arc::new(Mutex::new(0)),
             accepting_requests: Arc::new(RwLock::new(false)),
             config,
+            system_prompt,
         }
     }
 
@@ -213,7 +221,9 @@ impl AgentCore {
         let in_flight = Arc::clone(&self.in_flight);
         let mode = Arc::clone(&self.mode);
         let max_iterations = self.config.max_tool_iterations;
-        let system_prompt = self.config.system_prompt.clone();
+        // Snapshot the current system prompt — uses the live mutable value,
+        // not the one frozen at construction time.
+        let system_prompt = self.system_prompt.read().await.clone();
 
         let response_stream = async move {
             let result = Self::run_message_loop(
@@ -268,22 +278,23 @@ impl AgentCore {
 
         // Prepend system prompt if configured
         if let Some(prompt) = system_prompt {
-            messages.push(ChatMessage {
-                role: ChatRole::System,
-                content: prompt.to_string(),
-            });
+            messages.push(ChatMessage::text(ChatRole::System, prompt));
         }
 
         messages.extend(Self::build_chat_messages(&history));
-        messages.push(ChatMessage {
-            role: ChatRole::User,
-            content: user_message.content.clone(),
-        });
+        messages.push(ChatMessage::text(
+            ChatRole::User,
+            user_message.content.clone(),
+        ));
 
-        // Get available tools based on current mode
-        let include_coding = {
+        // Get available tools based on current mode. Plan mode keeps `include_coding`
+        // on but flips `plan_only`, which filters out destructive tools.
+        let (include_coding, plan_only) = {
             let current_mode = mode.read().await;
-            matches!(*current_mode, AgentMode::Coding { .. })
+            match &*current_mode {
+                AgentMode::General => (false, false),
+                AgentMode::Coding { plan_only, .. } => (true, *plan_only),
+            }
         };
 
         let mut all_tool_results: Vec<ToolResult> = Vec::new();
@@ -313,7 +324,7 @@ impl AgentCore {
             // Get tool definitions
             let tools = {
                 let registry = tool_registry.read().await;
-                registry.tool_definitions(include_coding)
+                registry.tool_definitions(include_coding, plan_only)
             };
 
             // Build the completion request
@@ -367,10 +378,10 @@ impl AgentCore {
             );
 
             // Add the assistant's response (with tool calls) to the conversation
-            messages.push(ChatMessage {
-                role: ChatRole::Assistant,
-                content: response.content.clone(),
-            });
+            messages.push(ChatMessage::text(
+                ChatRole::Assistant,
+                response.content.clone(),
+            ));
 
             // Execute each tool call
             let mut iteration_results = Vec::new();
@@ -388,12 +399,11 @@ impl AgentCore {
                 iteration_results.push(result);
             }
 
-            // Add tool results to the conversation as tool messages
+            // Add tool results to the conversation as tool messages. A result
+            // may carry an inline image (from the view_image tool) encoded as a
+            // sentinel JSON object — convert that into a multimodal message.
             for result in &iteration_results {
-                messages.push(ChatMessage {
-                    role: ChatRole::Tool,
-                    content: result.output.clone(),
-                });
+                messages.push(tool_result_to_message(&result.output));
             }
 
             all_tool_results.extend(iteration_results);
@@ -404,16 +414,28 @@ impl AgentCore {
     fn build_chat_messages(history: &[Message]) -> Vec<ChatMessage> {
         history
             .iter()
-            .map(|msg| ChatMessage {
-                role: match msg.role {
+            .map(|msg| {
+                let role = match msg.role {
                     MessageRole::User => ChatRole::User,
                     MessageRole::Assistant => ChatRole::Assistant,
                     MessageRole::System => ChatRole::System,
                     MessageRole::Tool => ChatRole::Tool,
-                },
-                content: msg.content.clone(),
+                };
+                ChatMessage::text(role, msg.content.clone())
             })
             .collect()
+    }
+
+    /// Get the current system prompt (cloned).
+    pub async fn system_prompt(&self) -> Option<String> {
+        self.system_prompt.read().await.clone()
+    }
+
+    /// Replace the system prompt. Takes effect on the next message processed —
+    /// in-flight requests keep their snapshotted prompt.
+    pub async fn set_system_prompt(&self, prompt: Option<String>) {
+        let mut guard = self.system_prompt.write().await;
+        *guard = prompt;
     }
 
     /// Get a reference to the tool registry for external registration.
@@ -435,4 +457,38 @@ impl AgentCore {
     pub async fn in_flight_count(&self) -> usize {
         *self.in_flight.lock().await
     }
+}
+
+/// Convert a tool result's string output into a ChatMessage. If the output is
+/// the image sentinel emitted by the `view_image` tool
+/// (`{"__xeno_image__": {media_type, data, note}}`), build a multimodal message
+/// carrying the image; otherwise a plain text tool message.
+fn tool_result_to_message(output: &str) -> ChatMessage {
+    if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(output) {
+        if let Some(img) = map.get(IMAGE_SENTINEL_KEY).and_then(|v| v.as_object()) {
+            let media_type = img
+                .get("media_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("image/png")
+                .to_string();
+            let data = img
+                .get("data")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let note = img
+                .get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Here is the requested image.")
+                .to_string();
+            if !data.is_empty() {
+                return ChatMessage::with_images(
+                    ChatRole::Tool,
+                    note,
+                    vec![ImageContent { media_type, data }],
+                );
+            }
+        }
+    }
+    ChatMessage::text(ChatRole::Tool, output.to_string())
 }

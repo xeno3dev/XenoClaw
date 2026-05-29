@@ -68,8 +68,15 @@ pub struct WsAuthQuery {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatClientMessage {
-    /// Send a message to the agent.
-    Message { session_id: String, content: String },
+    /// Send a message to the agent. `attachments` are workspace-relative paths
+    /// (e.g. `uploads/<session>/cat.png`) the client uploaded beforehand via
+    /// `POST /api/v1/uploads/<session>`.
+    Message {
+        session_id: String,
+        content: String,
+        #[serde(default)]
+        attachments: Vec<String>,
+    },
     /// Ping to keep connection alive.
     Ping,
 }
@@ -288,6 +295,10 @@ async fn handle_chat_connection(mut socket: WebSocket, state: AppState, auth: Ws
     }
     info!("Chat WebSocket connected");
 
+    // Per-connection conversation history, fed back to the agent each turn so
+    // it has context. Bounded by the agent's own context window logic.
+    let mut history: Vec<common::models::Message> = Vec::new();
+
     // Main message loop
     loop {
         tokio::select! {
@@ -295,8 +306,8 @@ async fn handle_chat_connection(mut socket: WebSocket, state: AppState, auth: Ws
                 match msg {
                     Some(Ok(text)) => {
                         match serde_json::from_str::<ChatClientMessage>(&text) {
-                            Ok(ChatClientMessage::Message { session_id, content }) => {
-                                handle_chat_message(&mut socket, &state, &session_id, &content).await;
+                            Ok(ChatClientMessage::Message { session_id, content, attachments }) => {
+                                handle_chat_message(&mut socket, &state, &session_id, &content, &attachments, &mut history).await;
                             }
                             Ok(ChatClientMessage::Ping) => {
                                 let _ = send_chat_message(&mut socket, &ChatServerMessage::Pong).await;
@@ -424,25 +435,34 @@ async fn handle_events_connection(mut socket: WebSocket, state: AppState, auth: 
     info!("Events WebSocket disconnected");
 }
 
-/// Process a chat message and stream back the response token-by-token.
+/// Process a chat message: forward to the agent core (with any uploaded-file
+/// context appended) and stream the response back.
 async fn handle_chat_message(
     socket: &mut WebSocket,
-    _state: &AppState,
+    state: &AppState,
     session_id: &str,
     content: &str,
+    attachments: &[String],
+    history: &mut Vec<common::models::Message>,
 ) {
-    // Validate session_id format
-    if Uuid::parse_str(session_id).is_err() {
-        let msg = ChatServerMessage::Error {
-            session_id: Some(session_id.to_string()),
-            error_code: "INVALID_SESSION_ID".to_string(),
-            message: "session_id must be a valid UUID".to_string(),
-        };
-        let _ = send_chat_message(socket, &msg).await;
-        return;
-    }
+    use common::models::{Message, MessageRole};
+    use common::types::{MessageId, SessionId};
 
-    if content.trim().is_empty() {
+    // Validate session_id format
+    let session_uuid = match Uuid::parse_str(session_id) {
+        Ok(u) => u,
+        Err(_) => {
+            let msg = ChatServerMessage::Error {
+                session_id: Some(session_id.to_string()),
+                error_code: "INVALID_SESSION_ID".to_string(),
+                message: "session_id must be a valid UUID".to_string(),
+            };
+            let _ = send_chat_message(socket, &msg).await;
+            return;
+        }
+    };
+
+    if content.trim().is_empty() && attachments.is_empty() {
         let msg = ChatServerMessage::Error {
             session_id: Some(session_id.to_string()),
             error_code: "EMPTY_CONTENT".to_string(),
@@ -454,35 +474,129 @@ async fn handle_chat_message(
 
     debug!(
         session_id = session_id,
+        attachments = attachments.len(),
         "Processing chat message via WebSocket"
     );
 
-    // In a full implementation, this would:
-    // 1. Load session context from Memory Store
-    // 2. Send to LLM Router with streaming enabled
-    // 3. Stream tokens back as they arrive
-    //
-    // For now, send a placeholder response to demonstrate the streaming protocol.
-    let response_tokens = vec!["Message received", " and queued", " for processing."];
+    // Compose the message content, appending a note about uploaded files so the
+    // agent knows where they are and which tool to use.
+    let full_content = compose_content_with_attachments(content, attachments);
 
-    for token in &response_tokens {
-        let msg = ChatServerMessage::Token {
-            session_id: session_id.to_string(),
-            content: token.to_string(),
-        };
-        if send_chat_message(socket, &msg).await.is_err() {
+    let agent = match &state.agent_core {
+        Some(handle) => handle.0.clone(),
+        None => {
+            let msg = ChatServerMessage::Error {
+                session_id: Some(session_id.to_string()),
+                error_code: "AGENT_UNAVAILABLE".to_string(),
+                message: "Agent core is not attached to this server.".to_string(),
+            };
+            let _ = send_chat_message(socket, &msg).await;
             return;
         }
-        // Small delay to simulate streaming
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    };
+
+    let user_message = Message {
+        id: MessageId::new(),
+        session_id: SessionId(session_uuid),
+        role: MessageRole::User,
+        content: full_content.clone(),
+        tool_calls: None,
+        tool_results: None,
+        timestamp: Utc::now(),
+        token_count: 0,
+    };
+
+    // Run the agent. process_message returns a stream that yields the final
+    // response chunk (the runtime does the full tool loop internally).
+    let mut stream = agent
+        .process_message(
+            SessionId(session_uuid),
+            user_message.clone(),
+            history.clone(),
+        )
+        .await;
+
+    let mut assistant_text = String::new();
+    {
+        use futures::StreamExt;
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(chunk) => {
+                    if let Some(text) = chunk.content {
+                        if !text.is_empty() {
+                            assistant_text.push_str(&text);
+                            let msg = ChatServerMessage::Token {
+                                session_id: session_id.to_string(),
+                                content: text,
+                            };
+                            if send_chat_message(socket, &msg).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let msg = ChatServerMessage::Error {
+                        session_id: Some(session_id.to_string()),
+                        error_code: "AGENT_ERROR".to_string(),
+                        message: format!("Agent failed to process the message: {e}"),
+                    };
+                    let _ = send_chat_message(socket, &msg).await;
+                    return;
+                }
+            }
+        }
     }
 
-    // Send completion message
+    // Record this turn in the connection's history.
+    history.push(user_message);
+    history.push(Message {
+        id: MessageId::new(),
+        session_id: SessionId(session_uuid),
+        role: MessageRole::Assistant,
+        content: assistant_text,
+        tool_calls: None,
+        tool_results: None,
+        timestamp: Utc::now(),
+        token_count: 0,
+    });
+
     let msg = ChatServerMessage::Done {
         session_id: session_id.to_string(),
         message_id: Uuid::new_v4().to_string(),
     };
     let _ = send_chat_message(socket, &msg).await;
+}
+
+/// Append a note describing uploaded files to the user's message so the agent
+/// knows where to find them and which tool to use.
+fn compose_content_with_attachments(content: &str, attachments: &[String]) -> String {
+    if attachments.is_empty() {
+        return content.to_string();
+    }
+    let mut lines: Vec<String> = Vec::new();
+    let mut has_image = false;
+    for path in attachments {
+        let is_img = common::uploads::is_image_filename(path);
+        has_image |= is_img;
+        lines.push(format!(
+            "- {} {}",
+            path,
+            if is_img { "(image)" } else { "(file)" }
+        ));
+    }
+    let mut tool_hint = String::from("Use `file_read` to read text files");
+    if has_image {
+        tool_hint.push_str(" and `view_image` to view images");
+    }
+    tool_hint.push('.');
+
+    let note = format!(
+        "\n\n[The user attached the following file(s), saved in the workspace:\n{}\n{}]",
+        lines.join("\n"),
+        tool_hint
+    );
+    format!("{}{}", content, note)
 }
 
 // --- Helper functions ---

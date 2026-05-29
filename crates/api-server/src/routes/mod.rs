@@ -17,10 +17,12 @@ pub mod config;
 pub mod health;
 pub mod memory;
 pub mod messages;
+pub mod messaging;
 pub mod plugins;
 pub mod sessions;
 pub mod status;
 pub mod tasks;
+pub mod uploads;
 pub mod ws;
 
 use axum::middleware;
@@ -41,12 +43,14 @@ pub fn build_routes(state: AppState) -> Router {
     // All other routes require authentication via Bearer token
     let authenticated_routes = Router::new()
         .merge(messages::routes())
+        .merge(messaging::routes())
         .merge(status::routes())
         .merge(tasks::routes())
         .merge(sessions::routes())
         .merge(config::routes())
         .merge(memory::routes())
         .merge(plugins::routes())
+        .merge(uploads::routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,

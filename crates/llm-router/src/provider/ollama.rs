@@ -417,14 +417,8 @@ mod tests {
 
         let request = CompletionRequest {
             messages: vec![
-                ChatMessage {
-                    role: ChatRole::System,
-                    content: "You are helpful.".to_string(),
-                },
-                ChatMessage {
-                    role: ChatRole::User,
-                    content: "Hello".to_string(),
-                },
+                ChatMessage::text(ChatRole::System, "You are helpful."),
+                ChatMessage::text(ChatRole::User, "Hello"),
             ],
             tools: vec![],
             max_tokens: Some(500),

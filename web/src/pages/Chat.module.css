@@ -3,8 +3,11 @@
 .container {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 56px); /* account for mobile header */
-  max-height: calc(100vh - 56px);
+  /* Fill the Layout's main flex column (which already accounts for the
+     mobile header + responsive padding). Children with flex:1 + min-height:0
+     are what give the message list its scroll region. */
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -216,6 +219,68 @@
   30% { transform: translateY(-4px); }
 }
 
+/* Attachment chips (pending uploads, above the input) */
+.attachmentBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0.5rem 0 0;
+  flex-shrink: 0;
+}
+
+.attachmentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--color-surface, #1a1a2e);
+  border: 1px solid var(--color-border, #2a2a4a);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: var(--color-text, #e0e0e0);
+  max-width: 220px;
+}
+
+.attachmentIcon {
+  flex-shrink: 0;
+}
+
+.attachmentName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentRemove {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary, #a0a0b0);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.125rem;
+}
+
+.attachmentRemove:hover {
+  color: #f44336;
+}
+
+/* Attachments shown on a sent user message bubble */
+.messageAttachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+}
+
+.messageAttachmentChip {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  white-space: nowrap;
+}
+
 /* Input area */
 .inputArea {
   display: flex;
@@ -224,6 +289,54 @@
   padding: 0.75rem 0;
   border-top: 1px solid var(--color-border, #2a2a4a);
   flex-shrink: 0;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.attachButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--color-border, #2a2a4a);
+  color: var(--color-text-secondary, #a0a0b0);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.attachButton:hover:not(:disabled) {
+  background: var(--color-hover, rgba(255, 255, 255, 0.06));
+  color: var(--color-text, #e0e0e0);
+  border-color: var(--color-border-strong, #3a3a5a);
+}
+
+.attachButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.attachButton svg {
+  width: 20px;
+  height: 20px;
+}
+
+.attachSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border, #2a2a4a);
+  border-top-color: var(--color-primary, #6c63ff);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .inputWrapper {
@@ -307,6 +420,12 @@
   color: var(--color-text, #e0e0e0);
 }
 
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .headerStatus {
   display: flex;
   align-items: center;
@@ -315,13 +434,45 @@
   color: var(--color-text-secondary, #a0a0b0);
 }
 
+/* Agent mode toggle — compact pill in the chat header */
+.modeToggle {
+  display: flex;
+  border: 1px solid var(--color-border, #2a2a4a);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.modeBtn {
+  padding: 0.25rem 0.625rem;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary, #a0a0b0);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1.4;
+}
+
+.modeBtn:hover {
+  background: var(--color-hover, rgba(255,255,255,0.06));
+  color: var(--color-text, #e0e0e0);
+}
+
+.modeBtnActive {
+  background: var(--color-primary, #6c63ff);
+  color: #fff;
+  cursor: default;
+}
+
+.modeBtnActive:hover {
+  background: var(--color-primary, #6c63ff);
+  color: #fff;
+}
+
 /* Desktop layout: >= 768px */
 @media (min-width: 768px) {
-  .container {
-    height: 100vh;
-    max-height: 100vh;
-  }
-
   .message {
     max-width: 65%;
   }
