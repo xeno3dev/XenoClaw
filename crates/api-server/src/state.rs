@@ -18,6 +18,7 @@ use agent_core::AgentCore;
 use plugin_system::PluginManager;
 use security_layer::auth::ApiKeyAuthenticator;
 use security_layer::rate_limit::{RateLimitConfig, RateLimiter};
+use skills::SkillStore;
 
 use common::config::SessionSource;
 use common::models::{AgentMode, ApiKey};
@@ -152,6 +153,8 @@ pub struct AppState {
     pub log_level_setter: Option<LogLevelSetter>,
     /// Current log level string, kept in sync with the setter for GET /config.
     pub current_log_level: Arc<RwLock<String>>,
+    /// Shared skill store for the skills API endpoints.
+    pub skill_store: Option<Arc<SkillStore>>,
 }
 
 /// Public-safe view of which messaging providers are configured.
@@ -195,6 +198,7 @@ impl AppState {
             metrics: Arc::new(RwLock::new(ResourceMetrics::default())),
             log_level_setter: None,
             current_log_level: Arc::new(RwLock::new("info".to_string())),
+            skill_store: None,
         }
     }
 
@@ -226,6 +230,7 @@ impl AppState {
             metrics: Arc::new(RwLock::new(ResourceMetrics::default())),
             log_level_setter: None,
             current_log_level: Arc::new(RwLock::new("info".to_string())),
+            skill_store: None,
         }
     }
 
@@ -276,6 +281,12 @@ impl AppState {
     /// Set the SQLite pool for session persistence.
     pub fn with_db_pool(mut self, pool: SqlitePool) -> Self {
         self.db_pool = Some(pool);
+        self
+    }
+
+    /// Attach a skill store to enable the skills API endpoints.
+    pub fn with_skill_store(mut self, store: Arc<SkillStore>) -> Self {
+        self.skill_store = Some(store);
         self
     }
 }

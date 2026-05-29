@@ -24,8 +24,8 @@ use llm_router::LlmRouter;
 
 use crate::tool_registry::ToolRegistry;
 use crate::types::{
-    AgentCoreConfig, AgentMode, AgentStatus, ModeError, ResponseChunk, ResponseStream,
-    ShutdownError,
+    AgentCoreConfig, AgentMode, AgentStatus, ModeError, PostTaskHookFn, ResponseChunk,
+    ResponseStream, ShutdownError,
 };
 
 /// The central agent runtime that orchestrates all operations.
@@ -57,6 +57,13 @@ pub struct AgentCore {
     /// Live system prompt — mutable via `set_system_prompt` so the API can update
     /// it without restarting. Initialised from `config.system_prompt`.
     system_prompt: Arc<RwLock<Option<String>>>,
+
+    /// Optional fire-and-forget hook called after every completed message loop.
+    post_task_hook: Option<PostTaskHookFn>,
+
+    /// Live system prompt — may be refreshed at runtime (e.g. after skill reflection).
+    /// When `Some`, overrides `config.system_prompt`.
+    live_system_prompt: Arc<RwLock<Option<String>>>,
 }
 
 impl AgentCore {
@@ -66,7 +73,8 @@ impl AgentCore {
         tool_registry: ToolRegistry,
         config: AgentCoreConfig,
     ) -> Self {
-        let system_prompt = Arc::new(RwLock::new(config.system_prompt.clone()));
+        let initial_prompt = config.system_prompt.clone();
+        let system_prompt = Arc::new(RwLock::new(initial_prompt.clone()));
         Self {
             llm_router: Arc::new(RwLock::new(llm_router)),
             tool_registry: Arc::new(RwLock::new(tool_registry)),
@@ -76,7 +84,25 @@ impl AgentCore {
             accepting_requests: Arc::new(RwLock::new(false)),
             config,
             system_prompt,
+            post_task_hook: None,
+            live_system_prompt: Arc::new(RwLock::new(initial_prompt)),
         }
+    }
+
+    /// Update the system prompt at runtime.
+    ///
+    /// The new prompt takes effect on the next message processed.  This is
+    /// called by the skill-reflection hook after a skill is created or updated.
+    pub async fn set_system_prompt(&self, prompt: String) {
+        *self.live_system_prompt.write().await = Some(prompt);
+    }
+
+    /// Attach a post-task hook that is fired (fire-and-forget) after each
+    /// completed message loop.  The hook receives the total tool-call count
+    /// and the full conversation transcript.
+    pub fn with_post_task_hook(mut self, hook: PostTaskHookFn) -> Self {
+        self.post_task_hook = Some(hook);
+        self
     }
 
     /// Start the agent runtime.
@@ -221,12 +247,13 @@ impl AgentCore {
         let in_flight = Arc::clone(&self.in_flight);
         let mode = Arc::clone(&self.mode);
         let max_iterations = self.config.max_tool_iterations;
-        // Snapshot the current system prompt — uses the live mutable value,
-        // not the one frozen at construction time.
-        let system_prompt = self.system_prompt.read().await.clone();
+        // Use the live (possibly refreshed) system prompt, falling back to the
+        // initial config value if it was never set.
+        let system_prompt = self.live_system_prompt.read().await.clone();
+        let post_task_hook = self.post_task_hook.clone();
 
         let response_stream = async move {
-            let result = Self::run_message_loop(
+            let outcome = Self::run_message_loop(
                 session_id,
                 message,
                 history,
@@ -237,6 +264,21 @@ impl AgentCore {
                 system_prompt.as_deref(),
             )
             .await;
+
+            // Fire post-task hook (fire-and-forget) when tool calls were made.
+            if let Ok((_, tool_count, ref transcript)) = outcome {
+                if tool_count > 0 {
+                    if let Some(ref hook) = post_task_hook {
+                        let hook = Arc::clone(hook);
+                        let count = tool_count;
+                        let msgs = transcript.clone();
+                        tokio::spawn(async move { hook(count, msgs).await });
+                    }
+                }
+            }
+
+            // Extract the ResponseChunk from the outcome.
+            let result = outcome.map(|(chunk, _, _)| chunk);
 
             // Decrement in-flight count
             {
@@ -261,8 +303,9 @@ impl AgentCore {
 
     /// The core message processing loop.
     ///
-    /// Sends messages to the LLM, executes any tool calls, and loops
-    /// until the LLM returns a final response without tool calls.
+    /// Returns `(ResponseChunk, tool_call_count, transcript)`.
+    /// `tool_call_count` is the total number of tool calls executed across all
+    /// iterations; `transcript` is the full conversation as built up during the loop.
     async fn run_message_loop(
         session_id: SessionId,
         user_message: Message,
@@ -272,7 +315,7 @@ impl AgentCore {
         mode: &Arc<RwLock<AgentMode>>,
         max_iterations: u32,
         system_prompt: Option<&str>,
-    ) -> Result<ResponseChunk, PlatformError> {
+    ) -> Result<(ResponseChunk, usize, Vec<ChatMessage>), PlatformError> {
         // Build the initial conversation from history + new message
         let mut messages = Vec::new();
 
@@ -308,17 +351,22 @@ impl AgentCore {
                     iterations = iteration,
                     "Max tool iterations reached, returning partial response"
                 );
-                return Ok(ResponseChunk {
-                    content: Some(
-                        "I've reached the maximum number of tool call iterations. Here's what I have so far.".to_string()
-                    ),
-                    done: true,
-                    tool_results: if all_tool_results.is_empty() {
-                        None
-                    } else {
-                        Some(all_tool_results)
+                let tool_count = all_tool_results.len();
+                return Ok((
+                    ResponseChunk {
+                        content: Some(
+                            "I've reached the maximum number of tool call iterations. Here's what I have so far.".to_string()
+                        ),
+                        done: true,
+                        tool_results: if all_tool_results.is_empty() {
+                            None
+                        } else {
+                            Some(all_tool_results)
+                        },
                     },
-                });
+                    tool_count,
+                    messages,
+                ));
             }
 
             // Get tool definitions
@@ -358,15 +406,25 @@ impl AgentCore {
                     "LLM returned final response (no tool calls)"
                 );
 
-                return Ok(ResponseChunk {
-                    content: Some(response.content),
-                    done: true,
-                    tool_results: if all_tool_results.is_empty() {
-                        None
-                    } else {
-                        Some(all_tool_results)
-                    },
+                let tool_count = all_tool_results.len();
+                // Push the final assistant message into the transcript before returning.
+                messages.push(ChatMessage {
+                    role: ChatRole::Assistant,
+                    content: response.content.clone(),
                 });
+                return Ok((
+                    ResponseChunk {
+                        content: Some(response.content),
+                        done: true,
+                        tool_results: if all_tool_results.is_empty() {
+                            None
+                        } else {
+                            Some(all_tool_results)
+                        },
+                    },
+                    tool_count,
+                    messages,
+                ));
             }
 
             // Execute tool calls
@@ -446,6 +504,15 @@ impl AgentCore {
     /// Get a reference to the LLM router.
     pub fn llm_router(&self) -> &Arc<RwLock<LlmRouter>> {
         &self.llm_router
+    }
+
+    /// Get a shared reference to the live system prompt slot.
+    ///
+    /// Callers may write a new prompt to this `Arc<RwLock<_>>` to update the
+    /// system prompt that will be used on the next message (e.g. after a skill
+    /// is created by the reflection hook).
+    pub fn live_system_prompt(&self) -> Arc<RwLock<Option<String>>> {
+        Arc::clone(&self.live_system_prompt)
     }
 
     /// Check if the agent is currently accepting requests.
