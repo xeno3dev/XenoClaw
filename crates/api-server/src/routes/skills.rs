@@ -180,6 +180,18 @@ async fn upsert_skill(
     })?;
 
     // Enforce that the slug in the URL matches the front matter name.
+    // If the front-matter name is non-empty and doesn't match the URL slug, reject.
+    if !doc.front_matter.name.is_empty() && doc.front_matter.name != name {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "name_mismatch",
+            format!(
+                "Front-matter name '{}' does not match URL slug '{}'",
+                doc.front_matter.name, name
+            ),
+        ));
+    }
+    // If front-matter name was empty, fill it in from the URL slug.
     doc.front_matter.name = name.clone();
     if exists {
         doc.front_matter.use_count += 1;

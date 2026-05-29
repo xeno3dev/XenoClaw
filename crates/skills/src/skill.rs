@@ -144,12 +144,26 @@ fn parse_front_matter(yaml: &str) -> Result<SkillFrontMatter, SkillError> {
         match key {
             "name" => name = Some(strip_quotes(value)),
             "description" => description = Some(strip_quotes(value)),
-            "created_at" => created_at = parse_dt_opt(value),
-            "updated_at" => updated_at = parse_dt_opt(value),
-            "use_count" => use_count = value.parse().unwrap_or(0),
+            "created_at" => {
+                if !value.is_empty() {
+                    created_at = Some(parse_dt_or_err(key, value)?);
+                }
+            }
+            "updated_at" => {
+                if !value.is_empty() {
+                    updated_at = Some(parse_dt_or_err(key, value)?);
+                }
+            }
+            "use_count" => {
+                if !value.is_empty() {
+                    use_count = value.parse().map_err(|_| {
+                        SkillError::InvalidFrontMatter(format!("invalid use_count: {value}"))
+                    })?;
+                }
+            }
             "last_used" => {
                 if value != "null" && value != "~" && !value.is_empty() {
-                    last_used = parse_dt_opt(value);
+                    last_used = Some(parse_dt_or_err(key, value)?);
                 }
             }
             "tags" => tags = parse_tag_list(value),
@@ -171,17 +185,19 @@ fn parse_front_matter(yaml: &str) -> Result<SkillFrontMatter, SkillError> {
 
 fn strip_quotes(s: &str) -> String {
     let s = s.trim();
-    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+    if s.len() >= 2
+        && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
+    {
         s[1..s.len() - 1].to_string()
     } else {
         s.to_string()
     }
 }
 
-fn parse_dt_opt(value: &str) -> Option<DateTime<Utc>> {
+fn parse_dt_or_err(key: &str, value: &str) -> Result<DateTime<Utc>, SkillError> {
     DateTime::parse_from_rfc3339(value.trim())
-        .ok()
         .map(|d| d.with_timezone(&Utc))
+        .map_err(|_| SkillError::InvalidFrontMatter(format!("invalid {key}: {value}")))
 }
 
 fn parse_tag_list(value: &str) -> Vec<String> {

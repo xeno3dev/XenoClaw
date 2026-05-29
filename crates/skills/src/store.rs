@@ -16,6 +16,24 @@ use crate::skill::{SkillDoc, SkillError};
 
 const CACHE_TTL: Duration = Duration::from_secs(60);
 
+/// Validate that a slug is safe to use as a filesystem component.
+///
+/// A valid slug is: non-empty, not absolute, only one path component,
+/// and does not start with `.`.
+fn validate_slug(slug: &str) -> Result<(), SkillError> {
+    let path = std::path::Path::new(slug);
+    if slug.is_empty()
+        || path.is_absolute()
+        || path.components().count() != 1
+        || slug.starts_with('.')
+    {
+        return Err(SkillError::InvalidFrontMatter(format!(
+            "invalid skill slug: {slug}"
+        )));
+    }
+    Ok(())
+}
+
 struct CachedIndex {
     skills: Vec<SkillDoc>,
     built_at: Instant,
@@ -118,15 +136,18 @@ impl SkillStore {
 
     /// Load a single skill by slug (bypasses cache).
     pub async fn get(&self, name: &str) -> Result<Option<SkillDoc>, SkillError> {
+        validate_slug(name)?;
         let path = self.skills_dir.join(name).join("SKILL.md");
         match tokio::fs::read_to_string(&path).await {
             Ok(content) => Ok(Some(SkillDoc::parse(&content)?)),
-            Err(_) => Ok(None),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(SkillError::Io(e)),
         }
     }
 
     /// Atomically write a skill document to disk, then invalidate the cache.
     pub async fn save(&self, doc: &SkillDoc) -> Result<(), SkillError> {
+        validate_slug(&doc.front_matter.name)?;
         let dir = self.skills_dir.join(&doc.front_matter.name);
         tokio::fs::create_dir_all(&dir).await?;
 
@@ -143,6 +164,7 @@ impl SkillStore {
 
     /// Move a skill to `.archive/<slug>/`.  Returns `true` if the skill existed.
     pub async fn archive(&self, name: &str) -> Result<bool, SkillError> {
+        validate_slug(name)?;
         let src = self.skills_dir.join(name);
         if !src.exists() {
             return Ok(false);

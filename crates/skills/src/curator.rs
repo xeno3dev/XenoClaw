@@ -168,6 +168,11 @@ impl SkillCurator {
                                 Ok(_) => {
                                     lines.push(format!("  created: {to_slug}"));
                                     for slug in &from_slugs {
+                                        // Skip archiving the destination slug to avoid
+                                        // removing the skill we just saved (e.g. CONSOLIDATE a b -> a).
+                                        if slug == &to_slug {
+                                            continue;
+                                        }
                                         match self.store.archive(slug).await {
                                             Ok(_) => lines.push(format!("  archived: {slug}")),
                                             Err(e) => {
@@ -293,55 +298,77 @@ fn parse_curator_response(response: &str) -> Vec<CuratorAction> {
                     from_part.split_whitespace().map(String::from).collect();
                 let to_slug = to_slug.trim().to_string();
 
-                // Collect any immediately following SKILL.md block.
-                i += 1;
-                let mut skill_lines: Vec<&str> = Vec::new();
-                let mut dash_count = 0usize;
+                // Peek ahead (skipping blank lines) to find the next non-empty line.
+                // Only enter collection mode if that line is exactly "---".
+                let peek_idx = {
+                    let mut j = i + 1;
+                    while j < lines.len() && lines[j].trim().is_empty() {
+                        j += 1;
+                    }
+                    j
+                };
 
-                while i < lines.len() {
-                    let next = lines[i].trim();
-                    // Stop when we hit the next directive
-                    if dash_count >= 2
-                        && (next.starts_with("KEEP ")
-                            || next.starts_with("PRUNE ")
-                            || next.starts_with("CONSOLIDATE "))
-                    {
-                        break;
-                    }
-                    if next == "---" {
-                        dash_count += 1;
-                    }
-                    skill_lines.push(lines[i]);
+                let next_non_empty = lines.get(peek_idx).map(|l| l.trim()).unwrap_or("");
+                if next_non_empty != "---" {
+                    // No SKILL.md block follows — emit Consolidate with empty content
+                    // and do NOT advance i past the following lines.
                     i += 1;
-                    // Stop collecting after we've seen the closing --- and at least one body line
-                    if dash_count >= 2 && !skill_lines.is_empty() {
-                        // Check for at least one non-dash line after second ---
-                        let after_second: Vec<&str> = skill_lines
-                            .iter()
-                            .rev()
-                            .take_while(|l| l.trim() != "---")
-                            .copied()
-                            .collect();
-                        if !after_second.is_empty() {
-                            // peek next line
-                            if i >= lines.len()
-                                || lines[i].trim().starts_with("KEEP ")
-                                || lines[i].trim().starts_with("PRUNE ")
-                                || lines[i].trim().starts_with("CONSOLIDATE ")
-                            {
-                                break;
+                    actions.push(CuratorAction::Consolidate {
+                        from_slugs,
+                        to_slug,
+                        merged_content: String::new(),
+                    });
+                } else {
+                    // Collect the SKILL.md block that follows.
+                    i += 1;
+                    let mut skill_lines: Vec<&str> = Vec::new();
+                    let mut dash_count = 0usize;
+
+                    while i < lines.len() {
+                        let next = lines[i].trim();
+                        // Stop when we hit the next directive
+                        if dash_count >= 2
+                            && (next.starts_with("KEEP ")
+                                || next.starts_with("PRUNE ")
+                                || next.starts_with("CONSOLIDATE "))
+                        {
+                            break;
+                        }
+                        if next == "---" {
+                            dash_count += 1;
+                        }
+                        skill_lines.push(lines[i]);
+                        i += 1;
+                        // Stop collecting after we've seen the closing --- and at least one body line
+                        if dash_count >= 2 && !skill_lines.is_empty() {
+                            // Check for at least one non-dash line after second ---
+                            let after_second: Vec<&str> = skill_lines
+                                .iter()
+                                .rev()
+                                .take_while(|l| l.trim() != "---")
+                                .copied()
+                                .collect();
+                            if !after_second.is_empty() {
+                                // peek next line
+                                if i >= lines.len()
+                                    || lines[i].trim().starts_with("KEEP ")
+                                    || lines[i].trim().starts_with("PRUNE ")
+                                    || lines[i].trim().starts_with("CONSOLIDATE ")
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
-                }
 
-                let merged_content = skill_lines.join("\n");
-                actions.push(CuratorAction::Consolidate {
-                    from_slugs,
-                    to_slug,
-                    merged_content,
-                });
-                // i is already advanced
+                    let merged_content = skill_lines.join("\n");
+                    actions.push(CuratorAction::Consolidate {
+                        from_slugs,
+                        to_slug,
+                        merged_content,
+                    });
+                    // i is already advanced
+                }
             } else {
                 i += 1;
             }

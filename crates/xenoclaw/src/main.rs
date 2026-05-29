@@ -378,11 +378,14 @@ async fn serve(config_path: PathBuf) -> Result<()> {
 
     if config.skills.auto_create {
         let llm_arc = Arc::clone(agent_core.llm_router());
+        let live_prompt_slot = agent_core.live_system_prompt();
         let hook = make_skill_hook(
             Arc::clone(&skill_store),
             llm_arc,
             config.skills.auto_create_threshold,
             logs_dir.clone(),
+            live_prompt_slot,
+            workspace_dir.clone(),
         );
         agent_core = agent_core.with_post_task_hook(hook);
         info!(
@@ -1089,14 +1092,27 @@ fn make_skill_hook(
     llm_router: Arc<tokio::sync::RwLock<LlmRouter>>,
     threshold: u32,
     logs_dir: PathBuf,
+    live_system_prompt: Arc<RwLock<Option<String>>>,
+    workspace_dir: PathBuf,
 ) -> PostTaskHookFn {
     Arc::new(move |tool_count: usize, transcript: Vec<ChatMessage>| {
         let store = Arc::clone(&store);
         let llm_router = Arc::clone(&llm_router);
         let logs_dir = logs_dir.clone();
+        let live_system_prompt = Arc::clone(&live_system_prompt);
+        let workspace_dir = workspace_dir.clone();
         Box::pin(async move {
             if tool_count >= threshold as usize {
-                run_skill_reflection(tool_count, transcript, store, llm_router, logs_dir).await;
+                run_skill_reflection(
+                    tool_count,
+                    transcript,
+                    store,
+                    llm_router,
+                    logs_dir,
+                    live_system_prompt,
+                    workspace_dir,
+                )
+                .await;
             }
         })
     })
@@ -1109,6 +1125,8 @@ async fn run_skill_reflection(
     store: Arc<SkillStore>,
     llm_router: Arc<tokio::sync::RwLock<LlmRouter>>,
     _logs_dir: PathBuf,
+    live_system_prompt: Arc<RwLock<Option<String>>>,
+    workspace_dir: PathBuf,
 ) {
     let loader = SkillLoader::new(Arc::clone(&store));
     let skill_index = loader.level0_index().await;
@@ -1172,6 +1190,20 @@ async fn run_skill_reflection(
 
     match SkillDoc::parse(content) {
         Ok(mut doc) => {
+            // Validate that the skill name is a safe lowercase slug.
+            if doc.front_matter.name.is_empty()
+                || !doc
+                    .front_matter
+                    .name
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+            {
+                tracing::warn!(
+                    skill = %doc.front_matter.name,
+                    "Rejected reflected skill with invalid slug"
+                );
+                return;
+            }
             let exists = store
                 .get(&doc.front_matter.name)
                 .await
@@ -1184,16 +1216,22 @@ async fn run_skill_reflection(
             }
             let name = doc.front_matter.name.clone();
             match store.save(&doc).await {
-                Ok(_) if exists => tracing::info!(
-                    skill = %name,
-                    event = "skill_updated",
-                    "Skill updated by reflection"
-                ),
-                Ok(_) => tracing::info!(
-                    skill = %name,
-                    event = "skill_created",
-                    "Skill created by reflection"
-                ),
+                Ok(_) if exists => {
+                    tracing::info!(
+                        skill = %name,
+                        event = "skill_updated",
+                        "Skill updated by reflection"
+                    );
+                    refresh_system_prompt(&store, &live_system_prompt, &workspace_dir).await;
+                }
+                Ok(_) => {
+                    tracing::info!(
+                        skill = %name,
+                        event = "skill_created",
+                        "Skill created by reflection"
+                    );
+                    refresh_system_prompt(&store, &live_system_prompt, &workspace_dir).await;
+                }
                 Err(e) => tracing::warn!(error = %e, skill = %name, "Failed to save skill"),
             }
         }
@@ -1203,6 +1241,35 @@ async fn run_skill_reflection(
                 event = "skill_skipped",
                 "Could not parse skill reflection response"
             );
+        }
+    }
+}
+
+/// Rebuild the skill index and regenerate the system prompt, then push it into
+/// the live slot so that the next agent message sees the updated skill list.
+async fn refresh_system_prompt(
+    store: &Arc<SkillStore>,
+    live_system_prompt: &Arc<RwLock<Option<String>>>,
+    workspace_dir: &std::path::Path,
+) {
+    let loader = SkillLoader::new(Arc::clone(store));
+    let skill_index = loader.level0_index().await;
+    match workspace::build_system_prompt(
+        workspace_dir,
+        if skill_index.is_empty() {
+            None
+        } else {
+            Some(&skill_index)
+        },
+    )
+    .await
+    {
+        Ok(new_prompt) => {
+            *live_system_prompt.write().await = Some(new_prompt);
+            tracing::debug!("System prompt refreshed after skill reflection");
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to rebuild system prompt after skill reflection");
         }
     }
 }

@@ -49,6 +49,10 @@ impl Tool for UseSkillTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing required parameter: skill_name".to_string())?;
 
+        if skill_name.contains("..") || skill_name.starts_with('/') || skill_name.contains('\\') {
+            return Err("Invalid skill_name".to_string());
+        }
+
         match self.loader.load_skill(skill_name).await {
             Some(content) => Ok(content),
             None => Err(format!(

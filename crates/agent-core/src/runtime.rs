@@ -60,6 +60,10 @@ pub struct AgentCore {
 
     /// Optional fire-and-forget hook called after every completed message loop.
     post_task_hook: Option<PostTaskHookFn>,
+
+    /// Live system prompt — may be refreshed at runtime (e.g. after skill reflection).
+    /// When `Some`, overrides `config.system_prompt`.
+    live_system_prompt: Arc<RwLock<Option<String>>>,
 }
 
 impl AgentCore {
@@ -69,7 +73,8 @@ impl AgentCore {
         tool_registry: ToolRegistry,
         config: AgentCoreConfig,
     ) -> Self {
-        let system_prompt = Arc::new(RwLock::new(config.system_prompt.clone()));
+        let initial_prompt = config.system_prompt.clone();
+        let system_prompt = Arc::new(RwLock::new(initial_prompt.clone()));
         Self {
             llm_router: Arc::new(RwLock::new(llm_router)),
             tool_registry: Arc::new(RwLock::new(tool_registry)),
@@ -80,7 +85,16 @@ impl AgentCore {
             config,
             system_prompt,
             post_task_hook: None,
+            live_system_prompt: Arc::new(RwLock::new(initial_prompt)),
         }
+    }
+
+    /// Update the system prompt at runtime.
+    ///
+    /// The new prompt takes effect on the next message processed.  This is
+    /// called by the skill-reflection hook after a skill is created or updated.
+    pub async fn set_system_prompt(&self, prompt: String) {
+        *self.live_system_prompt.write().await = Some(prompt);
     }
 
     /// Attach a post-task hook that is fired (fire-and-forget) after each
@@ -233,9 +247,9 @@ impl AgentCore {
         let in_flight = Arc::clone(&self.in_flight);
         let mode = Arc::clone(&self.mode);
         let max_iterations = self.config.max_tool_iterations;
-        // Snapshot the current system prompt — uses the live mutable value,
-        // not the one frozen at construction time.
-        let system_prompt = self.system_prompt.read().await.clone();
+        // Use the live (possibly refreshed) system prompt, falling back to the
+        // initial config value if it was never set.
+        let system_prompt = self.live_system_prompt.read().await.clone();
         let post_task_hook = self.post_task_hook.clone();
 
         let response_stream = async move {
@@ -490,6 +504,15 @@ impl AgentCore {
     /// Get a reference to the LLM router.
     pub fn llm_router(&self) -> &Arc<RwLock<LlmRouter>> {
         &self.llm_router
+    }
+
+    /// Get a shared reference to the live system prompt slot.
+    ///
+    /// Callers may write a new prompt to this `Arc<RwLock<_>>` to update the
+    /// system prompt that will be used on the next message (e.g. after a skill
+    /// is created by the reflection hook).
+    pub fn live_system_prompt(&self) -> Arc<RwLock<Option<String>>> {
+        Arc::clone(&self.live_system_prompt)
     }
 
     /// Check if the agent is currently accepting requests.
