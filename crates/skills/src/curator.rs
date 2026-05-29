@@ -85,10 +85,7 @@ impl SkillCurator {
         );
 
         let request = CompletionRequest {
-            messages: vec![ChatMessage {
-                role: ChatRole::User,
-                content: prompt,
-            }],
+            messages: vec![ChatMessage::text(ChatRole::User, prompt)],
             tools: Vec::new(),
             max_tokens: Some(4096),
             temperature: Some(0.2),

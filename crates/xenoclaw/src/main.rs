@@ -284,9 +284,8 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     // Workspace directory: use configured path or fall back to ~/.xenoclaw/workspace
     let workspace_dir = config
         .coding
-        .workspace_dirs
-        .first()
-        .cloned()
+        .as_ref()
+        .and_then(|c| c.workspace_dirs.first().cloned())
         .unwrap_or_else(|| xenoclaw_home().join("workspace"));
 
     // Skills infrastructure — initialise store and loader.
@@ -773,9 +772,8 @@ async fn run_mcp_server(config_path: PathBuf) -> Result<()> {
         scheduler,
         workspace_dir: config
             .coding
-            .workspace_dirs
-            .first()
-            .cloned()
+            .as_ref()
+            .and_then(|c| c.workspace_dirs.first().cloned())
             .unwrap_or_else(|| xenoclaw_home().join("workspace")),
         // MCP clients render images themselves; the agent-side vision tool is
         // not used over the MCP transport.
@@ -1156,10 +1154,7 @@ async fn run_skill_reflection(
     );
 
     let request = CompletionRequest {
-        messages: vec![ChatMessage {
-            role: ChatRole::User,
-            content: prompt,
-        }],
+        messages: vec![ChatMessage::text(ChatRole::User, prompt)],
         tools: Vec::new(),
         max_tokens: Some(4096),
         temperature: Some(0.3),
