@@ -147,25 +147,6 @@ proptest! {
     /// **Validates: Requirements 12.3**
     ///
     /// Property 22: For any valid port set via env var, the loaded config
-    /// SHALL use the env var value for the web port.
-    #[test]
-    fn prop_env_overrides_toml_web_port(
-        env_port in valid_port_strategy()
-    ) {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        clear_all_xenoclaw_env_vars();
-
-        env::set_var("XENOCLAW_WEB__PORT", env_port.to_string());
-        let result = config::load_config_from_str(VALID_BASE_TOML);
-        env::remove_var("XENOCLAW_WEB__PORT");
-
-        let config = result.expect("Config should load successfully");
-        prop_assert_eq!(config.web.port, env_port);
-    }
-
-    /// **Validates: Requirements 12.3**
-    ///
-    /// Property 22: For any valid port set via env var, the loaded config
     /// SHALL use the env var value for the API port.
     #[test]
     fn prop_env_overrides_toml_api_port(

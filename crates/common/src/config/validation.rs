@@ -332,13 +332,6 @@ fn validate_web(config: &PlatformConfig, errors: &mut Vec<ValidationError>) {
             });
         }
 
-        if config.web.port == 0 {
-            errors.push(ValidationError {
-                setting: "web.port".to_string(),
-                reason: "port must be greater than 0".to_string(),
-            });
-        }
-
         // If one TLS field is set, both must be set
         match (&config.web.tls_cert, &config.web.tls_key) {
             (Some(_), None) => {

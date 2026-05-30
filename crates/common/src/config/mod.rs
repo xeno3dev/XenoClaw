@@ -107,11 +107,6 @@ fn apply_env_overrides(config: &mut PlatformConfig) {
     if let Ok(val) = std::env::var("XENOCLAW_WEB__HOST") {
         config.web.host = val;
     }
-    if let Ok(val) = std::env::var("XENOCLAW_WEB__PORT") {
-        if let Ok(v) = val.parse() {
-            config.web.port = v;
-        }
-    }
 
     // API section
     if let Ok(val) = std::env::var("XENOCLAW_API__HOST") {

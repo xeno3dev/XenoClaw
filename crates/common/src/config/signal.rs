@@ -34,7 +34,7 @@
 //!
 //! ## Require full restart:
 //! - `api.host`, `api.port` — API server bind address
-//! - `web.host`, `web.port` — Web server bind address
+//! - `web.host` — Web server host (dashboard now served on the API port)
 //! - `monitoring.metrics_port` — Metrics endpoint port
 //! - `general.data_dir`, `general.log_dir` — Data directories
 //! - `llm.providers` — LLM provider configurations

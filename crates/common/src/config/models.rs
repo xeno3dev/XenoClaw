@@ -490,10 +490,6 @@ pub struct WebConfig {
     #[serde(default = "default_host")]
     pub host: String,
 
-    /// Port for the web server.
-    #[serde(default = "default_web_port")]
-    pub port: u16,
-
     /// Directory containing the built web UI static files.
     /// Defaults to $XENOCLAW_WEB_DIR env var, then ./web/dist.
     #[serde(default = "default_web_dir")]
@@ -513,7 +509,6 @@ impl Default for WebConfig {
         Self {
             enabled: true,
             host: default_host(),
-            port: default_web_port(),
             dir: default_web_dir(),
             tls_cert: None,
             tls_key: None,
@@ -533,10 +528,6 @@ fn default_true() -> bool {
 
 fn default_host() -> String {
     "0.0.0.0".to_string()
-}
-
-fn default_web_port() -> u16 {
-    8080
 }
 
 /// API server configuration.
