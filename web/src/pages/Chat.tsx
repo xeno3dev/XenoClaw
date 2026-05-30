@@ -123,12 +123,14 @@ export function Chat() {
 
   // Handle incoming WebSocket messages
   const handleWsMessage = useCallback((wsMessage: WebSocketMessage) => {
-    const { type, payload } = wsMessage;
+    // The chat stream sends fields flat alongside `type` (matching the backend's
+    // `ChatServerMessage` serialization), not nested under `payload`.
+    const { type } = wsMessage;
 
     switch (type) {
       case 'token': {
         // Accumulate streamed tokens into the current assistant response
-        const token = (payload as { content?: string })?.content ?? String(payload);
+        const token = (wsMessage as { content?: string }).content ?? '';
         setMessages((prev) => {
           const streamingId = streamingMessageRef.current;
           if (!streamingId) {
@@ -174,8 +176,8 @@ export function Chat() {
       case 'error': {
         // Display error inline
         const errorContent =
-          (payload as { message?: string })?.message ??
-          (payload as { error?: string })?.error ??
+          (wsMessage as { message?: string }).message ??
+          (wsMessage as { error?: string }).error ??
           'An error occurred';
         streamingMessageRef.current = null;
         setIsWaitingForResponse(false);
@@ -193,7 +195,7 @@ export function Chat() {
 
       case 'diff_image': {
         // Diff image from coding module — attach to current or create new message
-        const imageData = (payload as { url?: string; svg?: string });
+        const imageData = wsMessage as { url?: string; svg?: string };
         const diffImage = imageData.url || imageData.svg || '';
         const streamingId = streamingMessageRef.current;
 
@@ -222,8 +224,8 @@ export function Chat() {
 
       case 'message': {
         // Full message (non-streamed response)
-        const content = (payload as { content?: string })?.content ?? String(payload);
-        const diffImg = (payload as { diff_image?: string })?.diff_image;
+        const content = (wsMessage as { content?: string }).content ?? '';
+        const diffImg = (wsMessage as { diff_image?: string }).diff_image;
         streamingMessageRef.current = null;
         setIsWaitingForResponse(false);
         setMessages((prev) => [
@@ -315,14 +317,13 @@ export function Chat() {
     setAttachments([]);
     setIsWaitingForResponse(true);
 
-    // Send via WebSocket.
+    // Send via WebSocket. Fields are flat alongside `type` to match the
+    // backend's `ChatClientMessage::Message` deserialization.
     send({
       type: 'message',
-      payload: {
-        session_id: sessionIdRef.current,
-        content,
-        attachments: attachmentPaths,
-      },
+      session_id: sessionIdRef.current,
+      content,
+      attachments: attachmentPaths,
     });
 
     // Reset textarea height
