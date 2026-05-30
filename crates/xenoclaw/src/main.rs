@@ -11,6 +11,7 @@ mod mcp_client;
 mod mcp_server;
 mod setup;
 mod tools;
+mod try_branch;
 mod workspace;
 
 use std::io::Write;
@@ -115,6 +116,29 @@ enum Command {
     },
     /// Manage the XenoClaw skill library.
     Skills(SkillsArgs),
+    /// Build and run a branch or PR for testing.
+    ///
+    /// The ref is checked out into a dedicated git worktree (your current
+    /// checkout is untouched) and built. By default the fresh binary is
+    /// installed over the systemd service's binary and `xenoclaw-agent` is
+    /// restarted (privileged steps use sudo when not root). Pass `--exec` to
+    /// instead run it in the foreground on the configured port.
+    Try {
+        /// Branch name, or a PR number (all-digits → fetched via pull/N/head).
+        reference: String,
+
+        /// Build in release mode instead of debug.
+        #[arg(long)]
+        release: bool,
+
+        /// Build only — print the binary path; don't install or restart the service.
+        #[arg(long)]
+        no_run: bool,
+
+        /// Run in the foreground (exec) instead of installing + restarting the service.
+        #[arg(long)]
+        exec: bool,
+    },
 }
 
 /// Arguments for the `skills` subcommand.
@@ -175,6 +199,12 @@ async fn main() -> Result<()> {
             session,
         } => run_tui(config_path, inline, endpoint, api_key, session).await,
         Command::Skills(args) => run_skills_command(args.command, config_path).await,
+        Command::Try {
+            reference,
+            release,
+            no_run,
+            exec,
+        } => try_branch::run_try(&config_path, &reference, release, no_run, exec),
     }
 }
 
@@ -199,7 +229,7 @@ fn default_config_path() -> PathBuf {
 }
 
 /// Returns ~/.xenoclaw
-fn xenoclaw_home() -> PathBuf {
+pub(crate) fn xenoclaw_home() -> PathBuf {
     dirs_or_home().join(".xenoclaw")
 }
 
