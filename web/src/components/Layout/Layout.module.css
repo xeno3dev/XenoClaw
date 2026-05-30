@@ -228,6 +228,15 @@
   min-height: calc(100vh - 56px);
 }
 
+/* Chat route: bound the height (rather than just min-height) so the page's
+   internal scroll region keeps the input bar pinned and on-screen at all
+   times instead of growing past the viewport. */
+.mainChat {
+  height: calc(100vh - 56px);
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* Desktop layout: >= 768px */
 @media (min-width: 768px) {
   .mobileHeader {
@@ -250,6 +259,10 @@
     margin-top: 0;
     padding: 1.75rem 2rem;
     min-height: 100vh;
+  }
+
+  .mainChat {
+    height: 100vh;
   }
 }
 
