@@ -35,16 +35,28 @@ use common::config::load_config;
 const SERVICE_NAME: &str = "xenoclaw-agent";
 /// Path the unit's ExecStart runs — where install.sh drops the release binary.
 const INSTALLED_BIN: &str = "/opt/xenoclaw/bin/xenoclaw";
+/// Where service mode stashes the binary it's about to overwrite, so
+/// `xenoclaw try --restore` can swap the real deployment back in.
+const BACKUP_BIN: &str = "/opt/xenoclaw/bin/xenoclaw.bak";
 
 /// Entry point for `xenoclaw try`.
 pub fn run_try(
     config_path: &Path,
-    reference: &str,
+    reference: Option<&str>,
     release: bool,
     no_run: bool,
     exec: bool,
+    restore: bool,
 ) -> Result<()> {
-    let reference = reference.trim();
+    // `--restore` is a standalone action — no ref, no build.
+    if restore {
+        if reference.is_some() {
+            println!("(ignoring ref argument — --restore just swaps the backup binary back)");
+        }
+        return restore_service(config_path);
+    }
+
+    let reference = reference.map(str::trim).unwrap_or("");
     if reference.is_empty() {
         bail!("no branch name or PR number given (usage: xenoclaw try <branch|PR#>)");
     }
@@ -105,6 +117,16 @@ fn run_as_service(config_path: &Path, bin: &Path, label: &str) -> Result<()> {
             .context("failed to stop the service")?;
     }
 
+    // Back up the current binary the first time we overwrite it, so a later
+    // `--restore` returns to the real deployment. Only create the backup when
+    // one doesn't already exist — otherwise a second `try` would clobber the
+    // genuine binary with the previous try build.
+    if Path::new(INSTALLED_BIN).exists() && !Path::new(BACKUP_BIN).exists() {
+        println!("→ backing up current binary to {BACKUP_BIN}");
+        run_privileged(&["cp", "-p", INSTALLED_BIN, BACKUP_BIN])
+            .context("failed to back up the current binary")?;
+    }
+
     println!("→ installing binary to {INSTALLED_BIN}");
     run_privileged(&[
         "install",
@@ -129,6 +151,45 @@ fn run_as_service(config_path: &Path, bin: &Path, label: &str) -> Result<()> {
         );
     } else {
         println!("\n✓ {SERVICE_NAME} restarted running {label}");
+    }
+    println!("Follow logs with:    journalctl -u {SERVICE_NAME} -f");
+    if Path::new(BACKUP_BIN).exists() {
+        println!("Restore previous:    xenoclaw try --restore");
+    }
+    Ok(())
+}
+
+/// `--restore` mode: swap the backed-up binary back in and restart the service.
+fn restore_service(config_path: &Path) -> Result<()> {
+    if !Path::new(BACKUP_BIN).exists() {
+        bail!(
+            "no backup found at {BACKUP_BIN} — nothing to restore \
+             (service mode creates it the first time it overwrites the binary)"
+        );
+    }
+    println!("\n▶ Restoring the previous {SERVICE_NAME} binary");
+
+    if service_is_active() {
+        println!("→ stopping {SERVICE_NAME}");
+        run_privileged(&["systemctl", "stop", SERVICE_NAME])
+            .context("failed to stop the service")?;
+    }
+
+    println!("→ restoring {INSTALLED_BIN} from {BACKUP_BIN}");
+    run_privileged(&["install", "-m", "755", BACKUP_BIN, INSTALLED_BIN])
+        .context("failed to restore the binary")?;
+    // Consume the backup so the next `try` captures a fresh baseline.
+    run_privileged(&["rm", "-f", BACKUP_BIN]).context("failed to remove the backup")?;
+
+    println!("→ starting {SERVICE_NAME}");
+    run_privileged(&["systemctl", "restart", SERVICE_NAME])
+        .context("failed to restart the service")?;
+
+    let port = load_config(config_path).map(|c| c.api.port).unwrap_or(0);
+    if port != 0 && wait_for_port(port, Duration::from_secs(10)) {
+        println!("\n✓ {SERVICE_NAME} restored and up on port {port}");
+    } else {
+        println!("\n✓ {SERVICE_NAME} restored and restarted");
     }
     println!("Follow logs with:  journalctl -u {SERVICE_NAME} -f");
     Ok(())

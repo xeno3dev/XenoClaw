@@ -125,7 +125,8 @@ enum Command {
     /// instead run it in the foreground on the configured port.
     Try {
         /// Branch name, or a PR number (all-digits → fetched via pull/N/head).
-        reference: String,
+        /// Omit when using --restore.
+        reference: Option<String>,
 
         /// Build in release mode instead of debug.
         #[arg(long)]
@@ -138,6 +139,10 @@ enum Command {
         /// Run in the foreground (exec) instead of installing + restarting the service.
         #[arg(long)]
         exec: bool,
+
+        /// Restore the binary that service mode backed up, then restart the service.
+        #[arg(long)]
+        restore: bool,
     },
 }
 
@@ -204,7 +209,15 @@ async fn main() -> Result<()> {
             release,
             no_run,
             exec,
-        } => try_branch::run_try(&config_path, &reference, release, no_run, exec),
+            restore,
+        } => try_branch::run_try(
+            &config_path,
+            reference.as_deref(),
+            release,
+            no_run,
+            exec,
+            restore,
+        ),
     }
 }
 

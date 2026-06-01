@@ -61,6 +61,7 @@ xenoclaw try 42                   # all-digits → PR #42 (fetched via pull/42/h
 xenoclaw try my-branch --release  # release build
 xenoclaw try my-branch --exec     # run in the foreground instead of via systemd
 xenoclaw try my-branch --no-run   # build only, print binary path
+xenoclaw try --restore            # swap the backed-up binary back + restart
 ```
 
 `xenoclaw try` checks the ref out into a dedicated git worktree under
