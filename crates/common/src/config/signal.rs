@@ -22,7 +22,7 @@
 //! # Reloadable vs Non-Reloadable Settings
 //!
 //! ## Hot-reloadable (applied on SIGHUP):
-//! - `api.rate_limit_per_minute` — API rate limiting
+//! - `serve.rate_limit_per_minute` — API rate limiting
 //! - `monitoring.log_level` — Log verbosity
 //! - `monitoring.log_retention_days` — Log retention period
 //! - `monitoring.max_log_file_size_mb` — Log rotation threshold
@@ -33,8 +33,8 @@
 //! - `mcp.servers` — External MCP server list (triggers reconnection)
 //!
 //! ## Require full restart:
-//! - `api.host`, `api.port` — API server bind address
-//! - `web.host` — Web server host (dashboard now served on the API port)
+//! - `serve.host`, `serve.port` — server bind address (API + dashboard)
+//! - `web.host` — Web server host (dashboard now served on the serve port)
 //! - `monitoring.metrics_port` — Metrics endpoint port
 //! - `general.data_dir`, `general.log_dir` — Data directories
 //! - `llm.providers` — LLM provider configurations
@@ -169,7 +169,7 @@ timeout_seconds = 30
 
 [web]
 
-[api]
+[serve]
 rate_limit_per_minute = 500
 
 [monitoring]
@@ -194,7 +194,7 @@ enabled = false
         assert!(result.is_ok(), "Expected Ok, got: {:?}", result.err());
 
         let cfg = config.read().await;
-        assert_eq!(cfg.api.rate_limit_per_minute, 500);
+        assert_eq!(cfg.serve.rate_limit_per_minute, 500);
         assert_eq!(cfg.monitoring.log_retention_days, 14);
     }
 
@@ -213,7 +213,7 @@ model = "llama3"
 priority = 1
 timeout_seconds = 30
 
-[api]
+[serve]
 rate_limit_per_minute = 0
 
 [monitoring]
@@ -225,14 +225,14 @@ log_level = "info"
         let path = tmp.path().to_path_buf();
 
         let config = Arc::new(RwLock::new(PlatformConfig::default()));
-        let original_rate = config.read().await.api.rate_limit_per_minute;
+        let original_rate = config.read().await.serve.rate_limit_per_minute;
 
         let result = trigger_reload(&config, &path).await;
         assert!(result.is_err());
 
         // Config should remain unchanged
         let cfg = config.read().await;
-        assert_eq!(cfg.api.rate_limit_per_minute, original_rate);
+        assert_eq!(cfg.serve.rate_limit_per_minute, original_rate);
     }
 
     #[tokio::test]

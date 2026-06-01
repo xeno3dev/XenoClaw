@@ -108,7 +108,7 @@ max_dependency_depth  = 10
 # Web / Dashboard
 # ---------------------------------------------------------------------------
 [web]
-# The dashboard is served on the API port (see [api] below) — no separate port.
+# The dashboard is served on the serve port (see [serve] below) — no separate port.
 enabled  = true
 host     = "0.0.0.0"
 dir      = "/opt/xenoclaw/web"   # Directory containing built web UI files
@@ -116,9 +116,9 @@ dir      = "/opt/xenoclaw/web"   # Directory containing built web UI files
 # tls_key  = "/path/to/key.pem"
 
 # ---------------------------------------------------------------------------
-# API Server
+# Server (API + Web dashboard share this single listener)
 # ---------------------------------------------------------------------------
-[api]
+[serve]
 host = "0.0.0.0"
 port = 9090
 rate_limit_per_minute = 100

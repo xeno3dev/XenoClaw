@@ -92,9 +92,9 @@ fn clear_all_xenoclaw_env_vars() {
         "XENOCLAW_WEB__PORT",
         "XENOCLAW_WEB__HOST",
         "XENOCLAW_WEB__ENABLED",
-        "XENOCLAW_API__PORT",
-        "XENOCLAW_API__HOST",
-        "XENOCLAW_API__RATE_LIMIT_PER_MINUTE",
+        "XENOCLAW_SERVE__PORT",
+        "XENOCLAW_SERVE__HOST",
+        "XENOCLAW_SERVE__RATE_LIMIT_PER_MINUTE",
         "XENOCLAW_SECURITY__SESSION_TIMEOUT_MINUTES",
         "XENOCLAW_SECURITY__MAX_FAILED_ATTEMPTS",
         "XENOCLAW_SECURITY__LOCKOUT_MINUTES",
@@ -147,20 +147,20 @@ proptest! {
     /// **Validates: Requirements 12.3**
     ///
     /// Property 22: For any valid port set via env var, the loaded config
-    /// SHALL use the env var value for the API port.
+    /// SHALL use the env var value for the serve port.
     #[test]
-    fn prop_env_overrides_toml_api_port(
+    fn prop_env_overrides_toml_serve_port(
         env_port in valid_port_strategy()
     ) {
         let _lock = ENV_MUTEX.lock().unwrap();
         clear_all_xenoclaw_env_vars();
 
-        env::set_var("XENOCLAW_API__PORT", env_port.to_string());
+        env::set_var("XENOCLAW_SERVE__PORT", env_port.to_string());
         let result = config::load_config_from_str(VALID_BASE_TOML);
-        env::remove_var("XENOCLAW_API__PORT");
+        env::remove_var("XENOCLAW_SERVE__PORT");
 
         let config = result.expect("Config should load successfully");
-        prop_assert_eq!(config.api.port, env_port);
+        prop_assert_eq!(config.serve.port, env_port);
     }
 
     /// **Validates: Requirements 12.3**
@@ -212,12 +212,12 @@ proptest! {
         let _lock = ENV_MUTEX.lock().unwrap();
         clear_all_xenoclaw_env_vars();
 
-        env::set_var("XENOCLAW_API__RATE_LIMIT_PER_MINUTE", env_rate.to_string());
+        env::set_var("XENOCLAW_SERVE__RATE_LIMIT_PER_MINUTE", env_rate.to_string());
         let result = config::load_config_from_str(VALID_BASE_TOML);
-        env::remove_var("XENOCLAW_API__RATE_LIMIT_PER_MINUTE");
+        env::remove_var("XENOCLAW_SERVE__RATE_LIMIT_PER_MINUTE");
 
         let config = result.expect("Config should load successfully");
-        prop_assert_eq!(config.api.rate_limit_per_minute, env_rate);
+        prop_assert_eq!(config.serve.rate_limit_per_minute, env_rate);
     }
 
     /// **Validates: Requirements 12.3**

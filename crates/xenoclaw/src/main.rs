@@ -401,7 +401,7 @@ async fn serve(config_path: PathBuf) -> Result<()> {
             id: ApiKeyId::new(),
             key_hash: config.security.admin_key_hash.clone(),
             name: "admin".to_string(),
-            rate_limit: config.api.rate_limit_per_minute,
+            rate_limit: config.serve.rate_limit_per_minute,
             created_at: Utc::now(),
             last_used: None,
         }]
@@ -431,7 +431,7 @@ async fn serve(config_path: PathBuf) -> Result<()> {
         );
     }
     let rate_limit_config = RateLimitConfig {
-        default_limit: config.api.rate_limit_per_minute,
+        default_limit: config.serve.rate_limit_per_minute,
         ..RateLimitConfig::default()
     };
     // Build the plugin manager BEFORE AppState so we can pass it in. We hold
@@ -538,7 +538,7 @@ async fn serve(config_path: PathBuf) -> Result<()> {
     };
 
     // Spawn subsystems
-    let bind_addr = format!("{}:{}", config.api.host, config.api.port);
+    let bind_addr = format!("{}:{}", config.serve.host, config.serve.port);
     let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
         .context(format!("Failed to bind to {bind_addr}"))?;
@@ -818,7 +818,7 @@ async fn run_tui(
 
     // Build API base URL
     let api_base_url =
-        endpoint.unwrap_or_else(|| format!("http://{}:{}", config.api.host, config.api.port));
+        endpoint.unwrap_or_else(|| format!("http://{}:{}", config.serve.host, config.serve.port));
 
     // Resolve API key: --api-key > env var > prompt
     let api_key = match api_key {

@@ -1692,7 +1692,7 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
     let mut host_input = TextInput::new(&state.host);
     let mut port_input = TextInput::new(&state.port);
     let mut require_auth = state.require_auth;
-    let mut field: u8 = 0; // 0=host, 1=api port, 2=auth
+    let mut field: u8 = 0; // 0=host, 1=server port, 2=auth
 
     loop {
         let mut stdout = io::stdout();
@@ -1708,7 +1708,7 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
         bg(&mut stdout, BG)?;
 
         render_field(&mut stdout, field == 0, "Bind host", &host_input)?;
-        render_field(&mut stdout, field == 1, "API port", &port_input)?;
+        render_field(&mut stdout, field == 1, "Server port", &port_input)?;
 
         stdout.queue(Print("\r\n"))?;
 
@@ -3433,7 +3433,7 @@ max_processes    = 10
 host = "{host}"
 dir  = "{web_dir}"
 
-[api]
+[serve]
 host = "{host}"
 port = {port}
 

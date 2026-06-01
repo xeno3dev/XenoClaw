@@ -87,7 +87,7 @@ pub fn validate_config(config: &PlatformConfig) -> Vec<ValidationError> {
     validate_coding(config, &mut errors);
     validate_scheduler(config, &mut errors);
     validate_web(config, &mut errors);
-    validate_api(config, &mut errors);
+    validate_serve(config, &mut errors);
     validate_monitoring(config, &mut errors);
 
     errors
@@ -351,24 +351,24 @@ fn validate_web(config: &PlatformConfig, errors: &mut Vec<ValidationError>) {
     }
 }
 
-fn validate_api(config: &PlatformConfig, errors: &mut Vec<ValidationError>) {
-    if config.api.host.trim().is_empty() {
+fn validate_serve(config: &PlatformConfig, errors: &mut Vec<ValidationError>) {
+    if config.serve.host.trim().is_empty() {
         errors.push(ValidationError {
-            setting: "api.host".to_string(),
-            reason: "API host must not be empty".to_string(),
+            setting: "serve.host".to_string(),
+            reason: "server host must not be empty".to_string(),
         });
     }
 
-    if config.api.port == 0 {
+    if config.serve.port == 0 {
         errors.push(ValidationError {
-            setting: "api.port".to_string(),
-            reason: "API port must be greater than 0".to_string(),
+            setting: "serve.port".to_string(),
+            reason: "server port must be greater than 0".to_string(),
         });
     }
 
-    if config.api.rate_limit_per_minute == 0 {
+    if config.serve.rate_limit_per_minute == 0 {
         errors.push(ValidationError {
-            setting: "api.rate_limit_per_minute".to_string(),
+            setting: "serve.rate_limit_per_minute".to_string(),
             reason: "rate limit must be greater than 0".to_string(),
         });
     }
@@ -440,7 +440,7 @@ mod tests {
             coding: None,
             scheduler: SchedulerConfig::default(),
             web: WebConfig::default(),
-            api: ApiConfig::default(),
+            serve: ServeConfig::default(),
             messaging: MessagingConfig::default(),
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),
@@ -566,7 +566,7 @@ mod tests {
         config.llm.providers.clear();
         config.security.session_timeout_minutes = 0;
         config.monitoring.log_retention_days = 0;
-        config.api.port = 0;
+        config.serve.port = 0;
 
         let errors = validate_config(&config);
         // Should have at least 4 errors

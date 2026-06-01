@@ -989,7 +989,7 @@ mod tests {
             coding: None,
             scheduler: SchedulerConfig::default(),
             web: WebConfig::default(),
-            api: ApiConfig::default(),
+            serve: ServeConfig::default(),
             messaging: MessagingConfig::default(),
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),

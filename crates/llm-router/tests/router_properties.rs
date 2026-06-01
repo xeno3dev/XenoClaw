@@ -116,7 +116,7 @@ fn platform_config_with_providers(providers: Vec<ProviderConfig>) -> PlatformCon
         coding: None,
         scheduler: SchedulerConfig::default(),
         web: WebConfig::default(),
-        api: ApiConfig::default(),
+        serve: ServeConfig::default(),
         messaging: MessagingConfig::default(),
         monitoring: MonitoringConfig::default(),
         plugins: PluginConfig::default(),

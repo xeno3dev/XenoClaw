@@ -88,19 +88,19 @@ Default: `/etc/xenoclaw/config.toml` (or `~/.xenoclaw/config.toml` for local dev
 Environment variable overrides use `XENOCLAW_` prefix with `__` for nesting:
 
 ```bash
-XENOCLAW_API__PORT=3000 xenoclaw
+XENOCLAW_SERVE__PORT=3000 xenoclaw
 ```
 
 ### Hot-Reloadable (SIGHUP / `systemctl reload`)
 
-- `api.rate_limit_per_minute`
+- `serve.rate_limit_per_minute`
 - `monitoring.log_level`, `log_retention_days`, `max_log_file_size_mb`, `metrics_enabled`, `alert_rules`
 - `plugins.enabled`
 - `mcp.server_enabled`, `mcp.servers`
 
 ### Requires Restart
 
-- Bind addresses/ports (`api.host`, `api.port`, `web.*`, `monitoring.metrics_port`)
+- Bind addresses/ports (`serve.host`, `serve.port`, `web.*`, `monitoring.metrics_port`)
 - `llm.providers`
 - `security.*`
 - `mcp.server_transport`, `mcp.server_port`

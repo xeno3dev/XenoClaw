@@ -158,7 +158,7 @@ api_key = ""  # or set XENOCLAW_LLM__PROVIDERS__0__API_KEY
 model = "claude-sonnet-4-20250514"
 priority = 1
 
-[api]
+[serve]
 host = "0.0.0.0"
 port = 9090
 
