@@ -96,7 +96,9 @@ All endpoints (except `/api/v1/health` and `/api/v1/auth/login`) require `Author
 |--------|------|-------------|
 | GET | /api/v1/status | Agent status, mode, uptime |
 | GET | /api/v1/config | Config subset (version, mode, rate limit) |
-| PUT | /api/v1/config | Update config (mode, system_prompt, log_level, rate_limit_default) |
+| PUT | /api/v1/config | Update config (mode, system_prompt, log_level, rate_limit_default, provider) |
+| GET | /api/v1/sessions | List chat sessions (from the `sessions` SQLite table) |
+| DELETE | /api/v1/sessions/:id | Delete a session and its upload directory |
 | GET | /api/v1/plugins | List plugins with enabled state |
 | POST | /api/v1/plugins/reload | Reload all plugins |
 | POST | /api/v1/plugins/:name/toggle | Toggle plugin on/off |
@@ -113,7 +115,9 @@ WebSocket auth uses `?token=` query param (browsers can't send custom headers on
 Users can attach files/images in the web UI (paperclip button) and via messaging
 bridges. Uploads are stored at `{workspace}/uploads/{session_id}/{filename}`
 (`common::uploads` owns the path layout + filename sanitization, shared by the
-web endpoint and the messaging bridges).
+web endpoint and the messaging bridges). Uploads larger than `[uploads]
+max_upload_size` (bytes, default 10 MiB) are rejected by both `common::uploads`
+and the web upload handler.
 
 **Web flow:** the Chat page POSTs files to `/api/v1/uploads/{session}` (multipart),
 then includes the returned workspace-relative paths in the WS `message` payload's
@@ -123,7 +127,7 @@ the files and which tool to use, then forwards to `AgentCore::process_message`.
 **Vision:** the `view_image` tool loads an image and — when the active model
 supports vision — returns an image sentinel (`{"__xeno_image__": {...}}`, key in
 `llm_router::types::IMAGE_SENTINEL_KEY`). The agent core converts that sentinel
-into a multimodal `ChatMessage`; the Anthropic/OpenAI providers serialize the
+into a multimodal `ChatMessage`; the Anthropic/OpenAI/Gemini providers serialize the
 `images` field into provider-native content blocks. **Fail-safe:** if the model
 is text-only (`LlmRouter::supports_vision()` is false, computed from the primary
 provider's model id), `view_image` returns a plain-text explanation instead of
@@ -136,6 +140,30 @@ emit image blocks from its `build_request_body`.
 session's upload dir via `AgentMessageHandler` (`with_workspace_dir`). The
 messaging→agent dispatch itself is still stubbed, so saved files aren't yet fed
 into a live agent turn over the bridges — but the storage plumbing is in place.
+
+## LLM Providers
+
+Providers live in `llm-router/src/providers/` and are wired through `factory.rs`
+from the `[providers]` config section (each entry sets `provider = "<name>"`).
+Currently implemented:
+
+| Provider | `provider` value | Notable models | Vision |
+|----------|------------------|----------------|--------|
+| Anthropic | `anthropic` | Claude family | yes |
+| OpenAI | `openai` | GPT family | yes |
+| Google Gemini | `gemini` | `gemini-1.5-pro`, `gemini-1.5-flash` | yes |
+
+The active provider can be switched at runtime via `PUT /api/v1/config`
+(`provider` key) or the TUI `/model` command (see below). To add a provider,
+implement `LlmProvider` (including `supports_vision()` and `build_request_body`),
+register it in `providers/mod.rs` + `factory.rs`, and extend the config schema.
+
+## TUI Commands
+
+The TUI client (`crates/tui`) supports slash commands (`crates/tui/src/commands.rs`):
+
+- `/model` — lists the configured providers and switches the active one by issuing
+  `PUT /api/v1/config` with the `provider` key.
 
 ## Frontend Auth Pattern
 
@@ -173,6 +201,7 @@ All WS messages are JSON `{ type: string, payload: any }`.
 
 **Server → Client:**
 - `{ type: "token", payload: { content } }` — streamed token
+- `{ type: "tool_call", payload: { name, status } }` — live tool progress; `status` is `"started"` \| `"finished"` \| `"error"` (emitted from `AgentEvent::ToolCall`)
 - `{ type: "done" }` — stream complete
 - `{ type: "error", payload: { message } }` — error
 - `{ type: "message", payload: { content, diff_image? } }` — full non-streamed response
@@ -197,6 +226,7 @@ The following are wired through `PUT /api/v1/config`:
 | `system_prompt` | string or null — replaces the prepended prompt | Takes effect on next message; in-flight requests keep old prompt |
 | `log_level` | tracing EnvFilter string (`"info"`, `"debug,xenoclaw=trace"`, …) | Reloaded via `tracing_subscriber::reload::Handle` |
 | `rate_limit_default` | positive integer — per-key requests per minute | Atomic swap inside `RateLimiter`, takes effect immediately |
+| `provider` | name of the LLM provider to switch to (must be present in `[providers]`) | Calls `LlmRouter::set_active_provider`; unknown names are reported in `warnings` |
 
 Unknown keys are reported in the response's `warnings` array but don't fail the request.
 
@@ -213,6 +243,34 @@ Failures don't block submission — the user can press Enter to save anyway (use
 ## Resource metrics
 
 CPU and memory percentages on the Dashboard come from a `/proc` sampler (Linux-only) that runs every 2s in a background tokio task. The values land in `Arc<RwLock<ResourceMetrics>>`, which the `/api/v1/status` handler reads — no per-request sampling cost.
+
+## Rate Limiting
+
+Rate limiting is applied as per-route Axum middleware (`api-server/src/middleware.rs`),
+not globally in the request handler. The `/api/v1/health` and `/api/v1/auth/login`
+routes are exempt. The per-key limit is `rate_limit_default` (runtime-changeable;
+see above) and lives in `RateLimiter` (`security-layer/src/rate_limit.rs`).
+
+## Task Scheduler
+
+The cron parser (`task-scheduler/src/cron.rs`) accepts standard 5-field cron
+expressions plus these macros: `@hourly`, `@daily` (alias `@midnight`),
+`@weekly`, `@monthly`, and `@yearly` (alias `@annually`). Macros are expanded to
+their equivalent 5-field expression before scheduling.
+
+## Memory Store
+
+`memory-store` is SQLite-backed and supports semantic search in addition to the
+plain memory tools: `MemoryStore::embed` produces an embedding for a text, and
+`semantic_search(query_embedding, limit)` returns the closest stored memories by
+cosine similarity (`MemoryHit`).
+
+## Sessions
+
+Chat sessions are tracked in the `sessions` SQLite table (`memory-store/src/sessions.rs`),
+exposed via `GET /api/v1/sessions` (list) and `DELETE /api/v1/sessions/:id`.
+Deleting a session also removes that session's `{workspace}/uploads/{session_id}/`
+directory.
 
 ## Plugin toggles
 
