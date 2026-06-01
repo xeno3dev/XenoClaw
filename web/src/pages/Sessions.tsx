@@ -5,11 +5,12 @@ import styles from './Sessions.module.css';
 const API_BASE = '/api/v1';
 
 interface Session {
-  id: string;
+  session_id: string;
   source: string;
   mode: string;
   created_at: string;
   last_activity: string;
+  active: boolean;
 }
 
 export function Sessions() {
@@ -54,7 +55,7 @@ export function Sessions() {
     try {
       const res = await apiFetch(`${API_BASE}/sessions/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`Failed to delete session (${res.status})`);
-      setSessions((prev) => prev.filter((s) => s.id !== id));
+      setSessions((prev) => prev.filter((s) => s.session_id !== id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete session');
     }
@@ -110,9 +111,15 @@ export function Sessions() {
       ) : (
         <div className={styles.list}>
           {sessions.map((session) => (
-            <div key={session.id} className={styles.sessionCard}>
+            <div
+              key={session.session_id}
+              className={session.active ? `${styles.sessionCard} ${styles.activeCard}` : styles.sessionCard}
+            >
               <div className={styles.sessionInfo}>
-                <span className={styles.sessionId}>{session.id.slice(0, 8)}...</span>
+                <span className={styles.sessionId}>
+                  {session.session_id.slice(0, 8)}...
+                  {session.active && <span className={styles.activeBadge}>Active</span>}
+                </span>
                 <div className={styles.sessionMeta}>
                   <span className={styles.badge}>{session.source}</span>
                   <span className={styles.badge}>{session.mode}</span>
@@ -123,16 +130,18 @@ export function Sessions() {
                 </div>
               </div>
               <div className={styles.sessionActions}>
-                <button
-                  className={styles.actionButton}
-                  onClick={() => switchSession(session.id)}
-                  title="Switch to this session"
-                >
-                  Switch
-                </button>
+                {!session.active && (
+                  <button
+                    className={styles.actionButton}
+                    onClick={() => switchSession(session.session_id)}
+                    title="Switch to this session"
+                  >
+                    Switch
+                  </button>
+                )}
                 <button
                   className={`${styles.actionButton} ${styles.deleteButton}`}
-                  onClick={() => deleteSession(session.id)}
+                  onClick={() => deleteSession(session.session_id)}
                   title="Delete session"
                 >
                   Delete
