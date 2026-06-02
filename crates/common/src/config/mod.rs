@@ -107,24 +107,19 @@ fn apply_env_overrides(config: &mut PlatformConfig) {
     if let Ok(val) = std::env::var("XENOCLAW_WEB__HOST") {
         config.web.host = val;
     }
-    if let Ok(val) = std::env::var("XENOCLAW_WEB__PORT") {
-        if let Ok(v) = val.parse() {
-            config.web.port = v;
-        }
-    }
 
-    // API section
-    if let Ok(val) = std::env::var("XENOCLAW_API__HOST") {
-        config.api.host = val;
+    // Serve section (API + Web dashboard share one listener)
+    if let Ok(val) = std::env::var("XENOCLAW_SERVE__HOST") {
+        config.serve.host = val;
     }
-    if let Ok(val) = std::env::var("XENOCLAW_API__PORT") {
+    if let Ok(val) = std::env::var("XENOCLAW_SERVE__PORT") {
         if let Ok(v) = val.parse() {
-            config.api.port = v;
+            config.serve.port = v;
         }
     }
-    if let Ok(val) = std::env::var("XENOCLAW_API__RATE_LIMIT_PER_MINUTE") {
+    if let Ok(val) = std::env::var("XENOCLAW_SERVE__RATE_LIMIT_PER_MINUTE") {
         if let Ok(v) = val.parse() {
-            config.api.rate_limit_per_minute = v;
+            config.serve.rate_limit_per_minute = v;
         }
     }
 

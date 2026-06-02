@@ -441,7 +441,6 @@ struct WizardState {
     create_workspace: bool,
     host: String,
     port: String,
-    web_port: String,
     require_auth: bool,
     admin_username: String,
     admin_password: String,
@@ -498,7 +497,6 @@ impl Default for WizardState {
             create_workspace: false,
             host: "127.0.0.1".to_string(),
             port: "9090".to_string(),
-            web_port: "8080".to_string(),
             require_auth: true,
             admin_username: "admin".to_string(),
             admin_password: String::new(),
@@ -1693,9 +1691,8 @@ async fn step_workspace(state: &mut WizardState) -> Result<StepOutcome> {
 async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
     let mut host_input = TextInput::new(&state.host);
     let mut port_input = TextInput::new(&state.port);
-    let mut web_port_input = TextInput::new(&state.web_port);
     let mut require_auth = state.require_auth;
-    let mut field: u8 = 0; // 0=host, 1=api port, 2=web port, 3=auth
+    let mut field: u8 = 0; // 0=host, 1=server port, 2=auth
 
     loop {
         let mut stdout = io::stdout();
@@ -1711,15 +1708,14 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
         bg(&mut stdout, BG)?;
 
         render_field(&mut stdout, field == 0, "Bind host", &host_input)?;
-        render_field(&mut stdout, field == 1, "API port", &port_input)?;
-        render_field(&mut stdout, field == 2, "Web UI port", &web_port_input)?;
+        render_field(&mut stdout, field == 1, "Server port", &port_input)?;
 
         stdout.queue(Print("\r\n"))?;
 
         // Auth toggle
         let auth_str = if require_auth { "Yes" } else { "No" };
         let auth_color = if require_auth { green() } else { amber() };
-        if field == 3 {
+        if field == 2 {
             bg(&mut stdout, BG)?;
             stdout
                 .queue(SetForegroundColor(red()))?
@@ -1747,15 +1743,14 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Tab => {
-                    field = (field + 1) % 4;
+                    field = (field + 1) % 3;
                 }
                 KeyCode::BackTab => {
-                    field = if field == 0 { 3 } else { field - 1 };
+                    field = if field == 0 { 2 } else { field - 1 };
                 }
                 KeyCode::Enter => {
                     state.host = host_input.value().to_string();
                     state.port = port_input.value().to_string();
-                    state.web_port = web_port_input.value().to_string();
                     state.require_auth = require_auth;
                     return Ok(StepOutcome::Next);
                 }
@@ -1763,49 +1758,43 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(StepOutcome::Quit);
                 }
-                KeyCode::Char('y') | KeyCode::Char('Y') if field == 3 => {
+                KeyCode::Char('y') | KeyCode::Char('Y') if field == 2 => {
                     require_auth = true;
                 }
-                KeyCode::Char('n') | KeyCode::Char('N') if field == 3 => {
+                KeyCode::Char('n') | KeyCode::Char('N') if field == 2 => {
                     require_auth = false;
                 }
-                KeyCode::Char(' ') if field == 3 => {
+                KeyCode::Char(' ') if field == 2 => {
                     require_auth = !require_auth;
                 }
                 KeyCode::Left => match field {
                     0 => host_input.move_left(),
                     1 => port_input.move_left(),
-                    2 => web_port_input.move_left(),
                     _ => {}
                 },
                 KeyCode::Right => match field {
                     0 => host_input.move_right(),
                     1 => port_input.move_right(),
-                    2 => web_port_input.move_right(),
                     _ => {}
                 },
                 KeyCode::Home => match field {
                     0 => host_input.move_home(),
                     1 => port_input.move_home(),
-                    2 => web_port_input.move_home(),
                     _ => {}
                 },
                 KeyCode::End => match field {
                     0 => host_input.move_end(),
                     1 => port_input.move_end(),
-                    2 => web_port_input.move_end(),
                     _ => {}
                 },
                 KeyCode::Backspace => match field {
                     0 => host_input.backspace(),
                     1 => port_input.backspace(),
-                    2 => web_port_input.backspace(),
                     _ => {}
                 },
                 KeyCode::Delete => match field {
                     0 => host_input.delete(),
                     1 => port_input.delete(),
-                    2 => web_port_input.delete(),
                     _ => {}
                 },
                 KeyCode::Char(c) => match field {
@@ -1813,11 +1802,6 @@ async fn step_server(state: &mut WizardState) -> Result<StepOutcome> {
                     1 => {
                         if c.is_ascii_digit() {
                             port_input.insert(c);
-                        }
-                    }
-                    2 => {
-                        if c.is_ascii_digit() {
-                            web_port_input.insert(c);
                         }
                     }
                     _ => {}
@@ -2999,7 +2983,6 @@ async fn step_review(state: &WizardState, config_path: &Path) -> Result<StepOutc
                 format!("{}{workspace_note}", state.workspace_dir),
             ),
             ("Server", format!("{}:{}", state.host, state.port)),
-            ("Web UI", format!("{}:{}", state.host, state.web_port)),
             ("Auth", auth_str.to_string()),
             ("Sandbox", sandbox_str.clone()),
             (
@@ -3448,10 +3431,9 @@ max_processes    = 10
 
 [web]
 host = "{host}"
-port = {port}
 dir  = "{web_dir}"
 
-[api]
+[serve]
 host = "{host}"
 port = {port}
 

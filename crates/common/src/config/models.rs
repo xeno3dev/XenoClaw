@@ -34,9 +34,9 @@ pub struct PlatformConfig {
     #[serde(default)]
     pub web: WebConfig,
 
-    /// API server settings.
+    /// Server settings (API + Web dashboard share one listener).
     #[serde(default)]
-    pub api: ApiConfig,
+    pub serve: ServeConfig,
 
     /// Messaging integration settings.
     #[serde(default)]
@@ -68,7 +68,7 @@ impl Default for PlatformConfig {
             coding: None,
             scheduler: SchedulerConfig::default(),
             web: WebConfig::default(),
-            api: ApiConfig::default(),
+            serve: ServeConfig::default(),
             messaging: MessagingConfig::default(),
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),
@@ -490,10 +490,6 @@ pub struct WebConfig {
     #[serde(default = "default_host")]
     pub host: String,
 
-    /// Port for the web server.
-    #[serde(default = "default_web_port")]
-    pub port: u16,
-
     /// Directory containing the built web UI static files.
     /// Defaults to $XENOCLAW_WEB_DIR env var, then ./web/dist.
     #[serde(default = "default_web_dir")]
@@ -513,7 +509,6 @@ impl Default for WebConfig {
         Self {
             enabled: true,
             host: default_host(),
-            port: default_web_port(),
             dir: default_web_dir(),
             tls_cert: None,
             tls_key: None,
@@ -535,19 +530,16 @@ fn default_host() -> String {
     "0.0.0.0".to_string()
 }
 
-fn default_web_port() -> u16 {
-    8080
-}
-
-/// API server configuration.
+/// Server configuration. A single listener serves both the API/WebSocket
+/// routes and the Web UI dashboard.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiConfig {
-    /// Host to bind the API server to.
+pub struct ServeConfig {
+    /// Host to bind the server to.
     #[serde(default = "default_host")]
     pub host: String,
 
-    /// Port for the API server.
-    #[serde(default = "default_api_port")]
+    /// Port to bind the server to (serves both API and dashboard).
+    #[serde(default = "default_serve_port")]
     pub port: u16,
 
     /// Default rate limit per API key (requests per minute).
@@ -555,17 +547,17 @@ pub struct ApiConfig {
     pub rate_limit_per_minute: u32,
 }
 
-impl Default for ApiConfig {
+impl Default for ServeConfig {
     fn default() -> Self {
         Self {
             host: default_host(),
-            port: default_api_port(),
+            port: default_serve_port(),
             rate_limit_per_minute: default_rate_limit(),
         }
     }
 }
 
-fn default_api_port() -> u16 {
+fn default_serve_port() -> u16 {
     9090
 }
 

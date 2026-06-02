@@ -115,8 +115,8 @@ pub fn reload_config_from_str(toml_content: &str) -> Result<ReloadableConfig, Co
 /// Extract the reloadable settings from a full platform configuration.
 fn extract_reloadable(config: &PlatformConfig) -> ReloadableConfig {
     ReloadableConfig {
-        rate_limit_requests_per_minute: config.api.rate_limit_per_minute,
-        rate_limit_burst: config.api.rate_limit_per_minute, // burst = rate limit
+        rate_limit_requests_per_minute: config.serve.rate_limit_per_minute,
+        rate_limit_burst: config.serve.rate_limit_per_minute, // burst = rate limit
         log_level: config.monitoring.log_level,
         plugin_enabled: config.plugins.enabled,
         log_retention_days: config.monitoring.log_retention_days,
@@ -139,7 +139,7 @@ fn validate_reloadable(reloadable: &ReloadableConfig) -> Result<(), ConfigError>
 
     if reloadable.rate_limit_requests_per_minute == 0 {
         errors.push(ValidationError {
-            setting: "api.rate_limit_per_minute".to_string(),
+            setting: "serve.rate_limit_per_minute".to_string(),
             reason: "rate limit must be greater than 0".to_string(),
         });
     }
@@ -191,12 +191,12 @@ pub fn apply_reload(current: &mut PlatformConfig, reloadable: ReloadableConfig) 
     let mut changes = Vec::new();
 
     // Rate limits
-    if current.api.rate_limit_per_minute != reloadable.rate_limit_requests_per_minute {
+    if current.serve.rate_limit_per_minute != reloadable.rate_limit_requests_per_minute {
         changes.push(format!(
-            "api.rate_limit_per_minute: {} -> {}",
-            current.api.rate_limit_per_minute, reloadable.rate_limit_requests_per_minute
+            "serve.rate_limit_per_minute: {} -> {}",
+            current.serve.rate_limit_per_minute, reloadable.rate_limit_requests_per_minute
         ));
-        current.api.rate_limit_per_minute = reloadable.rate_limit_requests_per_minute;
+        current.serve.rate_limit_per_minute = reloadable.rate_limit_requests_per_minute;
     }
 
     // Log level
@@ -323,7 +323,7 @@ timeout_seconds = 30
 
 [web]
 
-[api]
+[serve]
 rate_limit_per_minute = 200
 
 [monitoring]
@@ -357,7 +357,7 @@ enabled = false
             coding: None,
             scheduler: SchedulerConfig::default(),
             web: WebConfig::default(),
-            api: ApiConfig::default(),
+            serve: ServeConfig::default(),
             messaging: MessagingConfig::default(),
             monitoring: MonitoringConfig::default(),
             plugins: PluginConfig::default(),
@@ -395,7 +395,7 @@ model = "llama3"
 priority = 1
 timeout_seconds = 30
 
-[api]
+[serve]
 rate_limit_per_minute = 0
 
 [monitoring]
@@ -407,7 +407,7 @@ log_level = "info"
             assert!(v
                 .errors
                 .iter()
-                .any(|e| e.setting == "api.rate_limit_per_minute"));
+                .any(|e| e.setting == "serve.rate_limit_per_minute"));
         }
     }
 
@@ -448,7 +448,7 @@ log_retention_days = 400
     #[test]
     fn test_apply_reload_changes_rate_limit() {
         let mut config = minimal_valid_config();
-        assert_eq!(config.api.rate_limit_per_minute, 100); // default
+        assert_eq!(config.serve.rate_limit_per_minute, 100); // default
 
         let reloadable = ReloadableConfig {
             rate_limit_requests_per_minute: 500,
@@ -464,7 +464,7 @@ log_retention_days = 400
         };
 
         apply_reload(&mut config, reloadable);
-        assert_eq!(config.api.rate_limit_per_minute, 500);
+        assert_eq!(config.serve.rate_limit_per_minute, 500);
     }
 
     #[test]
@@ -473,8 +473,8 @@ log_retention_days = 400
         assert_eq!(config.monitoring.log_level, LogLevel::Info); // default
 
         let reloadable = ReloadableConfig {
-            rate_limit_requests_per_minute: config.api.rate_limit_per_minute,
-            rate_limit_burst: config.api.rate_limit_per_minute,
+            rate_limit_requests_per_minute: config.serve.rate_limit_per_minute,
+            rate_limit_burst: config.serve.rate_limit_per_minute,
             log_level: LogLevel::Debug,
             plugin_enabled: config.plugins.enabled,
             log_retention_days: config.monitoring.log_retention_days,
@@ -495,8 +495,8 @@ log_retention_days = 400
         assert!(config.plugins.enabled); // default is true
 
         let reloadable = ReloadableConfig {
-            rate_limit_requests_per_minute: config.api.rate_limit_per_minute,
-            rate_limit_burst: config.api.rate_limit_per_minute,
+            rate_limit_requests_per_minute: config.serve.rate_limit_per_minute,
+            rate_limit_burst: config.serve.rate_limit_per_minute,
             log_level: config.monitoring.log_level,
             plugin_enabled: false,
             log_retention_days: config.monitoring.log_retention_days,
@@ -517,8 +517,8 @@ log_retention_days = 400
         let original = config.clone();
 
         let reloadable = ReloadableConfig {
-            rate_limit_requests_per_minute: config.api.rate_limit_per_minute,
-            rate_limit_burst: config.api.rate_limit_per_minute,
+            rate_limit_requests_per_minute: config.serve.rate_limit_per_minute,
+            rate_limit_burst: config.serve.rate_limit_per_minute,
             log_level: config.monitoring.log_level,
             plugin_enabled: config.plugins.enabled,
             log_retention_days: config.monitoring.log_retention_days,
@@ -533,8 +533,8 @@ log_retention_days = 400
 
         // Verify nothing changed
         assert_eq!(
-            config.api.rate_limit_per_minute,
-            original.api.rate_limit_per_minute
+            config.serve.rate_limit_per_minute,
+            original.serve.rate_limit_per_minute
         );
         assert_eq!(config.monitoring.log_level, original.monitoring.log_level);
         assert_eq!(config.plugins.enabled, original.plugins.enabled);
@@ -572,7 +572,7 @@ log_retention_days = 400
 
         apply_reload(&mut config, reloadable);
 
-        assert_eq!(config.api.rate_limit_per_minute, 250);
+        assert_eq!(config.serve.rate_limit_per_minute, 250);
         assert_eq!(config.monitoring.log_level, LogLevel::Warn);
         assert!(!config.plugins.enabled);
         assert_eq!(config.monitoring.log_retention_days, 7);
@@ -593,8 +593,8 @@ log_retention_days = 400
 
         // Test disabling MCP server
         let reloadable = ReloadableConfig {
-            rate_limit_requests_per_minute: config.api.rate_limit_per_minute,
-            rate_limit_burst: config.api.rate_limit_per_minute,
+            rate_limit_requests_per_minute: config.serve.rate_limit_per_minute,
+            rate_limit_burst: config.serve.rate_limit_per_minute,
             log_level: config.monitoring.log_level,
             plugin_enabled: config.plugins.enabled,
             log_retention_days: config.monitoring.log_retention_days,
@@ -682,7 +682,7 @@ timeout_seconds = 30
 
 [web]
 
-[api]
+[serve]
 rate_limit_per_minute = 200
 
 [monitoring]

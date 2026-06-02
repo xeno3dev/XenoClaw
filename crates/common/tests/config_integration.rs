@@ -99,7 +99,7 @@ agent_name = "test"
 [monitoring]
 log_retention_days = 0
 
-[api]
+[serve]
 port = 0
 "#;
     let result = config::load_config_from_str(toml);
@@ -315,7 +315,7 @@ fn test_defaults_applied_for_missing_sections() {
     assert_eq!(config.scheduler.default_timeout_seconds, 300);
     assert_eq!(config.monitoring.log_retention_days, 30);
     assert!(config.monitoring.metrics_enabled);
-    assert_eq!(config.api.rate_limit_per_minute, 100);
+    assert_eq!(config.serve.rate_limit_per_minute, 100);
     assert!(config.web.enabled);
 }
 
