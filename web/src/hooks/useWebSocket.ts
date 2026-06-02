@@ -4,7 +4,13 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 're
 
 export interface WebSocketMessage {
   type: string;
-  payload: unknown;
+  /**
+   * Some server messages (the events stream) nest their data under `payload`;
+   * the chat stream sends its fields flat alongside `type`. The index signature
+   * lets callers read either shape.
+   */
+  payload?: unknown;
+  [key: string]: unknown;
 }
 
 export interface UseWebSocketOptions {

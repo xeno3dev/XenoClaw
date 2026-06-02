@@ -602,16 +602,26 @@ fn compose_content_with_attachments(content: &str, attachments: &[String]) -> St
 // --- Helper functions ---
 
 /// Authenticate a WebSocket connection using the token query parameter.
+///
+/// Accepts both pre-configured API keys and session tokens issued by the
+/// `/auth/login` endpoint — mirroring `auth_middleware` for HTTP requests, so
+/// the password-login web UI can open WebSocket connections.
 async fn authenticate_ws(state: &AppState, auth: &WsAuthQuery) -> Result<Uuid, String> {
     let token = auth.token.as_deref().ok_or_else(|| {
         "Missing token query parameter. Connect with ?token=<api-key>".to_string()
     })?;
 
-    // Validate the API key
-    match state.authenticator.authenticate(token, &state.api_keys) {
-        Ok(key_id) => Ok(key_id.0),
-        Err(_) => Err("Invalid API key".to_string()),
+    // First try pre-configured API keys.
+    if let Ok(key_id) = state.authenticator.authenticate(token, &state.api_keys) {
+        return Ok(key_id.0);
     }
+
+    // Fall back to login-issued session tokens.
+    if state.login_tokens.read().await.contains(token) {
+        return Ok(state.admin_session_key_id.0);
+    }
+
+    Err("Invalid API key".to_string())
 }
 
 /// Send a serialized chat message over the WebSocket.
