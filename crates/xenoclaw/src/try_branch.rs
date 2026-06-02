@@ -381,6 +381,16 @@ fn stop_listener_on_port(port: u16) -> Result<()> {
     let Some(pid) = listener_pid(port) else {
         return Ok(());
     };
+
+    // Only terminate our own server — refuse to signal an unrelated process that
+    // merely happens to hold the port (another dev server, a colliding service).
+    if !pid_is_xenoclaw(pid) {
+        bail!(
+            "port {port} is held by pid {pid}, which is not a xenoclaw process — \
+             refusing to terminate it"
+        );
+    }
+
     println!("→ stopping running instance on port {port} (pid {pid})");
 
     // SIGTERM, then poll until the port frees, escalating to SIGKILL.
@@ -403,6 +413,13 @@ fn stop_listener_on_port(port: u16) -> Result<()> {
         std::thread::sleep(Duration::from_millis(200));
     }
     bail!("port {port} still in use after SIGKILL — refusing to start a second instance");
+}
+
+/// True if `/proc/<pid>/comm` reports the xenoclaw binary (false on any error).
+fn pid_is_xenoclaw(pid: i32) -> bool {
+    fs::read_to_string(format!("/proc/{pid}/comm"))
+        .map(|c| c.trim() == "xenoclaw")
+        .unwrap_or(false)
 }
 
 /// Return the PID of the process LISTENing on `port`, scanning /proc.
