@@ -53,6 +53,8 @@ use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use common::types::SessionId;
+
 use crate::state::AppState;
 
 // --- Types ---
@@ -472,6 +474,11 @@ async fn handle_chat_message(
         return;
     }
 
+    // The user just sent a message in this session, so it becomes the active
+    // session. Register it (or refresh its activity) in the session store so it
+    // shows up on the Sessions page and sorts to the top.
+    mark_session_active(state, SessionId(session_uuid)).await;
+
     debug!(
         session_id = session_id,
         attachments = attachments.len(),
@@ -600,6 +607,34 @@ fn compose_content_with_attachments(content: &str, attachments: &[String]) -> St
 }
 
 // --- Helper functions ---
+
+/// Mark a session as the active one and refresh its activity timestamp.
+///
+/// Web chat sessions are created client-side (the Chat page generates a random
+/// UUID), so the first time we see one we insert it into the store as a `Web`
+/// session in `General` mode. If it already exists (e.g. created via the
+/// Sessions page) we keep its source/mode and only bump `last_activity`.
+async fn mark_session_active(state: &AppState, session_id: SessionId) {
+    use crate::state::SessionInfo;
+    use common::config::SessionSource;
+    use common::models::AgentMode;
+
+    let now = Utc::now();
+    {
+        let mut sessions = state.sessions.write().await;
+        sessions
+            .entry(session_id)
+            .and_modify(|info| info.last_activity = now)
+            .or_insert_with(|| SessionInfo {
+                session_id,
+                source: SessionSource::Web,
+                mode: AgentMode::General,
+                created_at: now,
+                last_activity: now,
+            });
+    }
+    *state.active_session.write().await = Some(session_id);
+}
 
 /// Authenticate a WebSocket connection using the token query parameter.
 async fn authenticate_ws(state: &AppState, auth: &WsAuthQuery) -> Result<Uuid, String> {

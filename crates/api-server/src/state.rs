@@ -102,6 +102,11 @@ pub struct SessionInfo {
 /// In-memory session store, periodically persisted to SQLite.
 pub type SessionStore = Arc<RwLock<HashMap<SessionId, SessionInfo>>>;
 
+/// The session the logged-in user most recently sent a message in. `None` until
+/// the first message is sent. Updated by the WS chat handler on every send and
+/// by the explicit session-switch endpoint.
+pub type ActiveSession = Arc<RwLock<Option<SessionId>>>;
+
 /// Tokens issued by the password-login endpoint, valid until server restart.
 pub type LoginTokenStore = Arc<RwLock<HashSet<String>>>;
 
@@ -124,6 +129,8 @@ pub struct AppState {
     pub admin_password_hash: String,
     /// In-memory session store for active sessions.
     pub sessions: SessionStore,
+    /// The session the logged-in user most recently sent a message in.
+    pub active_session: ActiveSession,
     /// Tokens issued by the /auth/login endpoint (password-based login).
     pub login_tokens: LoginTokenStore,
     /// A stable ApiKeyId used to represent admin password-login sessions in the
@@ -186,6 +193,7 @@ impl AppState {
             admin_username: "admin".to_string(),
             admin_password_hash: String::new(),
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            active_session: Arc::new(RwLock::new(None)),
             login_tokens: Arc::new(RwLock::new(HashSet::new())),
             admin_session_key_id: ApiKeyId::new(),
             db_pool: None,
@@ -218,6 +226,7 @@ impl AppState {
             admin_username,
             admin_password_hash,
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            active_session: Arc::new(RwLock::new(None)),
             login_tokens: Arc::new(RwLock::new(HashSet::new())),
             admin_session_key_id: ApiKeyId::new(),
             db_pool: None,
