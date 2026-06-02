@@ -54,7 +54,32 @@ cargo run -p xenoclaw -- set-api-key
 
 # Verify credentials locally
 cargo run -p xenoclaw -- verify-login --user admin --password <pw>
+
+# Quickly build & run a branch or PR for testing
+xenoclaw try <branch-name>        # branch → install + restart the service
+xenoclaw try 42                   # all-digits → PR #42 (fetched via pull/42/head)
+xenoclaw try my-branch --release  # release build
+xenoclaw try my-branch --exec     # run in the foreground instead of via systemd
+xenoclaw try my-branch --no-run   # build only, print binary path
+xenoclaw try --restore            # swap the backed-up binary back + restart
 ```
+
+`xenoclaw try` checks the ref out into a dedicated git worktree under
+`~/.xenoclaw/try-worktrees/<label>/` (your current checkout is never touched)
+and builds the binary there. Worktrees are reused across runs so cargo's
+incremental cache survives. Two run modes:
+
+- **Default (service):** installs the fresh binary over `/opt/xenoclaw/bin/xenoclaw`
+  (the path `deploy/xenoclaw-agent.service` runs) and restarts `xenoclaw-agent`,
+  then probes the configured port for readiness. The new version persists and
+  logs to journald (`journalctl -u xenoclaw-agent -f`). Privileged steps use
+  `sudo` when not already root.
+- **`--exec`:** stops the service (so `Restart=on-failure` can't reclaim the
+  port), frees the API port from any stray instance (SIGTERM → SIGKILL), then
+  execs the fresh build in the foreground — logs in your terminal, Ctrl-C stops
+  it, the installed service binary left untouched.
+
+Linux-only (the port→PID lookup reads `/proc`).
 
 ### Frontend
 
