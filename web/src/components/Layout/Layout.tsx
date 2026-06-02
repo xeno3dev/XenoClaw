@@ -1,5 +1,5 @@
 import { useState, useCallback, type ReactNode } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import styles from './Layout.module.css';
 
@@ -106,6 +106,13 @@ export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { username, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // The chat page pins its input bar at all times via an internal scroll
+  // region — that only works if `.main` has a bounded height rather than
+  // growing with its content. Constrain it on the chat route only so other
+  // pages keep their natural page-level scrolling.
+  const isChat = location.pathname.startsWith('/chat');
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
@@ -190,7 +197,7 @@ export function Layout() {
       </aside>
 
       {/* Main content area */}
-      <main className={styles.main}>
+      <main className={`${styles.main} ${isChat ? styles.mainChat : ''}`}>
         <Outlet />
       </main>
     </div>
