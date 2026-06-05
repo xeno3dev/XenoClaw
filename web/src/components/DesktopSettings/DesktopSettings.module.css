@@ -1,0 +1,323 @@
+.section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.sectionTitle {
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--color-text);
+  margin: 0 0 0.375rem;
+}
+
+.hint {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  margin: 0 0 0.875rem;
+}
+
+.note {
+  font-size: 0.8125rem;
+  color: var(--color-primary);
+  margin: 0.75rem 0 0;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+}
+
+/* Toggle (theme) */
+.toggle {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.toggleBtn {
+  padding: 0.4rem 1rem;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.toggleBtn:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.toggleActive {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.toggleActive:hover {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+/* Server list */
+.serverList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.875rem;
+}
+
+.serverRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.625rem 0.75rem;
+  background: var(--color-bg-elevated);
+}
+
+.serverRowActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.serverSelect {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.serverName {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.serverUrl {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activeBadge,
+.localBadge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.05rem 0.375rem;
+  border-radius: 999px;
+}
+
+.activeBadge {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.localBadge {
+  background: var(--color-hover);
+  color: var(--color-text-secondary);
+}
+
+.serverActions {
+  display: flex;
+  gap: 0.375rem;
+  flex-shrink: 0;
+}
+
+.smallBtn {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.625rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.smallBtn:hover {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.dangerBtn:hover {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+/* Add/edit form */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-top: 0.5rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.input:focus {
+  border-color: var(--color-primary);
+}
+
+.formActions,
+.localRow {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+
+.localRow {
+  margin-bottom: 0.5rem;
+}
+
+.primaryBtn {
+  padding: 0.5rem 1rem;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter var(--transition-fast);
+}
+
+.primaryBtn:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.primaryBtn:disabled,
+.secondaryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondaryBtn {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.portInput {
+  width: 96px;
+  padding: 0.45rem 0.625rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+  outline: none;
+}
+
+.portInput:focus {
+  border-color: var(--color-primary);
+}
+
+.statusPill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.3rem 0.625rem;
+  border-radius: 999px;
+}
+
+.pillOn {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.pillOff {
+  background: var(--color-hover);
+  color: var(--color-text-secondary);
+}
+
+.error {
+  font-size: 0.8125rem;
+  color: var(--color-error);
+  background: var(--color-error-soft);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.logs {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.625rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+}
+
+.updateResult {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}

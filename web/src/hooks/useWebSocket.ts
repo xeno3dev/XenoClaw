@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getWsBase } from '../lib/backend';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
@@ -63,10 +64,10 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
   }, []);
 
   const buildWsUrl = useCallback((): string => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const url = `${protocol}//${host}${endpoint}?token=${encodeURIComponent(token)}`;
-    return url;
+    // getWsBase() resolves to the active server's ws/wss origin in the desktop
+    // app, or the current page origin in the web build.
+    const base = getWsBase();
+    return `${base}${endpoint}?token=${encodeURIComponent(token)}`;
   }, [endpoint, token]);
 
   const connect = useCallback(() => {

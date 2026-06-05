@@ -2,7 +2,7 @@
 
 .layout {
   display: flex;
-  min-height: 100vh;
+  min-height: var(--app-vh, 100vh);
   width: 100%;
   max-width: 2560px;
   margin: 0 auto;
@@ -19,9 +19,7 @@
   right: 0;
   height: 56px;
   padding: 0 1rem;
-  background: rgba(15, 15, 16, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--color-bg-elevated);
   border-bottom: 1px solid var(--color-border);
   z-index: 100;
 }
@@ -225,7 +223,7 @@
      space via `flex: 1` instead of guessing viewport math. */
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 56px);
+  min-height: calc(var(--app-vh, 100vh) - 56px);
 }
 
 /* Desktop layout: >= 768px */
@@ -241,7 +239,7 @@
   .sidebar {
     position: sticky;
     top: 0;
-    height: 100vh;
+    height: var(--app-vh, 100vh);
     transform: translateX(0);
     flex-shrink: 0;
   }
@@ -249,7 +247,7 @@
   .main {
     margin-top: 0;
     padding: 1.75rem 2rem;
-    min-height: 100vh;
+    min-height: var(--app-vh, 100vh);
   }
 }
 
@@ -294,7 +292,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 56, 56, 0.25);
+  border: 1px solid var(--color-border-strong);
 }
 
 .username {

@@ -1,0 +1,9 @@
+# Rust build output
+/target/
+
+# Tauri generated files (schemas, etc.)
+/gen/
+
+# Bundled sidecar binaries — produced by `npm run sidecar:build`, not tracked.
+/binaries/*
+!/binaries/README.md

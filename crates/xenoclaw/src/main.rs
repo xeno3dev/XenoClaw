@@ -282,7 +282,7 @@ fn resolve_plugins_dir(dir: &Path) -> PathBuf {
 /// Start the agent runtime.
 async fn serve(config_path: PathBuf) -> Result<()> {
     // Load configuration
-    let config = match load_config(&config_path) {
+    let mut config = match load_config(&config_path) {
         Ok(cfg) => cfg,
         Err(ConfigError::FileNotFound(_)) => {
             eprintln!(
@@ -298,6 +298,22 @@ async fn serve(config_path: PathBuf) -> Result<()> {
             std::process::exit(1);
         }
     };
+
+    // Environment overrides for the API bind address. These let a launcher
+    // (e.g. the XenoClaw desktop app starting the backend as a sidecar) bind to
+    // a free port without rewriting config.toml. Only applied when set, so
+    // existing installs are unaffected.
+    if let Ok(host) = std::env::var("XENOCLAW_API_HOST") {
+        if !host.trim().is_empty() {
+            config.api.host = host.trim().to_string();
+        }
+    }
+    if let Ok(port) = std::env::var("XENOCLAW_API_PORT") {
+        match port.trim().parse::<u16>() {
+            Ok(p) => config.api.port = p,
+            Err(_) => eprintln!("Ignoring invalid XENOCLAW_API_PORT='{port}'"),
+        }
+    }
 
     // Initialize tracing with a reload-capable EnvFilter so PUT /api/v1/config
     // can change the log level at runtime without a restart.

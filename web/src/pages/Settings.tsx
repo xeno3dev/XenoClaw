@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { DesktopSettings } from '../components/DesktopSettings/DesktopSettings';
 import styles from './Settings.module.css';
 
 const API_BASE = '/api/v1';
@@ -163,6 +164,7 @@ export function Settings() {
     return (
       <div className={styles.container}>
         <h1 className={styles.title}>Settings</h1>
+        <DesktopSettings />
         <p className={styles.loading}>Loading configuration...</p>
       </div>
     );
@@ -171,6 +173,8 @@ export function Settings() {
   return (
     <div className={styles.container}>
       <h1 className={styles.title}>Settings</h1>
+
+      <DesktopSettings />
 
       {error && (
         <div className={styles.errorBanner} role="alert">

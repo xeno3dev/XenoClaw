@@ -93,6 +93,40 @@ npm run typecheck
 
 The production binary serves `web/dist/` as a fallback on the same port as the API (default `:3000`). Set `XENOCLAW_WEB_DIR` or configure `[web] dir` in config.toml to override.
 
+### Desktop app (Tauri)
+
+`web/src-tauri/` is a **Tauri 2** desktop shell (Windows + Linux) that reuses the
+same React frontend as the web UI — it is an independent Cargo workspace
+(`[workspace]` table in its `Cargo.toml`), so it is *not* part of `cargo build
+--workspace` for `crates/*`. The frontend detects Tauri at runtime via
+`isTauri()` (`web/src/lib/tauri.ts`); on the plain web build every desktop path
+is inert, so the web UI and TUI are unaffected.
+
+```bash
+cd web
+npm run icons:generate     # generate the app icon set (dependency-free Node script)
+npm run sidecar:build      # build `xenoclaw` and stage it as a Tauri sidecar (local mode)
+npm run tauri:dev          # run the desktop app against the Vite dev server
+npm run tauri:build        # build NSIS / .deb / AppImage installers
+```
+
+Key pieces:
+- **Backend URL routing** — `web/src/lib/backend.ts` owns server *profiles*, the
+  active server, theme, and per-server tokens (localStorage). `getApiBase()`
+  returns `''` on the web (relative same-origin URLs, unchanged) or the active
+  profile's URL in the desktop app. `useAuth.apiFetch` and `useWebSocket`
+  resolve through it, so existing `/api/...` callers work in both targets.
+- **Local backend** — `src-tauri/src/sidecar.rs` spawns `xenoclaw serve` bound to
+  `127.0.0.1:<free-port>` using the `XENOCLAW_API_PORT` / `XENOCLAW_API_HOST`
+  env overrides (applied in `xenoclaw serve`); the frontend health-gates the
+  connection.
+- **Native shell** — `src-tauri/src/lib.rs`: custom titlebar (window control
+  commands), tray (show/hide/quit, close-hides-to-tray), native notifications,
+  window-state persistence, and the auto-updater.
+- **Updater** — configured in `tauri.conf.json` (placeholder pubkey from
+  `icons:generate`); the `desktop-build` GitHub workflow signs artifacts and
+  publishes `latest.json` on tag pushes. See `web/src-tauri/README.md`.
+
 ## Config File
 
 Default path resolution (preference order):

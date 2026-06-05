@@ -1,0 +1,36 @@
+# Maintainer: XenoClaw <maintainers@example.com>
+#
+# Starter PKGBUILD for the XenoClaw desktop app (Tauri). Builds from source.
+# For a tagged release, set pkgver, point `source` at the release tarball, and
+# fill in sha256sums (`updpkgsums`). Then: `makepkg -si`.
+pkgname=xenoclaw-desktop
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Cross-platform desktop client for the XenoClaw AI agent runtime"
+arch=('x86_64')
+url="https://github.com/xeno3dev/xenoclaw"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3')
+makedepends=('rust' 'cargo' 'nodejs' 'npm' 'pkgconf' 'librsvg' 'patchelf')
+# For a release build, replace with the tagged tarball + checksum:
+#   source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+#   sha256sums=('SKIP')
+source=()
+sha256sums=()
+
+build() {
+  cd "$srcdir/../../../.."   # repo root (adjust if building from a tarball)
+  npm --prefix web ci
+  npm --prefix web run icons:generate
+  npm --prefix web run sidecar:build
+  npm --prefix web run tauri:build -- --bundles deb
+}
+
+package() {
+  cd "$srcdir/../../../.."
+  # Install the binary + desktop entry produced by the Tauri .deb layout.
+  install -Dm755 "web/src-tauri/target/release/xenoclaw-desktop" \
+    "$pkgdir/usr/bin/xenoclaw-desktop"
+  install -Dm644 "web/src-tauri/icons/128x128.png" \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/xenoclaw-desktop.png"
+}

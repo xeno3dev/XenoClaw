@@ -1,0 +1,103 @@
+name: desktop-build
+
+# Builds the XenoClaw desktop app (Tauri) for Windows and Linux.
+#
+# - Manual runs / pushes to a `v*` tag build installers.
+# - On a tag, with the TAURI_SIGNING_* secrets set, tauri-action also produces
+#   signed updater artifacts + a draft GitHub release containing `latest.json`
+#   (the manifest the in-app updater points at).
+#
+# Required repository secrets for signed updates (optional otherwise):
+#   TAURI_SIGNING_PRIVATE_KEY           contents of ~/.tauri/xenoclaw.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
+# Generate with: npm --prefix web run tauri signer generate -- -w ~/.tauri/xenoclaw.key
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+            bundles: deb,appimage,updater
+          - platform: windows-latest
+            triple: x86_64-pc-windows-msvc
+            bundles: nsis,updater
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: web/src-tauri -> target
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Generate icons
+        working-directory: web
+        run: npm run icons:generate
+
+      - name: Build backend sidecar
+        working-directory: web
+        run: npm run sidecar:build
+
+      - name: Build desktop bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: web
+          tauriScript: npm run tauri
+          args: --bundles ${{ matrix.bundles }}
+          # On a tag push, publish a draft release with the installers + the
+          # updater manifest (latest.json). On manual runs, just build.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: XenoClaw ${{ github.ref_name }}
+          releaseDraft: true
+          includeUpdaterJson: true
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: xenoclaw-desktop-${{ matrix.triple }}
+          path: |
+            web/src-tauri/target/release/bundle/**/*.deb
+            web/src-tauri/target/release/bundle/**/*.AppImage
+            web/src-tauri/target/release/bundle/**/*.exe
+            web/src-tauri/target/release/bundle/**/*.sig
+            web/src-tauri/target/release/bundle/**/latest.json
+          if-no-files-found: ignore
