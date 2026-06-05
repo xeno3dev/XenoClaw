@@ -109,6 +109,28 @@ Targets (configured in `tauri.conf.json`):
 
 Limit targets with `npm run tauri:build -- --bundles nsis` (or `deb,appimage`).
 
+### CLI shortcuts (`xenoclaw`)
+
+The `xenoclaw` binary wraps the whole npm/Tauri flow so you don't have to run
+the steps by hand:
+
+```bash
+# Build the installers and install for the current user
+# (AppImage → ~/.local with a .desktop launcher, or a .deb via dpkg)
+xenoclaw install desktop
+xenoclaw install desktop --build-only        # build only; print the bundle path
+xenoclaw install desktop --dir /path/to/repo # if run outside the checkout
+
+# Build the desktop app from a branch/PR worktree (your checkout is untouched)
+xenoclaw try my-branch --desktop             # build installers
+xenoclaw try my-branch --desktop --exec      # launch it live (tauri dev)
+xenoclaw try my-branch --desktop --no-run    # frontend + sidecar only
+```
+
+Both run `npm install → icons:generate → sidecar:build → tauri build` for you,
+so the Tauri prerequisites (Node, Rust, and the system WebKit/GTK libs) still
+need to be installed.
+
 ### Arch Linux (AUR)
 
 A starting `PKGBUILD` is provided at `packaging/aur/PKGBUILD`. It builds from

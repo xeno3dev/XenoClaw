@@ -47,6 +47,7 @@ pub fn run_try(
     no_run: bool,
     exec: bool,
     restore: bool,
+    desktop: bool,
 ) -> Result<()> {
     // `--restore` is a standalone action — no ref, no build.
     if restore {
@@ -75,6 +76,35 @@ pub fn run_try(
 
     let worktree = ensure_worktree(&repo_root, &resolved)?;
     println!("→ worktree ready at {}", worktree.display());
+
+    // `--desktop`: build the Tauri desktop app from this ref instead of the
+    // backend service. `--exec` runs it live (tauri dev); `--no-run` builds the
+    // frontend + sidecar only; otherwise it produces installers.
+    if desktop {
+        let web_dir = worktree.join("web");
+        if !web_dir.join("src-tauri/tauri.conf.json").exists() {
+            bail!("this ref has no desktop app (web/src-tauri is missing)");
+        }
+        if release {
+            println!("(note: --release is ignored for --desktop; tauri build is always release)");
+        }
+        let mode = if exec {
+            crate::desktop::DesktopMode::Dev
+        } else if no_run {
+            crate::desktop::DesktopMode::FrontendOnly
+        } else {
+            crate::desktop::DesktopMode::Bundle
+        };
+        let bundle = crate::desktop::build_desktop(&web_dir, mode)?;
+        if let Some(b) = bundle {
+            println!("\n✓ Desktop installers built under:\n  {}", b.display());
+            println!(
+                "Install them for your user with:\n  xenoclaw install desktop --dir {}",
+                web_dir.display()
+            );
+        }
+        return Ok(());
+    }
 
     build(&worktree, release)?;
 
@@ -237,7 +267,7 @@ fn service_is_active() -> bool {
 
 /// Run a command, prefixing `sudo` when the current user isn't root. Stdio is
 /// inherited so a sudo password prompt works.
-fn run_privileged(args: &[&str]) -> Result<()> {
+pub(crate) fn run_privileged(args: &[&str]) -> Result<()> {
     let is_root = unsafe { libc::geteuid() } == 0;
     let (program, rest): (&str, &[&str]) = if is_root {
         (args[0], &args[1..])

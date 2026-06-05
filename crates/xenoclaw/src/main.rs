@@ -7,6 +7,7 @@
 
 mod admin;
 mod cli_health;
+mod desktop;
 mod mcp_client;
 mod mcp_server;
 mod setup;
@@ -143,6 +144,35 @@ enum Command {
         /// Restore the binary that service mode backed up, then restart the service.
         #[arg(long)]
         restore: bool,
+
+        /// Build the Tauri desktop app from the ref instead of the backend
+        /// service. Combine with --exec to run it live (tauri dev), or --no-run
+        /// to build the frontend + sidecar only.
+        #[arg(long)]
+        desktop: bool,
+    },
+    /// Install XenoClaw components (e.g. the desktop app).
+    Install(InstallArgs),
+}
+
+/// Arguments for the `install` subcommand.
+#[derive(Args)]
+pub struct InstallArgs {
+    #[command(subcommand)]
+    pub command: InstallCommand,
+}
+
+#[derive(Subcommand)]
+pub enum InstallCommand {
+    /// Build and install the desktop app for the current user.
+    Desktop {
+        /// Path to the repo root or its web/ dir (default: auto-detect from CWD).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+
+        /// Build the installers but don't install them — just print their path.
+        #[arg(long)]
+        build_only: bool,
     },
 }
 
@@ -210,6 +240,7 @@ async fn main() -> Result<()> {
             no_run,
             exec,
             restore,
+            desktop,
         } => try_branch::run_try(
             &config_path,
             reference.as_deref(),
@@ -217,7 +248,13 @@ async fn main() -> Result<()> {
             no_run,
             exec,
             restore,
+            desktop,
         ),
+        Command::Install(args) => match args.command {
+            InstallCommand::Desktop { dir, build_only } => {
+                desktop::run_install(dir, build_only)
+            }
+        },
     }
 }
 

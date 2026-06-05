@@ -61,7 +61,13 @@ xenoclaw try 42                   # all-digits → PR #42 (fetched via pull/42/h
 xenoclaw try my-branch --release  # release build
 xenoclaw try my-branch --exec     # run in the foreground instead of via systemd
 xenoclaw try my-branch --no-run   # build only, print binary path
+xenoclaw try my-branch --desktop  # build the Tauri desktop app from the ref
+xenoclaw try my-branch --desktop --exec    # …and launch it live (tauri dev)
 xenoclaw try --restore            # swap the backed-up binary back + restart
+
+# Build & install the desktop app for the current user
+xenoclaw install desktop          # build installers + install (AppImage→~/.local, or .deb)
+xenoclaw install desktop --build-only   # build only, print the bundle path
 ```
 
 `xenoclaw try` checks the ref out into a dedicated git worktree under
@@ -109,6 +115,14 @@ npm run sidecar:build      # build `xenoclaw` and stage it as a Tauri sidecar (l
 npm run tauri:dev          # run the desktop app against the Vite dev server
 npm run tauri:build        # build NSIS / .deb / AppImage installers
 ```
+
+CLI shortcuts (wrap the npm flow; `crates/xenoclaw/src/desktop.rs`):
+- `xenoclaw install desktop` — runs the whole pipeline (npm install → icons →
+  sidecar → `tauri build`) and installs the result for the current user
+  (AppImage → `~/.local` with a `.desktop` launcher, or a `.deb` via dpkg).
+  `--build-only` stops after building; `--dir` points at the repo/web dir.
+- `xenoclaw try <ref> --desktop` — builds the desktop app from a branch/PR
+  worktree (`--exec` → `tauri dev`, `--no-run` → frontend + sidecar only).
 
 Key pieces:
 - **Backend URL routing** — `web/src/lib/backend.ts` owns server *profiles*, the
