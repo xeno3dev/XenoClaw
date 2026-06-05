@@ -1,6 +1,7 @@
 import { useState, useCallback, type ReactNode } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { useTheme } from '../../hooks/useTheme';
 import styles from './Layout.module.css';
 
 interface NavItem {
@@ -69,6 +70,28 @@ const I = {
       <line x1="21" y1="12" x2="9" y2="12" />
     </svg>
   ),
+  newChat: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  ),
+  collapse: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="9" y1="4" x2="9" y2="20" />
+    </svg>
+  ),
+  sun: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+    </svg>
+  ),
+  moon: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  ),
 };
 
 const NAV_GROUPS: NavGroup[] = [
@@ -96,24 +119,50 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+const COLLAPSE_KEY = 'xenoclaw_sidebar_collapsed';
+/** Broadcast that the user wants a fresh chat (Chat page listens). */
+export const NEW_CHAT_EVENT = 'xenoclaw:new-chat';
+
 /**
- * Main application layout with responsive sidebar.
- * - Desktop (>=768px): Sidebar + main content side by side
- * - Mobile (<768px): Hamburger menu toggles sidebar overlay
+ * Main application layout with a collapsible Claude-style sidebar.
+ * - Desktop (>=768px): sidebar + content side by side; collapses to an icon rail.
+ * - Mobile (<768px): hamburger toggles a sidebar overlay.
  * Supports viewports from 320px to 2560px.
  */
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(COLLAPSE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   const { username, logout } = useAuth();
+  const { resolvedTheme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
-  const toggleSidebar = useCallback(() => {
-    setSidebarOpen((prev) => !prev);
+  const toggleSidebar = useCallback(() => setSidebarOpen((prev) => !prev), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
   }, []);
 
-  const closeSidebar = useCallback(() => {
-    setSidebarOpen(false);
-  }, []);
+  const startNewChat = useCallback(() => {
+    closeSidebar();
+    navigate('/chat');
+    // Reset the conversation even when already on /chat.
+    window.dispatchEvent(new CustomEvent(NEW_CHAT_EVENT));
+  }, [closeSidebar, navigate]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -123,7 +172,7 @@ export function Layout() {
   const userInitial = (username ?? '?').trim().charAt(0).toUpperCase() || '?';
 
   return (
-    <div className={styles.layout}>
+    <div className={`${styles.layout} ${collapsed ? styles.layoutCollapsed : ''}`}>
       {/* Mobile header with hamburger */}
       <header className={styles.mobileHeader}>
         <button
@@ -141,22 +190,42 @@ export function Layout() {
 
       {/* Sidebar overlay for mobile */}
       {sidebarOpen && (
-        <div
-          className={styles.overlay}
-          onClick={closeSidebar}
-          aria-hidden="true"
-        />
+        <div className={styles.overlay} onClick={closeSidebar} aria-hidden="true" />
       )}
 
       {/* Sidebar navigation */}
       <aside
-        className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ''}`}
+        className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ''} ${
+          collapsed ? styles.collapsed : ''
+        }`}
         aria-label="Main navigation"
       >
         <div className={styles.sidebarHeader}>
-          <h2 className={styles.brand}>XenoClaw</h2>
-          <span className={styles.brandTag}>Agent Runtime</span>
+          <div className={styles.brandRow}>
+            <h2 className={styles.brand}>
+              <span className={styles.brandMark} aria-hidden="true" />
+              <span className={styles.brandText}>XenoClaw</span>
+            </h2>
+            <button
+              className={styles.collapseButton}
+              onClick={toggleCollapsed}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {I.collapse}
+            </button>
+          </div>
         </div>
+
+        <button
+          className={styles.newChat}
+          onClick={startNewChat}
+          title="New chat"
+        >
+          <span className={styles.newChatIcon} aria-hidden="true">{I.newChat}</span>
+          <span className={styles.newChatLabel}>New chat</span>
+        </button>
+
         <nav className={styles.nav}>
           {NAV_GROUPS.map((group) => (
             <div key={group.label} className={styles.navGroup}>
@@ -165,6 +234,7 @@ export function Layout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  title={item.label}
                   className={({ isActive }) =>
                     `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`
                   }
@@ -177,15 +247,34 @@ export function Layout() {
             </div>
           ))}
         </nav>
+
         <div className={styles.sidebarFooter}>
+          <button
+            className={styles.themeToggle}
+            onClick={toggleTheme}
+            aria-label={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+          >
+            <span className={styles.themeIcon} aria-hidden="true">
+              {resolvedTheme === 'dark' ? I.sun : I.moon}
+            </span>
+            <span className={styles.themeLabel}>
+              {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+            </span>
+          </button>
+
           <div className={styles.userBlock}>
             <span className={styles.userAvatar} aria-hidden="true">{userInitial}</span>
             <span className={styles.username} title={username ?? ''}>{username}</span>
+            <button
+              className={styles.logoutButton}
+              onClick={handleLogout}
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <span className={styles.logoutIcon} aria-hidden="true">{I.signOut}</span>
+            </button>
           </div>
-          <button className={styles.logoutButton} onClick={handleLogout}>
-            <span className={styles.logoutIcon} aria-hidden="true">{I.signOut}</span>
-            Sign out
-          </button>
         </div>
       </aside>
 

@@ -1,17 +1,40 @@
-/* Chat page styles - dark theme consistent with Layout */
+/* Chat page — Claude Desktop aesthetic, theme-token driven. */
 
 .container {
   display: flex;
   flex-direction: column;
-  /* Fill the Layout's main flex column (which already accounts for the
-     mobile header + responsive padding). Children with flex:1 + min-height:0
-     are what give the message list its scroll region. */
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
-/* Connection status banner */
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.625rem;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 0.5rem;
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  font-size: 1.0625rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.headerStatus {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* Connection banners */
 .connectionBanner {
   display: flex;
   align-items: center;
@@ -19,24 +42,24 @@
   padding: 0.5rem 1rem;
   font-size: 0.8125rem;
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   margin-bottom: 0.5rem;
   flex-shrink: 0;
 }
 
 .connectionBannerReconnecting {
-  background: rgba(255, 193, 7, 0.12);
-  color: #ffc107;
-  border: 1px solid rgba(255, 193, 7, 0.25);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning-soft);
 }
 
 .connectionBannerDisconnected {
-  background: rgba(244, 67, 54, 0.12);
-  color: #f44336;
-  border: 1px solid rgba(244, 67, 54, 0.25);
+  background: var(--color-error-soft);
+  color: var(--color-error-text);
+  border: 1px solid var(--color-error-border);
 }
 
-/* Status indicator dot */
+/* Status dot */
 .statusDot {
   width: 8px;
   height: 8px;
@@ -45,19 +68,17 @@
 }
 
 .statusDotConnected {
-  background: #4caf50;
-  box-shadow: 0 0 4px rgba(76, 175, 80, 0.5);
+  background: var(--color-success);
+  box-shadow: 0 0 5px var(--color-success-soft);
 }
 
 .statusDotReconnecting {
-  background: #ffc107;
-  box-shadow: 0 0 4px rgba(255, 193, 7, 0.5);
+  background: var(--color-warning);
   animation: pulse 1.5s ease-in-out infinite;
 }
 
 .statusDotDisconnected {
-  background: #f44336;
-  box-shadow: 0 0 4px rgba(244, 67, 54, 0.5);
+  background: var(--color-error);
 }
 
 @keyframes pulse {
@@ -65,28 +86,18 @@
   50% { opacity: 0.4; }
 }
 
-/* Message list area */
+/* Message list — centered reading column */
 .messageList {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem 0;
+  padding: 1rem 0 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1.25rem;
   min-height: 0;
-}
-
-.messageList::-webkit-scrollbar {
-  width: 6px;
-}
-
-.messageList::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.messageList::-webkit-scrollbar-thumb {
-  background: var(--color-border, #2a2a4a);
-  border-radius: 3px;
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
 }
 
 /* Empty state */
@@ -96,88 +107,152 @@
   align-items: center;
   justify-content: center;
   flex: 1;
-  color: var(--color-text-secondary, #a0a0b0);
+  color: var(--color-text-secondary);
   gap: 0.5rem;
   text-align: center;
   padding: 2rem;
 }
 
 .emptyStateTitle {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--color-text, #e0e0e0);
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
 }
 
 .emptyStateText {
+  font-size: 0.9375rem;
+}
+
+/* Message rows */
+.row {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.rowUser {
+  justify-content: flex-end;
+}
+
+.rowAssistant {
+  justify-content: flex-start;
+}
+
+/* Avatar (assistant / error) */
+.avatar {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-bright);
+  border: 1px solid var(--color-primary-soft);
+  font-weight: 700;
   font-size: 0.875rem;
 }
 
-/* Message bubble */
+.avatar svg {
+  width: 16px;
+  height: 16px;
+}
+
+.rowAssistant:has(.messageError) .avatar {
+  background: var(--color-error-soft);
+  color: var(--color-error-text);
+  border-color: var(--color-error-border);
+}
+
+/* Message bubbles / blocks */
 .message {
   display: flex;
   flex-direction: column;
-  max-width: 80%;
-  padding: 0.75rem 1rem;
-  border-radius: 12px;
   font-size: 0.9375rem;
-  line-height: 1.6;
+  line-height: 1.65;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  min-width: 0;
 }
 
+/* User: neutral bubble, right-aligned */
 .messageUser {
   align-self: flex-end;
-  background: var(--color-primary, #6c63ff);
-  color: #ffffff;
-  border-bottom-right-radius: 4px;
+  max-width: 100%;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-sm);
+  background: var(--color-user-bubble);
+  color: var(--color-user-bubble-text);
 }
 
+/* Assistant: document-style, full width, no heavy chrome */
 .messageAssistant {
-  align-self: flex-start;
-  background: var(--color-surface, #1a1a2e);
-  color: var(--color-text, #e0e0e0);
-  border: 1px solid var(--color-border, #2a2a4a);
-  border-bottom-left-radius: 4px;
+  flex: 1;
+  padding-top: 0.15rem;
+  color: var(--color-text);
 }
 
+/* Error: soft red block */
 .messageError {
-  align-self: flex-start;
-  background: rgba(244, 67, 54, 0.1);
-  color: #f44336;
-  border: 1px solid rgba(244, 67, 54, 0.25);
-  border-bottom-left-radius: 4px;
+  flex: 1;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-sm);
+  background: var(--color-error-soft);
+  color: var(--color-error-text);
+  border: 1px solid var(--color-error-border);
 }
 
 .messageContent {
   white-space: pre-wrap;
 }
 
+/* Streaming caret */
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--color-primary);
+  border-radius: 1px;
+  animation: caretBlink 1s step-end infinite;
+}
+
+@keyframes caretBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 .messageTimestamp {
   font-size: 0.6875rem;
-  color: rgba(255, 255, 255, 0.5);
-  margin-top: 0.25rem;
+  color: var(--color-dim);
+  margin-top: 0.35rem;
+}
+
+.messageUser .messageTimestamp {
   align-self: flex-end;
+  color: var(--color-text-secondary);
+  opacity: 0.8;
 }
 
-.messageAssistant .messageTimestamp,
-.messageError .messageTimestamp {
-  color: var(--color-text-secondary, #a0a0b0);
-}
-
-/* Diff image inline display */
+/* Diff image */
 .diffImage {
   max-width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin-top: 0.5rem;
-  border: 1px solid var(--color-border, #2a2a4a);
+  border: 1px solid var(--color-border);
 }
 
 .diffSvgContainer {
   max-width: 100%;
   overflow-x: auto;
   margin-top: 0.5rem;
-  border-radius: 8px;
-  border: 1px solid var(--color-border, #2a2a4a);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
 }
 
 .diffSvgContainer svg {
@@ -185,47 +260,226 @@
   height: auto;
 }
 
-/* Typing / loading indicator */
+/* Typing indicator */
 .typingIndicator {
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 0.75rem 1rem;
-  align-self: flex-start;
-  background: var(--color-surface, #1a1a2e);
-  border: 1px solid var(--color-border, #2a2a4a);
-  border-radius: 12px;
-  border-bottom-left-radius: 4px;
+  padding: 0.7rem 0.25rem;
 }
 
 .typingDot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--color-text-secondary, #a0a0b0);
+  background: var(--color-dim);
   animation: typingBounce 1.4s ease-in-out infinite;
 }
 
-.typingDot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typingDot:nth-child(3) {
-  animation-delay: 0.4s;
-}
+.typingDot:nth-child(2) { animation-delay: 0.2s; }
+.typingDot:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes typingBounce {
   0%, 60%, 100% { transform: translateY(0); }
   30% { transform: translateY(-4px); }
 }
 
-/* Attachment chips (pending uploads, above the input) */
+/* Attachments on a sent user message */
+.messageAttachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+}
+
+.messageAttachmentChip {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+  white-space: nowrap;
+}
+
+/* ============================ Composer ============================ */
+.composer {
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 48rem;
+  margin: 0.25rem auto 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem 0.625rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-base);
+}
+
+.composer:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-brand);
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.input {
+  width: 100%;
+  min-height: 28px;
+  max-height: 160px;
+  padding: 0.25rem 0.4rem;
+  background: transparent;
+  border: none;
+  color: var(--color-text);
+  font-size: 0.9375rem;
+  font-family: inherit;
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--color-dim);
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.composerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.composerLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.attachButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.attachButton:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.attachButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.attachButton svg {
+  width: 19px;
+  height: 19px;
+}
+
+.attachSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Mode selector — segmented pill in the composer bar */
+.modeSelect {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+}
+
+.modeBtn {
+  padding: 0.25rem 0.7rem;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.modeBtn:hover {
+  color: var(--color-text);
+}
+
+.modeBtnActive {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: default;
+}
+
+.modeBtnActive:hover {
+  color: var(--color-on-primary);
+}
+
+.sendButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: none;
+  color: var(--color-on-primary);
+  flex-shrink: 0;
+  transition: background var(--transition-fast), opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.sendButton:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.sendButton:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.sendButton:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.sendButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Pending attachment chips (inside composer, above textarea) */
 .attachmentBar {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
-  padding: 0.5rem 0 0;
-  flex-shrink: 0;
 }
 
 .attachmentChip {
@@ -233,11 +487,11 @@
   align-items: center;
   gap: 0.375rem;
   padding: 0.25rem 0.5rem;
-  background: var(--color-surface, #1a1a2e);
-  border: 1px solid var(--color-border, #2a2a4a);
-  border-radius: 8px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   font-size: 0.75rem;
-  color: var(--color-text, #e0e0e0);
+  color: var(--color-text);
   max-width: 220px;
 }
 
@@ -254,233 +508,19 @@
 .attachmentRemove {
   background: none;
   border: none;
-  color: var(--color-text-secondary, #a0a0b0);
-  cursor: pointer;
+  color: var(--color-text-secondary);
   font-size: 1rem;
   line-height: 1;
   padding: 0 0.125rem;
 }
 
 .attachmentRemove:hover {
-  color: #f44336;
+  color: var(--color-error-text);
 }
 
-/* Attachments shown on a sent user message bubble */
-.messageAttachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-top: 0.375rem;
-}
-
-.messageAttachmentChip {
-  font-size: 0.6875rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.15);
-  white-space: nowrap;
-}
-
-/* Input area */
-.inputArea {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  padding: 0.75rem 0;
-  border-top: 1px solid var(--color-border, #2a2a4a);
-  flex-shrink: 0;
-}
-
-.hiddenFileInput {
-  display: none;
-}
-
-.attachButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: transparent;
-  border: 1px solid var(--color-border, #2a2a4a);
-  color: var(--color-text-secondary, #a0a0b0);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.attachButton:hover:not(:disabled) {
-  background: var(--color-hover, rgba(255, 255, 255, 0.06));
-  color: var(--color-text, #e0e0e0);
-  border-color: var(--color-border-strong, #3a3a5a);
-}
-
-.attachButton:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.attachButton svg {
-  width: 20px;
-  height: 20px;
-}
-
-.attachSpinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--color-border, #2a2a4a);
-  border-top-color: var(--color-primary, #6c63ff);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.inputWrapper {
-  flex: 1;
-  position: relative;
-}
-
-.input {
-  width: 100%;
-  min-height: 44px;
-  max-height: 160px;
-  padding: 0.625rem 1rem;
-  background: var(--color-surface, #1a1a2e);
-  border: 1px solid var(--color-border, #2a2a4a);
-  border-radius: 22px;
-  color: var(--color-text, #e0e0e0);
-  font-size: 0.9375rem;
-  font-family: inherit;
-  line-height: 1.5;
-  resize: none;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.input:focus {
-  border-color: var(--color-primary, #6c63ff);
-}
-
-.input::placeholder {
-  color: var(--color-text-secondary, #a0a0b0);
-}
-
-.input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.sendButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--color-primary, #6c63ff);
-  border: none;
-  color: #ffffff;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s ease, opacity 0.15s ease;
-}
-
-.sendButton:hover:not(:disabled) {
-  background: #5a52e0;
-}
-
-.sendButton:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.sendButton svg {
-  width: 20px;
-  height: 20px;
-}
-
-/* Header with status */
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--color-border, #2a2a4a);
-  margin-bottom: 0.5rem;
-  flex-shrink: 0;
-}
-
-.headerTitle {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--color-text, #e0e0e0);
-}
-
-.headerRight {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.headerStatus {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.75rem;
-  color: var(--color-text-secondary, #a0a0b0);
-}
-
-/* Agent mode toggle — compact pill in the chat header */
-.modeToggle {
-  display: flex;
-  border: 1px solid var(--color-border, #2a2a4a);
-  border-radius: 6px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.modeBtn {
-  padding: 0.25rem 0.625rem;
-  background: transparent;
-  border: none;
-  color: var(--color-text-secondary, #a0a0b0);
-  font-size: 0.75rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  line-height: 1.4;
-}
-
-.modeBtn:hover {
-  background: var(--color-hover, rgba(255,255,255,0.06));
-  color: var(--color-text, #e0e0e0);
-}
-
-.modeBtnActive {
-  background: var(--color-primary, #6c63ff);
-  color: #fff;
-  cursor: default;
-}
-
-.modeBtnActive:hover {
-  background: var(--color-primary, #6c63ff);
-  color: #fff;
-}
-
-/* Desktop layout: >= 768px */
-@media (min-width: 768px) {
-  .message {
-    max-width: 65%;
-  }
-}
-
-/* Large screens */
-@media (min-width: 1440px) {
-  .message {
-    max-width: 55%;
+/* Responsive widths */
+@media (max-width: 600px) {
+  .messageUser {
+    max-width: 90%;
   }
 }
