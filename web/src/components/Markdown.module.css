@@ -1,0 +1,60 @@
+/* Markdown wrapper + fenced-code-block chrome.
+   Element-level typography and highlight.js token colours live in index.css
+   under `.md` so react-markdown's plain output picks them up. */
+
+.body {
+  /* The .md global class supplies typography; this is a positioning hook. */
+  width: 100%;
+}
+
+.codeWrap {
+  margin: 0.8em 0;
+  border: 1px solid var(--color-code-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-code-bg);
+}
+
+.codeBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.4rem 0.3rem 0.85rem;
+  background: var(--color-bg-elevated);
+  border-bottom: 1px solid var(--color-code-border);
+}
+
+.codeLang {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+}
+
+.copyBtn {
+  padding: 0.2rem 0.55rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.copyBtn:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+/* Drop the standalone <pre> margin — the wrapper owns spacing now. */
+.codeWrap pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}

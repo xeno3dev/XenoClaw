@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useWebSocket, type ConnectionStatus, type WebSocketMessage } from '../hooks/useWebSocket';
+import { Markdown } from '../components/Markdown';
+import { NEW_CHAT_EVENT } from '../components/Layout/Layout';
 import styles from './Chat.module.css';
 
 /** Agent operating modes, mirroring Claude Code / OpenCode. */
@@ -120,6 +122,20 @@ export function Chat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // "New chat" (sidebar) clears the thread and mints a fresh session id.
+  useEffect(() => {
+    const reset = () => {
+      streamingMessageRef.current = null;
+      sessionIdRef.current = newSessionId();
+      setMessages([]);
+      setAttachments([]);
+      setInputValue('');
+      setIsWaitingForResponse(false);
+    };
+    window.addEventListener(NEW_CHAT_EVENT, reset);
+    return () => window.removeEventListener(NEW_CHAT_EVENT, reset);
+  }, []);
 
   // Handle incoming WebSocket messages
   const handleWsMessage = useCallback((wsMessage: WebSocketMessage) => {
@@ -358,36 +374,15 @@ export function Chat() {
 
   return (
     <div className={styles.container}>
-      {/* Header with mode toggle and connection status */}
+      {/* Header with connection status */}
       <div className={styles.header}>
         <h1 className={styles.headerTitle}>Chat</h1>
-        <div className={styles.headerRight}>
-          <div className={styles.modeToggle} role="group" aria-label="Agent mode">
-            {AGENT_MODES.map((m) => (
-              <button
-                key={m.id}
-                className={`${styles.modeBtn} ${agentMode === m.id ? styles.modeBtnActive : ''}`}
-                onClick={() => void setMode(m.id)}
-                aria-pressed={agentMode === m.id}
-                title={
-                  m.id === 'plan'
-                    ? 'Plan mode: read-only — investigates and proposes, no writes'
-                    : m.id === 'code'
-                      ? 'Code mode: full dev tools including file writes and shell'
-                      : 'General mode: base tools only'
-                }
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-          <div className={styles.headerStatus}>
-            <span
-              className={`${styles.statusDot} ${getStatusDotClass(status)}`}
-              aria-label={`Connection status: ${status}`}
-            />
-            <span>{getStatusLabel(status)}</span>
-          </div>
+        <div className={styles.headerStatus}>
+          <span
+            className={`${styles.statusDot} ${getStatusDotClass(status)}`}
+            aria-label={`Connection status: ${status}`}
+          />
+          <span>{getStatusLabel(status)}</span>
         </div>
       </div>
 
@@ -417,62 +412,52 @@ export function Chat() {
         )}
 
         {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`${styles.message} ${getMessageClass(msg.role)}`}
-          >
-            {msg.content && (
-              <span className={styles.messageContent}>{msg.content}</span>
+          <div key={msg.id} className={`${styles.row} ${getRowClass(msg.role)}`}>
+            {msg.role !== 'user' && (
+              <span className={styles.avatar} aria-hidden="true">
+                {msg.role === 'error' ? '!' : renderAssistantMark()}
+              </span>
             )}
-            {msg.attachments && msg.attachments.length > 0 && (
-              <div className={styles.messageAttachments}>
-                {msg.attachments.map((path) => (
-                  <span key={path} className={styles.messageAttachmentChip}>
-                    {path.split('/').pop()}
-                  </span>
+            <div className={`${styles.message} ${getMessageClass(msg.role)}`}>
+              {msg.content &&
+                (msg.role === 'user' ? (
+                  <span className={styles.messageContent}>{msg.content}</span>
+                ) : (
+                  <Markdown content={msg.content} />
                 ))}
-              </div>
-            )}
-            {msg.diffImage && renderDiffImage(msg.diffImage)}
-            <span className={styles.messageTimestamp}>
-              {formatTimestamp(msg.timestamp)}
-            </span>
+              {msg.streaming && <span className={styles.caret} aria-hidden="true" />}
+              {msg.attachments && msg.attachments.length > 0 && (
+                <div className={styles.messageAttachments}>
+                  {msg.attachments.map((path) => (
+                    <span key={path} className={styles.messageAttachmentChip}>
+                      {path.split('/').pop()}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {msg.diffImage && renderDiffImage(msg.diffImage)}
+              <span className={styles.messageTimestamp}>
+                {formatTimestamp(msg.timestamp)}
+              </span>
+            </div>
           </div>
         ))}
 
         {/* Loading indicator while waiting for response */}
         {isWaitingForResponse && !streamingMessageRef.current && (
-          <div className={styles.typingIndicator} aria-label="Assistant is typing">
-            <span className={styles.typingDot} />
-            <span className={styles.typingDot} />
-            <span className={styles.typingDot} />
+          <div className={`${styles.row} ${styles.rowAssistant}`}>
+            <span className={styles.avatar} aria-hidden="true">{renderAssistantMark()}</span>
+            <div className={styles.typingIndicator} aria-label="Assistant is typing">
+              <span className={styles.typingDot} />
+              <span className={styles.typingDot} />
+              <span className={styles.typingDot} />
+            </div>
           </div>
         )}
       </div>
 
-      {/* Pending attachment chips */}
-      {attachments.length > 0 && (
-        <div className={styles.attachmentBar}>
-          {attachments.map((a) => (
-            <span key={a.path} className={styles.attachmentChip}>
-              <span className={styles.attachmentIcon} aria-hidden="true">
-                {a.isImage ? '🖼' : '📄'}
-              </span>
-              <span className={styles.attachmentName}>{a.name}</span>
-              <button
-                className={styles.attachmentRemove}
-                onClick={() => removeAttachment(a.path)}
-                aria-label={`Remove ${a.name}`}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Input area */}
-      <div className={styles.inputArea}>
+      {/* Composer */}
+      <div className={styles.composer}>
         <input
           ref={fileInputRef}
           type="file"
@@ -482,52 +467,112 @@ export function Chat() {
           aria-hidden="true"
           tabIndex={-1}
         />
-        <button
-          className={styles.attachButton}
-          onClick={() => fileInputRef.current?.click()}
-          disabled={status !== 'connected' || uploading}
-          aria-label="Attach files"
-          title="Attach files or images"
-        >
-          {uploading ? (
-            <span className={styles.attachSpinner} aria-hidden="true" />
-          ) : (
+
+        {/* Pending attachment chips */}
+        {attachments.length > 0 && (
+          <div className={styles.attachmentBar}>
+            {attachments.map((a) => (
+              <span key={a.path} className={styles.attachmentChip}>
+                <span className={styles.attachmentIcon} aria-hidden="true">
+                  {a.isImage ? '🖼' : '📄'}
+                </span>
+                <span className={styles.attachmentName}>{a.name}</span>
+                <button
+                  className={styles.attachmentRemove}
+                  onClick={() => removeAttachment(a.path)}
+                  aria-label={`Remove ${a.name}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <textarea
+          ref={textareaRef}
+          className={styles.input}
+          value={inputValue}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            status === 'connected'
+              ? 'Reply to XenoClaw…  (Enter to send, Shift+Enter for newline)'
+              : 'Waiting for connection...'
+          }
+          disabled={status !== 'connected'}
+          rows={1}
+          aria-label="Message input"
+        />
+
+        <div className={styles.composerBar}>
+          <div className={styles.composerLeft}>
+            <button
+              className={styles.attachButton}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={status !== 'connected' || uploading}
+              aria-label="Attach files"
+              title="Attach files or images"
+            >
+              {uploading ? (
+                <span className={styles.attachSpinner} aria-hidden="true" />
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              )}
+            </button>
+
+            <div className={styles.modeSelect} role="group" aria-label="Agent mode">
+              {AGENT_MODES.map((m) => (
+                <button
+                  key={m.id}
+                  className={`${styles.modeBtn} ${agentMode === m.id ? styles.modeBtnActive : ''}`}
+                  onClick={() => void setMode(m.id)}
+                  aria-pressed={agentMode === m.id}
+                  title={
+                    m.id === 'plan'
+                      ? 'Plan mode: read-only — investigates and proposes, no writes'
+                      : m.id === 'code'
+                        ? 'Code mode: full dev tools including file writes and shell'
+                        : 'General mode: base tools only'
+                  }
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            className={styles.sendButton}
+            onClick={sendMessage}
+            disabled={!canSend}
+            aria-label="Send message"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>
-          )}
-        </button>
-        <div className={styles.inputWrapper}>
-          <textarea
-            ref={textareaRef}
-            className={styles.input}
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              status === 'connected'
-                ? 'Type a message... (Enter to send, Shift+Enter for newline)'
-                : 'Waiting for connection...'
-            }
-            disabled={status !== 'connected'}
-            rows={1}
-            aria-label="Message input"
-          />
+          </button>
         </div>
-        <button
-          className={styles.sendButton}
-          onClick={sendMessage}
-          disabled={!canSend}
-          aria-label="Send message"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
-        </button>
       </div>
     </div>
   );
+}
+
+/** Small assistant glyph used as the message avatar. */
+function renderAssistantMark() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l2.1 4.9L19 10l-4.9 2.1L12 17l-2.1-4.9L5 10l4.9-2.1z" />
+    </svg>
+  );
+}
+
+/** Get CSS class for the message row (alignment) based on role. */
+function getRowClass(role: ChatMessage['role']): string {
+  return role === 'user' ? styles.rowUser : styles.rowAssistant;
 }
 
 /** Get CSS class for the status dot based on connection status */

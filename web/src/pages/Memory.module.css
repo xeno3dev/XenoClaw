@@ -47,10 +47,10 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
-  color: #fca5a5;
+  background: var(--color-error-soft);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-md);
+  color: var(--color-error-text);
   font-size: 0.875rem;
 }
 
@@ -127,25 +127,25 @@
 
 .input {
   padding: 0.5rem 0.75rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--color-border, #2a2a4a);
-  border-radius: 6px;
-  color: var(--color-text, #e0e0e0);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
   font-size: 0.875rem;
   outline: none;
   transition: border-color 0.15s;
 }
 
 .input:focus {
-  border-color: var(--color-primary, #6c63ff);
+  border-color: var(--color-primary);
 }
 
 .textarea {
   padding: 0.5rem 0.75rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--color-border, #2a2a4a);
-  border-radius: 6px;
-  color: var(--color-text, #e0e0e0);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
   font-size: 0.875rem;
   outline: none;
   resize: vertical;
@@ -229,8 +229,8 @@
   border-radius: 10px;
   font-size: 0.6875rem;
   font-weight: 500;
-  background: rgba(108, 99, 255, 0.1);
-  color: var(--color-primary, #6c63ff);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-bright);
 }
 
 .deleteButton {
@@ -254,7 +254,7 @@
 
 .deleteButton:hover {
   opacity: 1;
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.5);
-  color: #fca5a5;
+  background: var(--color-error-soft);
+  border-color: var(--color-error-border);
+  color: var(--color-error-text);
 }
