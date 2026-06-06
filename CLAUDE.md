@@ -68,7 +68,13 @@ xenoclaw try --restore            # swap the backed-up binary back + restart
 # Build & install the desktop app for the current user
 xenoclaw install desktop          # build installers + install (AppImage→~/.local, or .deb)
 xenoclaw install desktop --build-only   # build only, print the bundle path
+xenoclaw install desktop --clone --ref main  # no checkout? fetch source via git first
 ```
+
+When run outside a checkout (e.g. from a prebuilt binary), `install desktop`
+clones the repo into `~/.xenoclaw/desktop-src` and builds from there (`--ref`
+picks the branch/tag/PR, `--repo` the remote, `--clone` forces a fresh clone
+even when a local checkout exists).
 
 `xenoclaw try` checks the ref out into a dedicated git worktree under
 `~/.xenoclaw/try-worktrees/<label>/` (your current checkout is never touched)
@@ -120,7 +126,11 @@ CLI shortcuts (wrap the npm flow; `crates/xenoclaw/src/desktop.rs`):
 - `xenoclaw install desktop` — runs the whole pipeline (npm install → icons →
   sidecar → `tauri build`) and installs the result for the current user
   (AppImage → `~/.local` with a `.desktop` launcher, or a `.deb` via dpkg).
-  `--build-only` stops after building; `--dir` points at the repo/web dir.
+  `--build-only` stops after building; `--dir` points at the repo/web dir. With
+  no local checkout it fetches the source via git into `~/.xenoclaw/desktop-src`
+  (`--ref`/`--repo`/`--clone`), so prebuilt-binary users can build too. The
+  pipeline pre-checks `node_modules`/`target` ownership and bails with a fix
+  hint if a prior `sudo` run left them root-owned.
 - `xenoclaw try <ref> --desktop` — builds the desktop app from a branch/PR
   worktree (`--exec` → `tauri dev`, `--no-run` → frontend + sidecar only).
 

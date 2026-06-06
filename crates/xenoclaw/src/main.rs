@@ -165,14 +165,30 @@ pub struct InstallArgs {
 #[derive(Subcommand)]
 pub enum InstallCommand {
     /// Build and install the desktop app for the current user.
+    ///
+    /// With no local checkout (e.g. you installed only the prebuilt binary),
+    /// the source is fetched via git into ~/.xenoclaw/desktop-src.
     Desktop {
-        /// Path to the repo root or its web/ dir (default: auto-detect from CWD).
+        /// Path to the repo root or its web/ dir (default: auto-detect from CWD,
+        /// else fetch via git).
         #[arg(long)]
         dir: Option<PathBuf>,
 
         /// Build the installers but don't install them — just print their path.
         #[arg(long)]
         build_only: bool,
+
+        /// Branch, tag, or PR number to build when fetching via git.
+        #[arg(long, default_value = "main")]
+        r#ref: String,
+
+        /// Git repo URL to clone from when no local checkout is found.
+        #[arg(long, default_value = desktop::DEFAULT_REPO_URL)]
+        repo: String,
+
+        /// Force a fresh git clone even if a local checkout is present.
+        #[arg(long)]
+        clone: bool,
     },
 }
 
@@ -251,9 +267,13 @@ async fn main() -> Result<()> {
             desktop,
         ),
         Command::Install(args) => match args.command {
-            InstallCommand::Desktop { dir, build_only } => {
-                desktop::run_install(dir, build_only)
-            }
+            InstallCommand::Desktop {
+                dir,
+                build_only,
+                r#ref,
+                repo,
+                clone,
+            } => desktop::run_install(dir, build_only, &r#ref, &repo, clone),
         },
     }
 }

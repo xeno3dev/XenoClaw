@@ -30,9 +30,18 @@ pub enum DesktopMode {
     FrontendOnly,
 }
 
+/// Default git remote to fetch the source from when there's no local checkout.
+pub const DEFAULT_REPO_URL: &str = "https://github.com/xeno3dev/xenoclaw";
+
 /// Entry point for `xenoclaw install desktop`.
-pub fn run_install(dir: Option<PathBuf>, build_only: bool) -> Result<()> {
-    let web_dir = find_web_dir(dir.as_deref())?;
+pub fn run_install(
+    dir: Option<PathBuf>,
+    build_only: bool,
+    git_ref: &str,
+    repo: &str,
+    force_clone: bool,
+) -> Result<()> {
+    let web_dir = resolve_source(dir.as_deref(), git_ref, repo, force_clone)?;
     let bundle = build_desktop(&web_dir, DesktopMode::Bundle)?
         .expect("Bundle mode returns the bundle dir");
 
@@ -43,18 +52,93 @@ pub fn run_install(dir: Option<PathBuf>, build_only: bool) -> Result<()> {
     install_from_bundle(&bundle, &web_dir)
 }
 
+/// Decide where to build from:
+///   1. `--dir` if given,
+///   2. a local checkout discovered by walking up from CWD (unless `--clone`),
+///   3. otherwise fetch the source via git into `~/.xenoclaw/desktop-src`.
+///
+/// Step 3 is what lets users who installed only the prebuilt `xenoclaw` binary
+/// (no source tree on disk) still build the desktop app.
+fn resolve_source(
+    dir: Option<&Path>,
+    git_ref: &str,
+    repo: &str,
+    force_clone: bool,
+) -> Result<PathBuf> {
+    if let Some(d) = dir {
+        return find_web_dir(Some(d));
+    }
+    if !force_clone {
+        if let Ok(web) = find_web_dir(None) {
+            println!("→ using local checkout at {}", web.display());
+            return Ok(web);
+        }
+    }
+    let src = clone_or_update(repo, git_ref)?;
+    Ok(src.join("web"))
+}
+
+/// Clone (or fetch + checkout) the repo into `~/.xenoclaw/desktop-src` and
+/// return its path. The cache is reused across runs so re-installs are cheap.
+fn clone_or_update(repo: &str, git_ref: &str) -> Result<PathBuf> {
+    if which("git").is_none() {
+        bail!("`git` not found on PATH — install git, or pass --dir pointing at a checkout");
+    }
+    let dir = crate::xenoclaw_home().join("desktop-src");
+
+    if dir.join(".git").exists() {
+        println!("→ updating XenoClaw source in {}", dir.display());
+        let d = dir.to_string_lossy().to_string();
+        let _ = git_ok(&["-C", &d, "fetch", "--tags", "--prune", "origin"]);
+    } else {
+        if dir.exists() {
+            fs::remove_dir_all(&dir)
+                .with_context(|| format!("failed to clear stale {}", dir.display()))?;
+        }
+        if let Some(parent) = dir.parent() {
+            fs::create_dir_all(parent).ok();
+        }
+        println!("→ cloning {repo} into {}", dir.display());
+        git(&["clone", repo, &dir.to_string_lossy()])?;
+    }
+
+    checkout_ref(&dir, git_ref)?;
+    Ok(dir)
+}
+
+/// Check out a branch, tag, or PR number (all-digits → `pull/N/head`) in `dir`.
+fn checkout_ref(dir: &Path, git_ref: &str) -> Result<()> {
+    let d = dir.to_string_lossy().to_string();
+    let is_pr = !git_ref.is_empty() && git_ref.chars().all(|c| c.is_ascii_digit());
+
+    println!("→ checking out {git_ref}");
+    if is_pr {
+        let refspec = format!("pull/{git_ref}/head");
+        git(&["-C", &d, "fetch", "origin", &refspec])
+            .with_context(|| format!("failed to fetch PR #{git_ref}"))?;
+        git(&["-C", &d, "checkout", "--force", "FETCH_HEAD"])?;
+    } else if git_ok(&["-C", &d, "fetch", "origin", git_ref]) {
+        // Prefer the just-fetched commit so branches track origin.
+        git(&["-C", &d, "checkout", "--force", "FETCH_HEAD"])?;
+    } else {
+        git(&["-C", &d, "checkout", "--force", git_ref])
+            .with_context(|| format!("ref '{git_ref}' not found on {}", dir.display()))?;
+    }
+    Ok(())
+}
+
 /// Shared build pipeline. Returns the bundle dir for [`DesktopMode::Bundle`].
 pub fn build_desktop(web_dir: &Path, mode: DesktopMode) -> Result<Option<PathBuf>> {
     if which("npm").is_none() {
         bail!("`npm` not found on PATH — install Node.js (18+) to build the desktop app");
     }
     warn_if_root();
+    precheck_ownership(web_dir)?;
     println!("→ desktop frontend at {}", web_dir.display());
 
     // JS deps. Prefer `npm ci` (reproducible) when a lockfile is present, but
     // fall back to `npm install` if the lockfile is out of sync.
     println!("→ installing frontend dependencies…");
-    ensure_node_modules_writable(web_dir)?;
     if web_dir.join("package-lock.json").exists() {
         if npm(web_dir, &["ci"]).is_err() {
             println!("  (npm ci failed — retrying with npm install)");
@@ -265,34 +349,63 @@ fn warn_if_root() {
     }
 }
 
-/// Bail early with actionable guidance if `node_modules` exists but is owned by
-/// another user (typically a leftover from a previous `sudo` run) — otherwise
-/// npm fails deep in its output with a cryptic EACCES.
-fn ensure_node_modules_writable(web_dir: &Path) -> Result<()> {
-    let node_modules = web_dir.join("node_modules");
-    if !node_modules.exists() {
-        return Ok(());
-    }
+/// Bail early with actionable guidance if a build dir (`node_modules`,
+/// `target`, `src-tauri/target`) exists but is owned by another user — typically
+/// a leftover from a previous `sudo`/root run — otherwise npm or cargo fail deep
+/// in their output with a cryptic EACCES.
+fn precheck_ownership(web_dir: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         let euid = unsafe { libc::geteuid() };
         if euid != 0 {
-            if let Ok(md) = fs::metadata(&node_modules) {
-                if md.uid() != euid {
-                    bail!(
-                        "{} is owned by uid {} but you are uid {} — npm can't modify it \
-                         (usually a leftover from a previous `sudo` run).\n\
-                         Fix it, then re-run this command WITHOUT sudo:\n  \
-                         sudo rm -rf {:?}",
-                        node_modules.display(),
-                        md.uid(),
-                        euid,
-                        node_modules
-                    );
+            let repo_root = web_dir.parent().unwrap_or(web_dir).to_path_buf();
+            let candidates = [
+                web_dir.join("node_modules"),
+                repo_root.join("target"),
+                web_dir.join("src-tauri").join("target"),
+            ];
+            for path in candidates {
+                if let Ok(md) = fs::metadata(&path) {
+                    if md.uid() != euid {
+                        bail!(
+                            "{} is owned by uid {}, but you are uid {} — this is left over from a \
+                             previous sudo/root run and will block npm/cargo.\n\
+                             Fix the checkout's ownership, then re-run WITHOUT sudo:\n  \
+                             sudo chown -R \"$(id -un):$(id -gn)\" {:?}\n\
+                             (or run `xenoclaw install desktop --clone` to build from a fresh \
+                             user-owned clone instead)",
+                            path.display(),
+                            md.uid(),
+                            euid,
+                            repo_root
+                        );
+                    }
                 }
             }
         }
     }
+    let _ = web_dir;
     Ok(())
+}
+
+/// Run `git <args>`, inheriting stdio; bail on failure.
+fn git(args: &[&str]) -> Result<()> {
+    let status = Command::new("git")
+        .args(args)
+        .status()
+        .context("failed to run git")?;
+    if !status.success() {
+        bail!("`git {}` failed", args.join(" "));
+    }
+    Ok(())
+}
+
+/// Run `git <args>`, returning whether it succeeded (no bail).
+fn git_ok(args: &[&str]) -> bool {
+    Command::new("git")
+        .args(args)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }

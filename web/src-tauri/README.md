@@ -119,7 +119,13 @@ the steps by hand:
 # (AppImage → ~/.local with a .desktop launcher, or a .deb via dpkg)
 xenoclaw install desktop
 xenoclaw install desktop --build-only        # build only; print the bundle path
-xenoclaw install desktop --dir /path/to/repo # if run outside the checkout
+xenoclaw install desktop --dir /path/to/repo # point at a specific checkout
+
+# No source on disk (installed only the prebuilt binary)? It clones via git
+# into ~/.xenoclaw/desktop-src and builds from there:
+xenoclaw install desktop --ref main          # branch/tag/PR to build
+xenoclaw install desktop --clone             # force a fresh clone even in a checkout
+xenoclaw install desktop --repo <url>        # use a fork
 
 # Build the desktop app from a branch/PR worktree (your checkout is untouched)
 xenoclaw try my-branch --desktop             # build installers
@@ -129,7 +135,10 @@ xenoclaw try my-branch --desktop --no-run    # frontend + sidecar only
 
 Both run `npm install → icons:generate → sidecar:build → tauri build` for you,
 so the Tauri prerequisites (Node, Rust, and the system WebKit/GTK libs) still
-need to be installed.
+need to be installed. **Run them as your normal user, not `sudo`** — only the
+final `.deb` install elevates (and the command does that itself). A prior `sudo`
+run leaves root-owned `node_modules`/`target`; the command now detects that and
+prints the `chown`/`--clone` fix instead of a cryptic EACCES.
 
 ### Arch Linux (AUR)
 
