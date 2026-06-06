@@ -48,11 +48,13 @@ pub fn build_desktop(web_dir: &Path, mode: DesktopMode) -> Result<Option<PathBuf
     if which("npm").is_none() {
         bail!("`npm` not found on PATH — install Node.js (18+) to build the desktop app");
     }
+    warn_if_root();
     println!("→ desktop frontend at {}", web_dir.display());
 
     // JS deps. Prefer `npm ci` (reproducible) when a lockfile is present, but
     // fall back to `npm install` if the lockfile is out of sync.
     println!("→ installing frontend dependencies…");
+    ensure_node_modules_writable(web_dir)?;
     if web_dir.join("package-lock.json").exists() {
         if npm(web_dir, &["ci"]).is_err() {
             println!("  (npm ci failed — retrying with npm install)");
@@ -247,4 +249,50 @@ fn which(bin: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Warn when running as root — npm/cargo would create root-owned files in the
+/// user's checkout. Only the final `.deb` install needs elevation, and the
+/// command self-elevates for just that step.
+fn warn_if_root() {
+    #[cfg(unix)]
+    if unsafe { libc::geteuid() } == 0 {
+        println!(
+            "⚠ running as root — npm/cargo will create root-owned files in your checkout. \
+             If this isn't a root-only machine, run this command as your normal user instead \
+             (it elevates by itself only for the final .deb install)."
+        );
+    }
+}
+
+/// Bail early with actionable guidance if `node_modules` exists but is owned by
+/// another user (typically a leftover from a previous `sudo` run) — otherwise
+/// npm fails deep in its output with a cryptic EACCES.
+fn ensure_node_modules_writable(web_dir: &Path) -> Result<()> {
+    let node_modules = web_dir.join("node_modules");
+    if !node_modules.exists() {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let euid = unsafe { libc::geteuid() };
+        if euid != 0 {
+            if let Ok(md) = fs::metadata(&node_modules) {
+                if md.uid() != euid {
+                    bail!(
+                        "{} is owned by uid {} but you are uid {} — npm can't modify it \
+                         (usually a leftover from a previous `sudo` run).\n\
+                         Fix it, then re-run this command WITHOUT sudo:\n  \
+                         sudo rm -rf {:?}",
+                        node_modules.display(),
+                        md.uid(),
+                        euid,
+                        node_modules
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
