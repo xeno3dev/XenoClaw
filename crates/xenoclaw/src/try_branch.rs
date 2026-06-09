@@ -6,7 +6,9 @@
 //!   2. Check the resolved commit out into a dedicated git worktree under
 //!      `~/.xenoclaw/try-worktrees/<label>/` so the current checkout (and any
 //!      in-progress work) is never touched. Worktrees are reused across runs
-//!      so cargo's incremental cache survives.
+//!      so cargo's incremental cache survives. When not run from a checkout
+//!      (e.g. a prebuilt-binary install), a managed base clone is created at
+//!      `~/.xenoclaw/try-src` and the worktree is added from there.
 //!   3. `cargo build` the binary inside that worktree.
 //!   4. Run it. Two modes:
 //!      - **service (default):** install the fresh binary over the path the
@@ -62,9 +64,7 @@ pub fn run_try(
         bail!("no branch name or PR number given (usage: xenoclaw try <branch|PR#>)");
     }
 
-    let repo_root = repo_root().context(
-        "not inside a XenoClaw git checkout — run this from the repository (or a worktree of it)",
-    )?;
+    let repo_root = resolve_repo_root()?;
 
     // Resolve the ref into a concrete commit + a filesystem-safe label.
     let resolved = resolve_ref(&repo_root, reference)?;
@@ -307,6 +307,44 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
 struct Resolved {
     commit: String,
     label: String,
+}
+
+/// Resolve the repo to create worktrees from: the current checkout when we're
+/// in one, otherwise a managed base clone under `~/.xenoclaw/try-src` — so users
+/// who installed only the prebuilt binary can still use `try`.
+fn resolve_repo_root() -> Result<PathBuf> {
+    if let Ok(root) = repo_root() {
+        return Ok(root);
+    }
+    println!("→ not inside a checkout — using a managed clone for worktrees");
+    ensure_base_clone(crate::desktop::DEFAULT_REPO_URL)
+}
+
+/// Ensure a base clone exists at `~/.xenoclaw/try-src` with `origin` configured,
+/// so `git worktree add` and ref/PR fetches work. Reused across runs.
+fn ensure_base_clone(repo: &str) -> Result<PathBuf> {
+    let dir = crate::xenoclaw_home().join("try-src");
+    if dir.join(".git").exists() {
+        // Refresh remotes; ignore transient failures so offline reuse still works.
+        let _ = git(&dir, &["fetch", "--prune", "origin"]);
+        return Ok(dir);
+    }
+    if dir.exists() {
+        fs::remove_dir_all(&dir)
+            .with_context(|| format!("failed to clear stale {}", dir.display()))?;
+    }
+    if let Some(parent) = dir.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    println!("→ cloning {repo} into {} (first run)…", dir.display());
+    let status = Command::new("git")
+        .args(["clone", repo, &dir.to_string_lossy()])
+        .status()
+        .context("failed to run git (is git installed?)")?;
+    if !status.success() {
+        bail!("git clone of {repo} failed — check the URL/network, or pass a checkout");
+    }
+    Ok(dir)
 }
 
 /// Return the top level of the git repo containing the current directory.

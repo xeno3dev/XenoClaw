@@ -79,7 +79,9 @@ even when a local checkout exists).
 `xenoclaw try` checks the ref out into a dedicated git worktree under
 `~/.xenoclaw/try-worktrees/<label>/` (your current checkout is never touched)
 and builds the binary there. Worktrees are reused across runs so cargo's
-incremental cache survives. Two run modes:
+incremental cache survives. When run outside a checkout (e.g. from a prebuilt
+binary), it first clones a managed base repo into `~/.xenoclaw/try-src` and
+adds the worktree from there. Two run modes:
 
 - **Default (service):** installs the fresh binary over `/opt/xenoclaw/bin/xenoclaw`
   (the path `deploy/xenoclaw-agent.service` runs) and restarts `xenoclaw-agent`,
