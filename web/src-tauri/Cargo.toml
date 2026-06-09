@@ -1,0 +1,48 @@
+[package]
+name = "xenoclaw-desktop"
+version = "0.1.0"
+description = "XenoClaw Desktop — cross-platform client for the XenoClaw agent runtime"
+authors = ["XenoClaw"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/xeno3dev/xenoclaw"
+default-run = "xenoclaw-desktop"
+
+# Independent workspace root. The empty table decouples this crate from the
+# backend Cargo workspace at the repo root, so the heavy Tauri dependency tree
+# never enters `cargo build --workspace` for crates/*. The desktop app is built
+# separately via the Tauri CLI.
+[workspace]
+
+[lib]
+name = "xenoclaw_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tray icon + PNG decoding for the bundled icon set.
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# Spawn the XenoClaw backend as a managed sidecar (local mode).
+tauri-plugin-shell = "2"
+# Native notifications when a response finishes and the window is unfocused.
+tauri-plugin-notification = "2"
+# Auto-update from a signed release manifest (Windows + Linux).
+tauri-plugin-updater = "2"
+# Remember window size/position across restarts.
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Enabled by `tauri build`; lets the webview load bundled assets in release.
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+# Smaller, faster-to-ship native binaries.
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

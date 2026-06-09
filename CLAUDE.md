@@ -61,13 +61,27 @@ xenoclaw try 42                   # all-digits → PR #42 (fetched via pull/42/h
 xenoclaw try my-branch --release  # release build
 xenoclaw try my-branch --exec     # run in the foreground instead of via systemd
 xenoclaw try my-branch --no-run   # build only, print binary path
+xenoclaw try my-branch --desktop  # build the Tauri desktop app from the ref
+xenoclaw try my-branch --desktop --exec    # …and launch it live (tauri dev)
 xenoclaw try --restore            # swap the backed-up binary back + restart
+
+# Build & install the desktop app for the current user
+xenoclaw install desktop          # build installers + install (AppImage→~/.local, or .deb)
+xenoclaw install desktop --build-only   # build only, print the bundle path
+xenoclaw install desktop --clone --ref main  # no checkout? fetch source via git first
 ```
+
+When run outside a checkout (e.g. from a prebuilt binary), `install desktop`
+clones the repo into `~/.xenoclaw/desktop-src` and builds from there (`--ref`
+picks the branch/tag/PR, `--repo` the remote, `--clone` forces a fresh clone
+even when a local checkout exists).
 
 `xenoclaw try` checks the ref out into a dedicated git worktree under
 `~/.xenoclaw/try-worktrees/<label>/` (your current checkout is never touched)
 and builds the binary there. Worktrees are reused across runs so cargo's
-incremental cache survives. Two run modes:
+incremental cache survives. When run outside a checkout (e.g. from a prebuilt
+binary), it first clones a managed base repo into `~/.xenoclaw/try-src` and
+adds the worktree from there. Two run modes:
 
 - **Default (service):** installs the fresh binary over `/opt/xenoclaw/bin/xenoclaw`
   (the path `deploy/xenoclaw-agent.service` runs) and restarts `xenoclaw-agent`,
@@ -92,6 +106,52 @@ npm run typecheck
 ```
 
 The production binary serves `web/dist/` as a fallback on the same port as the API (default `:3000`). Set `XENOCLAW_WEB_DIR` or configure `[web] dir` in config.toml to override.
+
+### Desktop app (Tauri)
+
+`web/src-tauri/` is a **Tauri 2** desktop shell (Windows + Linux) that reuses the
+same React frontend as the web UI — it is an independent Cargo workspace
+(`[workspace]` table in its `Cargo.toml`), so it is *not* part of `cargo build
+--workspace` for `crates/*`. The frontend detects Tauri at runtime via
+`isTauri()` (`web/src/lib/tauri.ts`); on the plain web build every desktop path
+is inert, so the web UI and TUI are unaffected.
+
+```bash
+cd web
+npm run icons:generate     # generate the app icon set (dependency-free Node script)
+npm run sidecar:build      # build `xenoclaw` and stage it as a Tauri sidecar (local mode)
+npm run tauri:dev          # run the desktop app against the Vite dev server
+npm run tauri:build        # build NSIS / .deb / AppImage installers
+```
+
+CLI shortcuts (wrap the npm flow; `crates/xenoclaw/src/desktop.rs`):
+- `xenoclaw install desktop` — runs the whole pipeline (npm install → icons →
+  sidecar → `tauri build`) and installs the result for the current user
+  (AppImage → `~/.local` with a `.desktop` launcher, or a `.deb` via dpkg).
+  `--build-only` stops after building; `--dir` points at the repo/web dir. With
+  no local checkout it fetches the source via git into `~/.xenoclaw/desktop-src`
+  (`--ref`/`--repo`/`--clone`), so prebuilt-binary users can build too. The
+  pipeline pre-checks `node_modules`/`target` ownership and bails with a fix
+  hint if a prior `sudo` run left them root-owned.
+- `xenoclaw try <ref> --desktop` — builds the desktop app from a branch/PR
+  worktree (`--exec` → `tauri dev`, `--no-run` → frontend + sidecar only).
+
+Key pieces:
+- **Backend URL routing** — `web/src/lib/backend.ts` owns server *profiles*, the
+  active server, theme, and per-server tokens (localStorage). `getApiBase()`
+  returns `''` on the web (relative same-origin URLs, unchanged) or the active
+  profile's URL in the desktop app. `useAuth.apiFetch` and `useWebSocket`
+  resolve through it, so existing `/api/...` callers work in both targets.
+- **Local backend** — `src-tauri/src/sidecar.rs` spawns `xenoclaw serve` bound to
+  `127.0.0.1:<free-port>` using the `XENOCLAW_API_PORT` / `XENOCLAW_API_HOST`
+  env overrides (applied in `xenoclaw serve`); the frontend health-gates the
+  connection.
+- **Native shell** — `src-tauri/src/lib.rs`: custom titlebar (window control
+  commands), tray (show/hide/quit, close-hides-to-tray), native notifications,
+  window-state persistence, and the auto-updater.
+- **Updater** — configured in `tauri.conf.json` (placeholder pubkey from
+  `icons:generate`); the `desktop-build` GitHub workflow signs artifacts and
+  publishes `latest.json` on tag pushes. See `web/src-tauri/README.md`.
 
 ## Config File
 

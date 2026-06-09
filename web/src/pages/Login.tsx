@@ -1,6 +1,9 @@
 import { useState, useCallback, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { isTauri } from '../lib/tauri';
+import { ServerSettings, LocalBackendSettings } from '../components/DesktopSettings/DesktopSettings';
+import { useServers, useConnection } from '../hooks/useServer';
 import styles from './Login.module.css';
 
 type AuthMode = 'password' | 'apikey';
@@ -61,6 +64,7 @@ export function Login() {
 
   return (
     <div className={styles.container}>
+      <div className={styles.stack}>
       <div className={styles.card}>
         <div className={styles.header}>
           <h1 className={styles.brand}>XenoClaw</h1>
@@ -142,6 +146,30 @@ export function Login() {
           </button>
         </form>
       </div>
+      {isTauri() && <DesktopLoginPanel />}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Desktop-only pre-login panel: pick/add the backend to connect to (and start
+ * the local sidecar) before authenticating. On the web build this is omitted —
+ * the page is served by the backend it talks to.
+ */
+function DesktopLoginPanel() {
+  const { active } = useServers();
+  const status = useConnection();
+  return (
+    <div className={styles.desktopPanel}>
+      <div className={styles.connBar}>
+        <span className={`${styles.connDot} ${styles[`conn_${status}`]}`} aria-hidden="true" />
+        <span className={styles.connText}>
+          {active ? active.name : 'No server selected'} · {status}
+        </span>
+      </div>
+      <ServerSettings />
+      <LocalBackendSettings />
     </div>
   );
 }

@@ -7,6 +7,7 @@
 
 mod admin;
 mod cli_health;
+mod desktop;
 mod mcp_client;
 mod mcp_server;
 mod setup;
@@ -143,6 +144,51 @@ enum Command {
         /// Restore the binary that service mode backed up, then restart the service.
         #[arg(long)]
         restore: bool,
+
+        /// Build the Tauri desktop app from the ref instead of the backend
+        /// service. Combine with --exec to run it live (tauri dev), or --no-run
+        /// to build the frontend + sidecar only.
+        #[arg(long)]
+        desktop: bool,
+    },
+    /// Install XenoClaw components (e.g. the desktop app).
+    Install(InstallArgs),
+}
+
+/// Arguments for the `install` subcommand.
+#[derive(Args)]
+pub struct InstallArgs {
+    #[command(subcommand)]
+    pub command: InstallCommand,
+}
+
+#[derive(Subcommand)]
+pub enum InstallCommand {
+    /// Build and install the desktop app for the current user.
+    ///
+    /// With no local checkout (e.g. you installed only the prebuilt binary),
+    /// the source is fetched via git into ~/.xenoclaw/desktop-src.
+    Desktop {
+        /// Path to the repo root or its web/ dir (default: auto-detect from CWD,
+        /// else fetch via git).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+
+        /// Build the installers but don't install them — just print their path.
+        #[arg(long)]
+        build_only: bool,
+
+        /// Branch, tag, or PR number to build when fetching via git.
+        #[arg(long, default_value = "main")]
+        r#ref: String,
+
+        /// Git repo URL to clone from when no local checkout is found.
+        #[arg(long, default_value = desktop::DEFAULT_REPO_URL)]
+        repo: String,
+
+        /// Force a fresh git clone even if a local checkout is present.
+        #[arg(long)]
+        clone: bool,
     },
 }
 
@@ -210,6 +256,7 @@ async fn main() -> Result<()> {
             no_run,
             exec,
             restore,
+            desktop,
         } => try_branch::run_try(
             &config_path,
             reference.as_deref(),
@@ -217,7 +264,17 @@ async fn main() -> Result<()> {
             no_run,
             exec,
             restore,
+            desktop,
         ),
+        Command::Install(args) => match args.command {
+            InstallCommand::Desktop {
+                dir,
+                build_only,
+                r#ref,
+                repo,
+                clone,
+            } => desktop::run_install(dir, build_only, &r#ref, &repo, clone),
+        },
     }
 }
 
@@ -282,7 +339,7 @@ fn resolve_plugins_dir(dir: &Path) -> PathBuf {
 /// Start the agent runtime.
 async fn serve(config_path: PathBuf) -> Result<()> {
     // Load configuration
-    let config = match load_config(&config_path) {
+    let mut config = match load_config(&config_path) {
         Ok(cfg) => cfg,
         Err(ConfigError::FileNotFound(_)) => {
             eprintln!(
@@ -298,6 +355,22 @@ async fn serve(config_path: PathBuf) -> Result<()> {
             std::process::exit(1);
         }
     };
+
+    // Environment overrides for the API bind address. These let a launcher
+    // (e.g. the XenoClaw desktop app starting the backend as a sidecar) bind to
+    // a free port without rewriting config.toml. Only applied when set, so
+    // existing installs are unaffected.
+    if let Ok(host) = std::env::var("XENOCLAW_API_HOST") {
+        if !host.trim().is_empty() {
+            config.api.host = host.trim().to_string();
+        }
+    }
+    if let Ok(port) = std::env::var("XENOCLAW_API_PORT") {
+        match port.trim().parse::<u16>() {
+            Ok(p) => config.api.port = p,
+            Err(_) => eprintln!("Ignoring invalid XENOCLAW_API_PORT='{port}'"),
+        }
+    }
 
     // Initialize tracing with a reload-capable EnvFilter so PUT /api/v1/config
     // can change the log level at runtime without a restart.

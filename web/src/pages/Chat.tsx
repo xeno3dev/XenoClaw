@@ -1,7 +1,17 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useWebSocket, type ConnectionStatus, type WebSocketMessage } from '../hooks/useWebSocket';
+import { Markdown } from '../components/Markdown/Markdown';
+import { isTauri, tryInvoke } from '../lib/tauri';
 import styles from './Chat.module.css';
+
+/** Fire a native notification (desktop only) when the window is unfocused. */
+function notifyDesktop(body: string) {
+  if (!isTauri()) return;
+  if (typeof document !== 'undefined' && document.hasFocus()) return;
+  const text = body.trim().slice(0, 180);
+  void tryInvoke('notify', { title: 'XenoClaw', body: text || 'Response ready' });
+}
 
 /** Agent operating modes, mirroring Claude Code / OpenCode. */
 type AgentMode = 'general' | 'plan' | 'code';
@@ -76,6 +86,8 @@ export function Chat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamingMessageRef = useRef<string | null>(null);
+  // Accumulates the in-flight assistant text for notification previews.
+  const streamingContentRef = useRef<string>('');
   // Stable per-mount session id (UUID — the backend requires it).
   const sessionIdRef = useRef<string>(newSessionId());
 
@@ -129,6 +141,7 @@ export function Chat() {
       case 'token': {
         // Accumulate streamed tokens into the current assistant response
         const token = (payload as { content?: string })?.content ?? String(payload);
+        streamingContentRef.current += token;
         setMessages((prev) => {
           const streamingId = streamingMessageRef.current;
           if (!streamingId) {
@@ -168,6 +181,8 @@ export function Chat() {
         }
         streamingMessageRef.current = null;
         setIsWaitingForResponse(false);
+        notifyDesktop(streamingContentRef.current);
+        streamingContentRef.current = '';
         break;
       }
 
@@ -225,7 +240,9 @@ export function Chat() {
         const content = (payload as { content?: string })?.content ?? String(payload);
         const diffImg = (payload as { diff_image?: string })?.diff_image;
         streamingMessageRef.current = null;
+        streamingContentRef.current = '';
         setIsWaitingForResponse(false);
+        notifyDesktop(content);
         setMessages((prev) => [
           ...prev,
           {
@@ -314,6 +331,7 @@ export function Chat() {
     setInputValue('');
     setAttachments([]);
     setIsWaitingForResponse(true);
+    streamingContentRef.current = '';
 
     // Send via WebSocket.
     send({
@@ -421,9 +439,14 @@ export function Chat() {
             key={msg.id}
             className={`${styles.message} ${getMessageClass(msg.role)}`}
           >
-            {msg.content && (
-              <span className={styles.messageContent}>{msg.content}</span>
-            )}
+            {msg.content &&
+              (msg.role === 'assistant' ? (
+                <div className={styles.messageMarkdown}>
+                  <Markdown content={msg.content} />
+                </div>
+              ) : (
+                <span className={styles.messageContent}>{msg.content}</span>
+              ))}
             {msg.attachments && msg.attachments.length > 0 && (
               <div className={styles.messageAttachments}>
                 {msg.attachments.map((path) => (

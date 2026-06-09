@@ -251,6 +251,34 @@ See [`deploy/INSTALL.md`](deploy/INSTALL.md) for the full installation guide.
 
 ---
 
+## Desktop App
+
+A cross-platform **Tauri 2** desktop client (Windows + Linux), styled after
+Claude Desktop, lives in [`web/src-tauri/`](web/src-tauri/). It reuses the same
+React frontend as the web UI and connects to a XenoClaw backend either remotely
+(VPS) or locally (the backend run as a bundled sidecar).
+
+```bash
+cd web
+npm install
+npm run icons:generate     # one-time: generate the app icon set
+npm run sidecar:build      # optional: stage the backend for local mode
+npm run tauri:dev          # run the desktop app
+npm run tauri:build        # build installers → src-tauri/target/release/bundle/
+```
+
+- **Remote mode (primary):** save named server profiles (URL + token), switch
+  between them from the title bar, with a live connection indicator and auto
+  reconnect.
+- **Local mode:** start/stop the bundled backend on a free port, with streamed
+  logs and a health-gated status.
+- Native chrome: custom titlebar, system tray, native notifications, remembered
+  window geometry, full light/dark theme, and a configured auto-updater.
+
+Full docs: [`web/src-tauri/README.md`](web/src-tauri/README.md).
+
+---
+
 ## Project Structure
 
 ```

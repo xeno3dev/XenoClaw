@@ -1,0 +1,240 @@
+.titlebar {
+  display: flex;
+  align-items: center;
+  height: var(--titlebar-h, 36px);
+  flex-shrink: 0;
+  padding: 0 0.5rem 0 0.75rem;
+  background: var(--color-bg-elevated);
+  border-bottom: 1px solid var(--color-border);
+  user-select: none;
+  -webkit-user-select: none;
+  gap: 0.5rem;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.brandDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 0 10px var(--color-primary-glow);
+  flex-shrink: 0;
+}
+
+.brand {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.serverSwitcher {
+  position: relative;
+}
+
+.serverButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 26px;
+  padding: 0 0.5rem 0 0.625rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 320px;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.serverButton:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.serverName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot_connected {
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+}
+
+.dot_connecting {
+  background: var(--color-warning);
+  animation: tb-pulse 1.4s ease-in-out infinite;
+}
+
+.dot_offline {
+  background: var(--color-dim);
+}
+
+@keyframes tb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 260px;
+  max-width: 360px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 0.375rem;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.menuLabel {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-dim);
+  padding: 0.25rem 0.5rem 0.375rem;
+}
+
+.menuItem {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+  padding: 0.375rem 0.5rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.menuItem:hover {
+  background: var(--color-hover);
+}
+
+.menuItemActive {
+  background: var(--color-primary-soft);
+}
+
+.menuItemName {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.menuItemUrl {
+  font-size: 0.6875rem;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuDivider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 0.25rem 0;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.iconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.iconButton:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.iconButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.windowControls {
+  display: flex;
+  align-items: center;
+  margin-left: 0.25rem;
+}
+
+.winButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.winButton svg {
+  width: 12px;
+  height: 12px;
+}
+
+.winButton:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.winClose:hover {
+  background: #e5484d;
+  color: #fff;
+}

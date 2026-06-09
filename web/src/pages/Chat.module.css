@@ -152,6 +152,12 @@
   white-space: pre-wrap;
 }
 
+/* Markdown-rendered assistant content fills the bubble width. */
+.messageMarkdown {
+  width: 100%;
+  min-width: 0;
+}
+
 .messageTimestamp {
   font-size: 0.6875rem;
   color: rgba(255, 255, 255, 0.5);
@@ -390,7 +396,7 @@
 }
 
 .sendButton:hover:not(:disabled) {
-  background: #5a52e0;
+  background: var(--color-primary-deep);
 }
 
 .sendButton:disabled {
